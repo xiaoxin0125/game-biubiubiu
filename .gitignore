@@ -1,0 +1,19 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Runtime data
+/data/app.db
+/data/app.db-shm
+/data/app.db-wal
+/data/uploads/
+/data/saves/
+
+# Build artifacts and dependencies
+/frontend/dist/
+/node_modules/
+
+# Logs and OS noise
+*.log
+.DS_Store
