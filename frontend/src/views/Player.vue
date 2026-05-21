@@ -13,7 +13,7 @@
     >
       <template #extras>
         <!-- Version switcher: only when this game has multi-version siblings -->
-        <div v-if="siblings.length > 1" class="ver-switch" @click.stop>
+        <div v-if="canShowVersionSwitch && siblings.length > 1" class="ver-switch" @click.stop>
           <button class="ver-btn" @click="versionMenuOpen = !versionMenuOpen">
             <span class="ver-cur">{{ currentVersionLabel }}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -243,6 +243,7 @@ const {
 })
 
 const roomAllowsPlay = computed(() => (isRoomMode ? roomAllowPlay.value : roomInfo.value?.allowPlay !== false))
+const canShowVersionSwitch = computed(() => !isRoomMode || isHostMode.value === true)
 const overlayPlatformInfo = computed(() => {
   if (romMeta.value) return platformInfo.value
   return {

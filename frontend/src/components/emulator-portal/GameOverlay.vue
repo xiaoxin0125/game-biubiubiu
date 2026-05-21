@@ -61,6 +61,8 @@ const canFullscreen = hasFs && !isIOS
   /* Always visible — takes its own row in the .player-page flex column, so
      the canvas below sizes itself to the remaining viewport. */
   flex-shrink: 0;
+  position: relative;
+  z-index: 5;
 
   display: flex;
   align-items: center;
