@@ -141,23 +141,35 @@
         <h2 class="panel-title">全部 ROM</h2>
         <button class="btn btn-primary btn-sm" @click="openUpload">上传</button>
       </div>
-      <div class="tbl">
-        <div class="trow trow-head trow-roms">
-          <div>游戏</div><div>平台</div><div>上传者</div><div>人数</div><div>上传时间</div><div>状态</div><div class="right">操作</div>
+      <div class="rom-toolbar">
+        <div class="rom-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input v-model.trim="adminRomSearch" placeholder="搜索 ROM、文件名或上传者" />
         </div>
-        <div v-for="r in roms" :key="r.id" class="trow trow-roms">
-          <div class="u-name">
-            <div class="pdot" :style="{ background: platColor(r.platform) }"></div>
-            <div>
+        <select v-model="adminRomPlatform" class="filter-select" aria-label="筛选平台">
+          <option value="all">全部平台</option>
+          <option v-for="p in adminRomPlatformOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
+        </select>
+        <select v-model="adminRomVisibility" class="filter-select" aria-label="筛选公开状态">
+          <option value="all">全部状态</option>
+          <option value="public">公开</option>
+          <option value="private">私密</option>
+        </select>
+      </div>
+
+      <div v-if="!filteredAdminRoms.length" class="empty-state">没有匹配的 ROM</div>
+      <div v-else class="admin-rom-list">
+        <article v-for="r in pagedAdminRoms" :key="r.id" class="admin-rom-entry">
+          <div class="admin-rom-main">
+            <span class="pdot" :style="{ background: platColor(r.platform) }"></span>
+            <div class="admin-rom-title-wrap">
               <div class="rt">{{ r.title }}</div>
               <div class="rf">{{ r.fileName }} · {{ fmtSize(r.fileSize) }}</div>
             </div>
           </div>
-          <div>
+          <div class="admin-rom-meta">
             <span class="plat-badge" :style="{ '--pc': platColor(r.platform) }">{{ platLabel(r.platform) }}</span>
-          </div>
-          <div class="muted">@{{ r.owner?.username || '—' }}</div>
-          <div>
+            <span class="meta-chip">@{{ r.owner?.username || '—' }}</span>
             <select
               class="select max-player-select"
               :value="r.maxPlayers ?? ''"
@@ -167,9 +179,7 @@
               <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
               <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
             </select>
-          </div>
-          <div class="muted">{{ fmtTime(r.createdAt) }}</div>
-          <div>
+            <span class="meta-chip">{{ fmtTime(r.createdAt) }}</span>
             <button
               class="pill-tag pill-toggle"
               :class="r.isPublic ? 'pill-pub' : 'pill-priv'"
@@ -179,13 +189,31 @@
             >
               {{ togglingId === r.id ? '…' : (r.isPublic ? '公开' : '私密') }}
             </button>
+            <div class="actions">
+              <button class="btn btn-sm" @click="play(r)">试玩</button>
+              <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
+            </div>
           </div>
-          <div class="actions">
-            <button class="btn btn-sm" @click="play(r)">试玩</button>
-            <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
-          </div>
-        </div>
+        </article>
       </div>
+
+      <nav v-if="filteredAdminRoms.length > pageSize" class="pagination" aria-label="管理 ROM 分页">
+        <button class="seg-btn page-btn" type="button" :disabled="adminRomPage <= 1" @click="adminRomPage -= 1">‹ 上一页</button>
+        <template v-for="(item, index) in adminRomPageItems" :key="`${item}-${index}`">
+          <span v-if="item === 'ellipsis'" class="pagination-ellipsis">···</span>
+          <button
+            v-else
+            class="seg-btn page-btn page-number"
+            :class="{ active: item === adminRomPage }"
+            type="button"
+            @click="adminRomPage = item"
+          >
+            {{ item }}
+          </button>
+        </template>
+        <button class="seg-btn page-btn" type="button" :disabled="adminRomPage >= adminRomPageCount" @click="adminRomPage += 1">下一页 ›</button>
+        <button class="seg-btn page-btn" type="button" @click="jumpAdminRomPage">跳转 »</button>
+      </nav>
     </section>
 
     <section v-if="tab === 'bios'" class="panel-card panel">
@@ -236,7 +264,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -264,9 +292,47 @@ const roms = ref([])
 const biosItems = ref([])
 const biosLoading = ref(false)
 const showUpload = ref(false)
+const pageSize = 10
+const adminRomSearch = ref('')
+const adminRomPlatform = ref('all')
+const adminRomVisibility = ref('all')
+const adminRomPage = ref(1)
+
+const adminRomPlatformOptions = computed(() => {
+  const ids = [...new Set(roms.value.map((r) => r.platform).filter(Boolean))]
+  return ids
+    .map((id) => ({ id, label: platLabel(id) }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
+})
+const filteredAdminRoms = computed(() => {
+  const q = adminRomSearch.value.trim().toLowerCase()
+  return roms.value
+    .filter((rom) => adminRomPlatform.value === 'all' || rom.platform === adminRomPlatform.value)
+    .filter((rom) => {
+      if (adminRomVisibility.value === 'public') return !!rom.isPublic
+      if (adminRomVisibility.value === 'private') return !rom.isPublic
+      return true
+    })
+    .filter((rom) => {
+      if (!q) return true
+      return `${rom.title || ''} ${rom.fileName || ''} ${rom.owner?.username || ''}`.toLowerCase().includes(q)
+    })
+    .sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
+})
+const adminRomPageCount = computed(() => Math.max(1, Math.ceil(filteredAdminRoms.value.length / pageSize)))
+const pagedAdminRoms = computed(() => {
+  const start = (adminRomPage.value - 1) * pageSize
+  return filteredAdminRoms.value.slice(start, start + pageSize)
+})
+const adminRomPageItems = computed(() => pageItems(adminRomPage.value, adminRomPageCount.value))
 
 const publicRomCount = computed(() => roms.value.filter((r) => r.isPublic).length)
 const adminCount = computed(() => users.value.filter((u) => u.role === 'admin').length)
+
+watch([adminRomSearch, adminRomPlatform, adminRomVisibility], () => { adminRomPage.value = 1 })
+watch(adminRomPageCount, (count) => {
+  if (adminRomPage.value > count) adminRomPage.value = count
+})
 
 onMounted(async () => {
   loadUsers(); loadRoms(); loadBios()
@@ -375,6 +441,20 @@ async function updateMaxPlayers(r, value) {
 }
 
 function play(r) { router.push(`/play/${r.id}`) }
+function pageItems(current, count) {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1)
+  const middle = [current - 1, current, current + 1]
+    .filter((n) => n > 1 && n < count)
+  const items = [1, ...middle, 'ellipsis', count]
+  return items.filter((item, index) => items.indexOf(item) === index)
+}
+function jumpAdminRomPage() {
+  const input = prompt(`跳转到第几页？1 - ${adminRomPageCount.value}`)
+  if (!input) return
+  const next = Number.parseInt(input, 10)
+  if (!Number.isFinite(next)) return
+  adminRomPage.value = Math.min(Math.max(next, 1), adminRomPageCount.value)
+}
 function platColor(p) { return getPlatform(p).color }
 function platLabel(p) { return getPlatform(p).shortLabel }
 function fmtSize(b) {
@@ -496,6 +576,88 @@ function fmtTime(v) {
 .saved-enter-active, .saved-leave-active { transition: all 0.2s var(--ease-out); }
 .saved-enter-from, .saved-leave-to { opacity: 0; transform: translateY(4px); }
 
+.rom-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px 140px;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.rom-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #111;
+}
+.rom-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #111;
+  font: inherit;
+  font-weight: 800;
+}
+.rom-search input::placeholder { color: var(--text-quaternary); }
+.filter-select {
+  height: 40px;
+  padding: 0 10px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #111;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  outline: none;
+}
+.admin-rom-list { display: flex; flex-direction: column; gap: 14px; }
+.admin-rom-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: transparent;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.admin-rom-entry:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
+.admin-rom-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.admin-rom-title-wrap { min-width: 0; flex: 1; }
+.admin-rom-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-left: 22px;
+}
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
 .tbl { display: flex; flex-direction: column; gap: 2px; }
 .trow {
   display: grid;
@@ -527,13 +689,23 @@ function fmtTime(v) {
   font-size: 13px; font-weight: 900;
   flex-shrink: 0;
 }
-.pdot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
-.rt { font-size: 14px; font-weight: 900; color: #111; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rf { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdot { width: 10px; height: 10px; margin-top: 7px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
+.rt { font-size: 16px; font-weight: 900; color: #111; overflow-wrap: anywhere; word-break: break-word; }
+.rf { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; overflow-wrap: anywhere; }
 .muted { color: var(--text-tertiary); font-size: 13px; }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; }
-.max-player-select { width: 112px; height: 34px; padding: 0 8px; font-size: 12px; }
+.actions { display: flex; gap: 6px; justify-content: flex-end; margin-left: auto; }
+.max-player-select {
+  width: 126px;
+  height: 30px;
+  padding: 0 8px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  font-weight: 900;
+}
 
 .pill-tag {
   display: inline-flex; align-items: center;
@@ -641,7 +813,8 @@ function fmtTime(v) {
 .plat-badge {
   --pc: var(--accent);
   display: inline-flex; align-items: center;
-  padding: 3px 10px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: 7px;
   font-size: 11px;
   font-weight: 900;
@@ -649,9 +822,37 @@ function fmtTime(v) {
   border: 2px solid var(--pc);
   color: var(--pc);
 }
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.page-btn {
+  height: 38px;
+  min-width: 42px;
+  justify-content: center;
+}
+.page-number { padding: 0 12px; }
+.pagination-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  min-width: 42px;
+  color: #111;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
 
 @media (max-width: 900px) {
   .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .rom-toolbar { grid-template-columns: 1fr; }
+  .admin-rom-meta { padding-left: 0; }
+  .actions { width: 100%; margin-left: 0; }
   .trow, .trow-roms { grid-template-columns: 1fr 1fr; gap: 10px; }
   .trow > div:nth-child(n+3), .trow-head > div:nth-child(n+3) { display: none; }
 }
