@@ -9,7 +9,7 @@
       </Transition>
     </router-view>
     <footer v-if="showChrome" class="app-footer">
-      <span>Games Online</span>
+      <span>筱信游戏</span>
       <span class="dot">·</span>
       <span class="mono">v1.0</span>
     </footer>

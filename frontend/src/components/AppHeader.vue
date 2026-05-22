@@ -2,22 +2,18 @@
   <header class="app-header">
     <div class="inner">
       <router-link class="brand" to="/">
-        <span class="orb-brand">童</span>
+        <span class="orb-brand">筱</span>
         <span class="brand-text">{{ settings.siteTitle }}</span>
       </router-link>
 
       <nav class="nav">
-        <router-link to="/" class="nav-item" exact-active-class="active">游戏库</router-link>
-        <router-link v-if="showNetplay" to="/rooms" class="nav-item" active-class="active">对战</router-link>
-        <router-link v-if="isAuthed" to="/my" class="nav-item" active-class="active">我的</router-link>
+        <router-link to="/" class="nav-item" exact-active-class="active">首页</router-link>
+        <router-link v-if="showNetplay" to="/rooms" class="nav-item" active-class="active">联机</router-link>
+        <router-link v-if="isAuthed" to="/my" class="nav-item" active-class="active">投稿</router-link>
         <router-link v-if="isAdmin" to="/admin" class="nav-item" active-class="active">管理</router-link>
       </nav>
 
       <div class="header-right">
-        <button class="theme-btn" type="button" :title="themeTitle" @click="cycle">
-          <svg v-if="theme === 'light'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        </button>
         <template v-if="loading">
           <div class="skeleton" style="width: 84px; height: 28px;"></div>
         </template>
@@ -58,13 +54,11 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useSettings } from '../composables/useSettings.js'
-import { useTheme } from '../composables/useTheme.js'
 import { stats as cacheStatsFn, clearCache } from '../composables/useBlobCache.js'
 import ChangePasswordDialog from './ChangePasswordDialog.vue'
 
 const { user, isAuthed, isAdmin, loading, logout } = useAuth()
 const { settings } = useSettings()
-const { theme, cycle } = useTheme()
 
 const cacheLabel = ref('')
 async function refreshCacheStats() {
@@ -78,10 +72,6 @@ async function onClearCache() {
   await refreshCacheStats()
   menuOpen.value = false
 }
-
-const themeTitle = computed(() => (
-  theme.value === 'light' ? '切换到深色' : '切换到浅色'
-))
 
 const showNetplay = computed(() => isAdmin.value || settings.value.netplayEnabled !== false)
 const router = useRouter()
@@ -121,13 +111,14 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 .inner {
-  max-width: 1280px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 0 24px;
-  height: var(--header-h);
+  height: 64px;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -136,49 +127,36 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   text-decoration: none;
   color: var(--text-primary);
 }
 .brand-text {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
-.nav { display: flex; gap: 4px; flex: 1; height: 100%; align-items: stretch; }
+.nav { display: flex; gap: 8px; flex: 1; height: 100%; align-items: center; }
 .nav-item {
   display: inline-flex;
   align-items: center;
-  padding: 0 12px;
-  color: var(--text-primary);
+  height: 34px;
+  padding: 0 14px;
+  color: var(--text-secondary);
   font-size: 14px;
-  font-weight: 400;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+  font-weight: 700;
+  border-radius: var(--r-pill);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
 }
-.nav-item:hover { color: var(--text-primary); text-decoration: none; border-bottom-color: var(--border-strong); }
+.nav-item:hover { color: var(--accent); text-decoration: none; background: var(--accent-soft); transform: translateY(-1px); }
 .nav-item.active {
-  color: var(--text-primary);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
+  color: #fff;
+  background: var(--accent);
+  box-shadow: var(--shadow-accent-sm);
 }
 
 .header-right { display: flex; align-items: center; gap: 8px; }
-
-.theme-btn {
-  width: 32px; height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--bg-1);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
-}
-.theme-btn:hover { background: var(--bg-3); color: var(--text-primary); }
 
 .user-menu { position: relative; }
 .user-chip {

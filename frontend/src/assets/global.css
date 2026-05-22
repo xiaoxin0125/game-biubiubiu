@@ -1,38 +1,30 @@
 /* ============================================================
-   Games Online — Modern Slate design system
-   Palette: warm stone neutrals + saturated indigo accent.
-     • Solid (non-transparent) text colors for crisp contrast
-     • Stone bg (warmer than pure gray) feels premium
-     • Indigo-500 accent: confident, modern, gaming-friendly
-     • Tailwind v4 color model
-   Theme: [data-theme="light"|"dark"] on <html>
+   Hanxin-inspired warm blog design system
+   Palette: cream page, white cards, amber/orange accent.
    ============================================================ */
 
 /* ── LIGHT (default) ─────────────────────────────────── */
 :root {
-  /* Backgrounds — warm stone ladder (Tailwind stone) */
-  --bg-0: #FAFAF9;   /* stone-50  — page */
-  --bg-1: #FFFFFF;   /* white      — card */
-  --bg-2: #F5F5F4;   /* stone-100  — search / secondary fill */
-  --bg-3: #E7E5E4;   /* stone-200  — hover / tertiary fill */
+  --bg-0: #FFF7ED;
+  --bg-1: #FFFFFF;
+  --bg-2: #FFFBF5;
+  --bg-3: #FDEAD2;
 
-  /* Labels — solid, no transparency (crisp contrast) */
-  --text-primary:    #1C1917;   /* stone-900 */
-  --text-secondary:  #57534E;   /* stone-600 */
-  --text-tertiary:   #78716C;   /* stone-500 */
-  --text-quaternary: #A8A29E;   /* stone-400 */
+  --text-primary:    #2B2118;
+  --text-secondary:  #6F5B47;
+  --text-tertiary:   #9A8067;
+  --text-quaternary: #C4A98F;
   --text-inverted:   #FFFFFF;
 
-  --border:        #E7E5E4;     /* stone-200 */
-  --border-strong: #D6D3D1;     /* stone-300 */
+  --border:        #F1DDC8;
+  --border-strong: #E4C7AA;
 
-  /* Hero accent — Indigo-500 (fully saturated, modern) */
-  --accent:        #6366F1;     /* indigo-500 */
-  --accent-hover:  #4F46E5;     /* indigo-600 */
-  --accent-soft:   rgba(99, 102, 241, 0.10);
-  --accent-ring:   rgba(99, 102, 241, 0.30);
-  --accent-gradient: linear-gradient(135deg, #818CF8 0%, #6366F1 55%, #4F46E5 100%);
-  --hero-gradient:   linear-gradient(135deg, #818CF8 0%, #3B82F6 100%);
+  --accent:        #F59E0B;
+  --accent-hover:  #EA580C;
+  --accent-soft:   rgba(245, 158, 11, 0.14);
+  --accent-ring:   rgba(245, 158, 11, 0.26);
+  --accent-gradient: linear-gradient(135deg, #FCD34D 0%, #F59E0B 52%, #EA580C 100%);
+  --hero-gradient:   linear-gradient(135deg, #FDE68A 0%, #F59E0B 100%);
 
   /* Semantic tints — Tailwind-consistent */
   --sys-blue:    #3B82F6;
@@ -50,32 +42,30 @@
   --warn:    var(--sys-orange);
   --error:   var(--sys-red);
 
-  --fill-1: rgba(28, 25, 23, 0.04);
-  --fill-2: rgba(28, 25, 23, 0.07);
-  --fill-3: rgba(28, 25, 23, 0.10);
+  --fill-1: rgba(43, 33, 24, 0.04);
+  --fill-2: rgba(43, 33, 24, 0.07);
+  --fill-3: rgba(43, 33, 24, 0.10);
 
-  /* Glass — subtle translucent overlay */
-  --glass-bg:     rgba(255, 255, 255, 0.78);
-  --glass-bg-2:   rgba(255, 255, 255, 0.60);
+  --glass-bg:     rgba(255, 251, 245, 0.86);
+  --glass-bg-2:   rgba(255, 251, 245, 0.70);
   --glass-blur:   saturate(180%) blur(20px);
-  --glass-border: rgba(231, 229, 228, 0.80);
+  --glass-border: rgba(241, 221, 200, 0.88);
 
-  /* Corners — crisp, modern SaaS */
-  --r-xs:   4px;
-  --r-sm:   6px;
-  --r-md:   10px;
-  --r-lg:   14px;
-  --r-xl:   20px;
+  --r-xs:   6px;
+  --r-sm:   10px;
+  --r-md:   14px;
+  --r-lg:   18px;
+  --r-xl:   26px;
   --r-pill: 999px;
 
-  --shadow-xs: 0 1px 2px rgba(28, 25, 23, 0.05);
-  --shadow-sm: 0 1px 3px rgba(28, 25, 23, 0.08), 0 1px 2px rgba(28, 25, 23, 0.04);
-  --shadow-md: 0 6px 20px rgba(28, 25, 23, 0.08), 0 2px 6px rgba(28, 25, 23, 0.05);
-  --shadow-lg: 0 20px 44px rgba(28, 25, 23, 0.14), 0 8px 18px rgba(28, 25, 23, 0.08);
-  --shadow-glow:        0 6px 20px rgba(99, 102, 241, 0.24);
-  --shadow-glow-strong: 0 10px 28px rgba(99, 102, 241, 0.38);
-  --shadow-accent-sm:   0 2px 6px rgba(99, 102, 241, 0.30);
-  --shadow-focus:       0 0 0 3px var(--accent-ring);
+  --shadow-xs: 0 1px 2px rgba(86, 54, 24, 0.05);
+  --shadow-sm: 0 4px 14px rgba(86, 54, 24, 0.07);
+  --shadow-md: 0 12px 28px rgba(86, 54, 24, 0.10), 0 2px 8px rgba(86, 54, 24, 0.05);
+  --shadow-lg: 0 24px 56px rgba(86, 54, 24, 0.16), 0 8px 20px rgba(86, 54, 24, 0.08);
+  --shadow-glow:        0 10px 26px rgba(245, 158, 11, 0.24);
+  --shadow-glow-strong: 0 14px 34px rgba(245, 158, 11, 0.36);
+  --shadow-accent-sm:   0 4px 12px rgba(245, 158, 11, 0.28);
+  --shadow-focus:       0 0 0 4px var(--accent-ring);
 
   --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -95,65 +85,6 @@
   color-scheme: light;
 }
 
-/* ── DARK ─────────────────────────────────────────── */
-html[data-theme="dark"] {
-  /* Deep warm black ladder (stone-950 → stone-700) */
-  --bg-0: #0C0A09;   /* stone-950  — page */
-  --bg-1: #1C1917;   /* stone-900  — card */
-  --bg-2: #292524;   /* stone-800 */
-  --bg-3: #44403C;   /* stone-700  — hover */
-
-  --text-primary:    #FAFAF9;   /* stone-50 */
-  --text-secondary:  #D6D3D1;   /* stone-300 */
-  --text-tertiary:   #A8A29E;   /* stone-400 */
-  --text-quaternary: #78716C;   /* stone-500 */
-  --text-inverted:   #1C1917;
-
-  --border:        #292524;     /* stone-800 */
-  --border-strong: #44403C;     /* stone-700 */
-
-  /* Brighter accent for dark bg — indigo-400 */
-  --accent:        #818CF8;     /* indigo-400 */
-  --accent-hover:  #A5B4FC;     /* indigo-300 */
-  --accent-soft:   rgba(129, 140, 248, 0.18);
-  --accent-ring:   rgba(129, 140, 248, 0.35);
-  --accent-gradient: linear-gradient(135deg, #A5B4FC 0%, #818CF8 55%, #6366F1 100%);
-  --hero-gradient:   linear-gradient(135deg, #A5B4FC 0%, #60A5FA 100%);
-
-  --sys-blue:    #60A5FA;
-  --sys-green:   #34D399;
-  --sys-indigo:  #818CF8;
-  --sys-mint:    #2DD4BF;
-  --sys-orange:  #FB923C;
-  --sys-pink:    #F472B6;
-  --sys-purple:  #C084FC;
-  --sys-red:     #F87171;
-  --sys-teal:    #22D3EE;
-  --sys-yellow:  #FACC15;
-
-  --success: var(--sys-green);
-  --warn:    var(--sys-orange);
-  --error:   var(--sys-red);
-
-  --fill-1: rgba(250, 250, 249, 0.05);
-  --fill-2: rgba(250, 250, 249, 0.09);
-  --fill-3: rgba(250, 250, 249, 0.13);
-
-  --glass-bg:     rgba(28, 25, 23, 0.80);
-  --glass-bg-2:   rgba(28, 25, 23, 0.60);
-  --glass-border: rgba(68, 64, 60, 0.60);
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.65), 0 6px 16px rgba(0, 0, 0, 0.45);
-  --shadow-glow:        0 6px 24px rgba(129, 140, 248, 0.35);
-  --shadow-glow-strong: 0 10px 32px rgba(129, 140, 248, 0.50);
-  --shadow-accent-sm:   0 2px 8px rgba(129, 140, 248, 0.45);
-
-  color-scheme: dark;
-}
-
 *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #app { margin: 0; padding: 0; width: 100%; min-height: 100%; }
 
@@ -167,7 +98,9 @@ body {
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
-  background: var(--bg-0);
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.16), transparent 28vw),
+    linear-gradient(180deg, #FFF7ED 0%, #FFFBF5 42%, #FFF7ED 100%);
   overflow-x: hidden;
   overscroll-behavior-y: none;          /* prevent rubber-band pull-to-refresh on iOS */
   -webkit-font-smoothing: antialiased;
@@ -250,45 +183,46 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 14px;
-  border-radius: var(--r-sm);
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--border-strong);
   background: var(--bg-1);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+  box-shadow: var(--shadow-xs);
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
   user-select: none;
   white-space: nowrap;
 }
-.btn:hover { background: var(--bg-3); }
+.btn:hover { background: var(--bg-2); border-color: var(--accent); box-shadow: var(--shadow-sm); }
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .btn:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-gradient);
+  border-color: transparent;
   color: #FFFFFF;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
-  transition: background var(--t-fast) var(--ease-out),
-              border-color var(--t-fast) var(--ease-out),
-              box-shadow var(--t-fast) var(--ease-out);
+  font-weight: 800;
+  box-shadow: var(--shadow-glow);
+  transition: filter var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out);
 }
 .btn-primary:hover {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  box-shadow: 0 2px 6px var(--accent-ring);
+  filter: saturate(1.08) brightness(1.02);
+  border-color: transparent;
+  box-shadow: var(--shadow-glow-strong);
 }
 .btn-primary:active {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.10);
-  transform: none;
+  filter: brightness(0.98);
+  border-color: transparent;
+  box-shadow: var(--shadow-glow);
+  transform: translateY(1px);
 }
 .btn-primary:disabled {
   background: var(--accent);
@@ -394,19 +328,19 @@ button { font-family: inherit; }
 /* ===== Brand logo ===== */
 .orb-brand {
   position: relative;
-  width: 28px; height: 28px;
-  border-radius: var(--r-sm);
+  width: 34px; height: 34px;
+  border-radius: 12px;
   background: var(--accent-gradient);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   flex-shrink: 0;
   box-shadow:
     var(--shadow-accent-sm),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
     inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   overflow: hidden;
 }

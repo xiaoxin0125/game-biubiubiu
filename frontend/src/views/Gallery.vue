@@ -1,21 +1,25 @@
 <template>
   <div class="gallery-page container">
-    <header class="page-head">
-      <div>
-        <h1 class="page-title">游戏库</h1>
-        <p class="page-sub">{{ total }} 个游戏可以试玩，找一个开始吧</p>
+    <section class="blog-hero">
+      <div class="hero-profile">
+        <span class="hero-logo">筱</span>
+        <div>
+          <p class="hero-kicker">RETRO GAME LIBRARY</p>
+          <h1>{{ settings.siteTitle }}</h1>
+          <p>{{ settings.siteSubtitle || '把经典游戏整理成一页温暖、清爽、好访问的线上收藏夹。' }}</p>
+        </div>
       </div>
-      <div class="page-head-actions">
-        <div class="search">
+      <div class="hero-actions">
+        <div class="search blog-search">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input v-model="query" placeholder="搜索游戏" aria-label="搜索" />
         </div>
         <router-link v-if="isAuthed" to="/my" class="btn btn-primary">上传 ROM</router-link>
         <router-link v-else to="/auth?mode=register" class="btn btn-primary">注册</router-link>
       </div>
-    </header>
+    </section>
 
-    <div class="tabs">
+    <div class="blog-tabs">
       <button
         class="tab"
         :class="{ active: activeTab === 'all' }"
@@ -45,16 +49,17 @@
       </button>
     </div>
 
-    <div v-if="loading" class="grid">
-      <div v-for="i in 8" :key="i" class="tile-skel">
-        <div class="skeleton skel-art"></div>
-        <div class="skel-text">
-          <div class="skeleton" style="height: 13px; width: 75%;"></div>
-          <div class="skeleton" style="height: 11px; width: 45%;"></div>
+    <div v-if="loading" class="rom-card-grid">
+      <article v-for="i in 4" :key="i" class="rom-card rom-card-skel">
+        <div class="skeleton skel-avatar"></div>
+        <div class="rom-card-content">
+          <div class="skeleton" style="height: 16px; width: 48%;"></div>
+          <div class="skeleton" style="height: 12px; width: 88%;"></div>
+          <div class="skeleton" style="height: 12px; width: 62%;"></div>
         </div>
-      </div>
+      </article>
     </div>
-    <div v-else-if="!filtered.length" class="empty-state">
+    <div v-else-if="!filtered.length" class="empty-state blog-empty">
       <h3>{{ query ? '没有匹配结果' : '游戏库为空' }}</h3>
       <p v-if="!query">{{ isAuthed ? '上传你的第一个 ROM' : '登录后可以上传自己的 ROM' }}</p>
       <p v-else>换个关键词试试</p>
@@ -62,41 +67,46 @@
       <router-link v-if="!query && !isAuthed" to="/auth" class="btn btn-primary">登录 / 注册</router-link>
       <button v-if="query" class="btn" @click="query = ''">清除搜索</button>
     </div>
-    <div v-else class="grid">
+    <div v-else class="rom-card-grid">
       <article
         v-for="rom in filtered"
         :key="rom.id"
-        class="tile"
+        class="rom-card"
         tabindex="0"
         @click="play(rom)"
         @keydown.enter="play(rom)"
         :aria-label="rom.title"
       >
-        <div class="tile-art" :style="{ background: artBg(rom.platform) }">
-          <span class="art-letter">{{ rom.title.slice(0, 1).toUpperCase() }}</span>
-          <button
-            v-if="isAuthed"
-            class="fav-btn"
-            :class="{ on: rom.isFavorite }"
-            :title="rom.isFavorite ? '取消收藏' : '收藏'"
-            @click.stop="toggleFavorite(rom)"
+        <div class="rom-avatar" :style="{ background: artBg(rom.platform) }">
+          <span>{{ rom.title.slice(0, 1).toUpperCase() }}</span>
+        </div>
+        <div class="rom-card-content">
+          <h2 class="rom-card-title">{{ rom.title }}</h2>
+          <p class="rom-card-desc">
+            {{ platformLabel(rom.platform) }} 平台游戏{{ rom.owner ? `，由 @${rom.owner.username} 分享。` : '。' }}
+          </p>
+        </div>
+        <div class="card-badges">
+          <span class="version-badge" :title="`${(rom.versionCount || 0) + 1} 个版本`">
+            {{ (rom.versionCount || 0) + 1 }} 版
+          </span>
+          <span
+            class="status-badge"
+            :style="{ '--platform-color': platformColor(rom.platform) }"
+            :title="platformLabel(rom.platform)"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" :fill="rom.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 17.3 5.82 21l1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z"/></svg>
-          </button>
-          <span v-if="rom.versionCount" class="ver-badge" :title="`${rom.versionCount + 1} 个版本`">
-            {{ rom.versionCount + 1 }} 版本
+            {{ platformLabel(rom.platform) }}
           </span>
         </div>
-        <div class="tile-body">
-          <div class="tile-top">
-            <h3 class="tile-title">{{ rom.title }}</h3>
-            <span class="tile-plat">{{ platformLabel(rom.platform) }}</span>
-          </div>
-          <div class="tile-sub">
-            <span>{{ platformDisplay(rom.platform) }}</span>
-            <span v-if="rom.owner" class="owner">@{{ rom.owner.username }}</span>
-          </div>
-        </div>
+        <button
+          v-if="isAuthed"
+          class="fav-btn"
+          :class="{ on: rom.isFavorite }"
+          :title="rom.isFavorite ? '取消收藏' : '收藏'"
+          @click.stop="toggleFavorite(rom)"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" :fill="rom.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 17.3 5.82 21l1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z"/></svg>
+        </button>
       </article>
     </div>
 
@@ -175,7 +185,7 @@ const filtered = computed(() => {
   }
   const q = query.value.trim().toLowerCase()
   if (q) list = list.filter((r) => r.title.toLowerCase().includes(q))
-  return list
+  return [...list].sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
 })
 
 async function toggleFavorite(rom) {
@@ -204,10 +214,10 @@ async function toggleFavorite(rom) {
 }
 
 function platformLabel(p) { return getPlatform(p).shortLabel }
-function platformDisplay(p) { return getPlatform(p).displayName }
+function platformColor(p) { return getPlatform(p).color }
 function artBg(p) {
   const c = getPlatform(p).color
-  return `linear-gradient(135deg, ${c}55 0%, ${c}22 100%)`
+  return `linear-gradient(135deg, ${c} 0%, ${c}dd 100%)`
 }
 
 const pickerRom = ref(null)
@@ -231,239 +241,317 @@ function onVersionPicked(v) {
 </script>
 
 <style scoped>
-.gallery-page { padding-bottom: 60px; }
+.gallery-page {
+  max-width: 960px;
+  padding-bottom: 72px;
+}
+
+.blog-hero {
+  position: relative;
+  margin: 28px 0 26px;
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: radial-gradient(circle at 90% 10%, rgba(245, 158, 11, 0.20), transparent 28%), linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 247, 237, 0.88));
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.blog-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(245, 158, 11, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(245, 158, 11, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(90deg, transparent, #000 36%, #000 100%);
+  pointer-events: none;
+}
+.hero-profile,
+.hero-actions { position: relative; z-index: 1; }
+.hero-profile {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.hero-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  background: var(--accent-gradient);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 800;
+  box-shadow: var(--shadow-glow);
+  flex-shrink: 0;
+}
+.hero-kicker {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  font-weight: 800;
+}
+.blog-hero h1 {
+  margin: 0;
+  font-size: clamp(30px, 5vw, 46px);
+  line-height: 1.08;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+}
+.blog-hero p:last-child {
+  margin: 12px 0 0;
+  max-width: 620px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
 
 .search {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  background: var(--bg-1);
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.88);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-pill);
   color: var(--text-tertiary);
-  min-width: 220px;
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  min-width: 260px;
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
 }
 .search:focus-within {
+  background: #fff;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  box-shadow: 0 0 0 4px var(--accent-ring);
 }
 .search input {
-  flex: 1; height: 100%;
-  background: transparent; border: 0; outline: none;
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   min-width: 0;
 }
 .search input::placeholder { color: var(--text-quaternary); }
 
-/* ── Tabs ────────────────────────────────────────────── */
-.tabs {
+.blog-tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 24px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 2px;
+  padding: 2px 2px 12px;
 }
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 0;
-  background: transparent;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--bg-1);
   color: var(--text-secondary);
   font-family: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color var(--t-fast), border-color var(--t-fast);
+  box-shadow: var(--shadow-xs);
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
   white-space: nowrap;
 }
-.tab:hover:not(:disabled) { color: var(--text-primary); }
+.tab:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); transform: translateY(-1px); }
 .tab.active {
-  color: var(--text-primary);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: var(--shadow-glow);
 }
-.tab:disabled { opacity: 0.4; cursor: not-allowed; }
+.tab:disabled { opacity: 0.45; cursor: not-allowed; }
 .tab .n {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 800;
   padding: 1px 7px;
   min-width: 20px;
   text-align: center;
   border-radius: var(--r-pill);
-  background: var(--bg-3);
+  background: var(--bg-2);
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
-  transition: background var(--t-fast), color var(--t-fast);
 }
-.tab.active .n { background: var(--accent-soft); color: var(--accent); }
+.tab.active .n { background: rgba(255,255,255,0.22); color: #fff; }
 .tab-fav svg { color: var(--sys-yellow); }
 
-/* ── Grid ────────────────────────────────────────────── */
-.grid {
+.rom-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
 }
-
-.tile-skel {
+.rom-card {
+  position: relative;
   display: flex;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-1);
-}
-.skel-art { width: 56px; height: 56px; flex-shrink: 0; border-radius: var(--r-sm); }
-.skel-text { flex: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
-
-.tile {
-  display: flex;
-  gap: 12px;
   align-items: center;
-  padding: 12px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  gap: 16px;
+  min-height: 100px;
+  padding: 20px 16px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 12px;
+  overflow: hidden;
   cursor: pointer;
   outline: none;
-  transition: transform var(--t-fast) var(--ease-out),
-              border-color var(--t-fast) var(--ease-out),
-              box-shadow var(--t-fast) var(--ease-out);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-.tile:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+.rom-card:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
 }
-.tile:focus-visible {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-focus);
+.rom-card:focus-visible {
+  box-shadow: 0 0 0 4px var(--accent-ring);
 }
-
-.tile-art {
-  position: relative;
-  width: 56px;
-  height: 56px;
+.rom-avatar,
+.skel-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
   flex-shrink: 0;
-  border-radius: var(--r-sm);
-  display: flex;
+}
+.rom-avatar {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid #111;
+  color: #fff;
   font-size: 26px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.95);
-  text-transform: uppercase;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.rom-card-content {
+  min-width: 0;
+  padding-right: 10px;
+}
+.rom-card-title {
+  margin: 0 0 5px;
+  color: #050505;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
   letter-spacing: -0.02em;
   overflow: hidden;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.art-letter { line-height: 1; position: relative; z-index: 1; }
+.rom-card-desc {
+  margin: 0;
+  color: #1f2933;
+  font-size: 13px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-badges {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border: 2px solid #111;
+  border-top: 0;
+  border-right: 0;
+  border-radius: 0 8px 0 8px;
+  overflow: hidden;
+  line-height: 1;
+}
+.version-badge,
+.status-badge {
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.version-badge {
+  background: #fff;
+  color: #111;
+  border-right: 2px solid #111;
+}
+.status-badge {
+  background: color-mix(in srgb, var(--platform-color) 16%, #fff);
+  color: var(--platform-color);
+}
 
 .fav-btn {
   position: absolute;
-  top: 3px; right: 3px;
-  width: 22px; height: 22px;
+  bottom: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  border: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(6px);
-  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
   cursor: pointer;
   opacity: 0;
   z-index: 2;
   transition: opacity var(--t-fast), background var(--t-fast), transform var(--t-fast) var(--ease-spring);
 }
-.tile:hover .fav-btn,
-.tile:focus-within .fav-btn,
+.rom-card:hover .fav-btn,
+.rom-card:focus-within .fav-btn,
 .fav-btn.on { opacity: 1; }
-.fav-btn.on { color: var(--sys-yellow); background: rgba(0, 0, 0, 0.55); }
-.fav-btn:hover { background: rgba(0, 0, 0, 0.65); transform: scale(1.08); }
+.fav-btn.on { color: #f59e0b; background: #fff7ed; }
+.fav-btn:hover { background: #fff7ed; transform: scale(1.08); }
 .fav-btn:active { transform: scale(0.92); }
 
-.ver-badge {
-  position: absolute;
-  bottom: 3px; right: 3px;
-  padding: 2px 7px;
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  z-index: 2;
+.rom-card-skel { cursor: default; }
+.blog-empty {
+  margin: 24px auto 0;
+  max-width: 520px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-sm);
 }
-
-.tile-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.tile-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-}
-.tile-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  letter-spacing: -0.01em;
-  transition: color var(--t-fast);
-}
-.tile:hover .tile-title { color: var(--accent); }
-.tile-plat {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--r-pill);
-  background: var(--bg-3);
-  color: var(--text-secondary);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.tile-sub {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  display: flex;
-  gap: 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.tile-sub .owner { color: var(--text-secondary); }
 
 @media (max-width: 768px) {
-  .page-head { flex-direction: column; align-items: stretch; }
-  .page-head-actions { flex-direction: row; gap: 8px; }
-  .search { flex: 1; min-width: 0; }
+  .gallery-page { max-width: 100%; }
+  .blog-hero { margin-top: 18px; padding: 24px; }
+  .hero-profile { align-items: flex-start; }
+  .hero-logo { width: 58px; height: 58px; border-radius: 18px; font-size: 28px; }
+  .hero-actions { align-items: stretch; }
+  .search { flex: 1 1 100%; min-width: 0; }
+  .rom-card-grid { grid-template-columns: 1fr; gap: 16px; }
+  .rom-card {
+    min-height: 76px;
+    padding: 14px 16px;
+  }
+  .rom-avatar,
+  .skel-avatar { width: 50px; height: 50px; }
+  .rom-card-title { font-size: 15px; margin-bottom: 4px; }
+  .rom-card-desc { font-size: 11px; line-height: 1.35; }
 }
 @media (max-width: 480px) {
-  .grid { grid-template-columns: 1fr; }
+  .blog-hero { padding: 20px; border-radius: var(--r-lg); }
+  .hero-profile { flex-direction: column; gap: 14px; }
 }
 </style>

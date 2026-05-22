@@ -2,8 +2,8 @@ import { ref, computed, watch } from 'vue'
 import { api } from '../api/client.js'
 
 const DEFAULTS = {
-  siteTitle: 'Games Online',
-  siteSubtitle: '自托管浏览器游戏厅',
+  siteTitle: '筱信游戏',
+  siteSubtitle: '个人经典游戏收藏与在线游玩分享',
   netplayEnabled: true,
   guestPlayEnabled: false,
   userUploadEnabled: true,
