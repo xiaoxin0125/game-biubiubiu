@@ -265,7 +265,7 @@ async function submit() {
 <style scoped>
 .mask {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.38);
+  background: rgba(17, 17, 17, 0.28);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   z-index: 300;
@@ -280,57 +280,71 @@ async function submit() {
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  border-radius: var(--r-lg);
+  border-radius: 7px;
   padding: 28px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
+  box-shadow: 6px 6px 0 var(--border-color, #111);
   animation: popIn 0.2s var(--ease-spring);
 }
-@keyframes popIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes popIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .dh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.dh h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--text-primary); }
+.dh h3 { margin: 0; font-size: 18px; font-weight: 900; color: #111; }
 
 .drop {
   position: relative;
-  border: 2px dashed var(--border-strong);
-  border-radius: var(--r-md);
+  border: 2px dashed var(--border-color, #111);
+  border-radius: 7px;
   padding: 28px;
   text-align: center;
   cursor: pointer;
   color: var(--text-secondary);
-  transition: all var(--t) var(--ease-out);
-  background: var(--bg-2);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+  background: rgba(255, 255, 255, 0.58);
 }
-.drop:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--text-primary); }
-.drop.dragging { border-color: var(--accent); background: var(--accent-soft); color: var(--text-primary); }
-.drop.has-file { padding: 14px; border-style: solid; border-color: var(--border); cursor: default; background: var(--bg-1); }
+.drop:hover,
+.drop.dragging {
+  background: #fff;
+  color: #111;
+  transform: translate(-3px, -3px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
+.drop.has-file {
+  padding: 14px;
+  border-style: solid;
+  border-color: var(--border-color, #111);
+  cursor: default;
+  background: #fff;
+}
+.drop.has-file:hover { transform: none; box-shadow: none; }
 
 .drop-icon {
   width: 52px; height: 52px;
   margin: 0 auto 10px;
-  border-radius: var(--r-md);
-  background: var(--accent);
-  color: #fff;
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
+  color: #111;
   display: flex; align-items: center; justify-content: center;
 }
-.drop-title { margin: 8px 0 4px; font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.drop-title { margin: 8px 0 4px; font-weight: 900; font-size: 14px; color: #111; }
 .drop-sub { margin: 0; font-size: 12px; color: var(--text-tertiary); }
 
 .file-row { display: flex; align-items: center; gap: 12px; text-align: left; }
 .file-icon {
   flex-shrink: 0;
   width: 44px; height: 44px;
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
+  color: #111;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800;
+  font-size: 11px; font-weight: 900;
   letter-spacing: 0.04em;
 }
 .file-meta { flex: 1; min-width: 0; }
-.fn { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.fn { font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #111; }
 .fs { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
 .field { margin-top: 18px; }
@@ -338,7 +352,7 @@ async function submit() {
 .plat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 8px;
   max-height: 220px;
   overflow-y: auto;
   padding: 2px;
@@ -348,58 +362,63 @@ async function submit() {
   display: flex; align-items: center; gap: 6px;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-1);
-  color: var(--text-secondary);
-  border-radius: var(--r-md);
+  border: 2px solid var(--border-color, #111);
+  background: transparent;
+  color: #111;
+  border-radius: 7px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 900;
   cursor: pointer;
-  transition: all var(--t-fast);
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
   font-family: inherit;
 }
-.plat-btn:hover { color: var(--text-primary); background: var(--bg-3); }
-.plat-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
+.plat-btn:hover:not(.active) {
+  color: #111;
+  background: transparent;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
 }
-.pd { width: 6px; height: 6px; border-radius: 50%; background: var(--pc); }
-.plat-btn.active .pd { background: currentColor; }
+.plat-btn.active {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+  font-weight: 900;
+}
+.pd { width: 8px; height: 8px; border-radius: 3px; background: var(--pc); border: 1px solid #111; }
+.plat-btn.active .pd { background: currentColor; border-color: currentColor; }
 
 .pub-row {
   display: flex; gap: 14px; align-items: center;
   margin-top: 20px;
   padding: 14px 16px;
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 2px solid var(--border-color, #111);
   cursor: pointer;
   transition: background var(--t-fast);
 }
-.pub-row:hover { background: var(--bg-3); }
+.pub-row:hover { background: #fff; }
 .sw { position: relative; flex-shrink: 0; }
 .sw input { opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; margin: 0; cursor: pointer; }
 .track {
   position: relative; display: block;
   width: 40px; height: 24px;
-  border-radius: 12px;
-  background: var(--bg-3);
-  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   transition: all var(--t);
 }
 .thumb {
   position: absolute; top: 2px; left: 2px;
-  width: 18px; height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: var(--shadow-xs);
+  width: 16px; height: 16px;
+  background: #111;
+  border-radius: 5px;
+  box-shadow: none;
   transition: all var(--t) var(--ease-spring);
 }
-.sw input:checked + .track { background: var(--success); border-color: var(--success); }
-.sw input:checked + .track .thumb { transform: translateX(16px); }
-.pr-t { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.sw input:checked + .track { background: #111; border-color: #111; }
+.sw input:checked + .track .thumb { background: #fff; transform: translateX(16px); }
+.pr-t { font-size: 14px; font-weight: 900; color: #111; }
 .pr-s { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
 
 .variant-field { display: flex; flex-direction: column; gap: 8px; }
@@ -407,9 +426,9 @@ async function submit() {
   margin-top: 6px;
   max-height: 220px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
 }
 .parent-row {
   width: 100%;
@@ -419,30 +438,40 @@ async function submit() {
   gap: 10px;
   padding: 10px 14px;
   border: none;
+  border-bottom: 2px solid var(--border-color, #111);
   background: transparent;
-  color: var(--text-primary);
+  color: #111;
   font-family: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  transition: background var(--t-fast);
+  transition: background var(--t-fast), color var(--t-fast);
 }
 .parent-row:last-child { border-bottom: none; }
-.parent-row:hover { background: var(--bg-3); }
-.parent-row.selected { background: var(--accent-soft); color: var(--accent); }
-.parent-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.parent-row:hover { background: rgba(17, 17, 17, 0.06); }
+.parent-row.selected { background: #111; color: #fff; }
+.parent-row.selected .parent-file { color: rgba(255, 255, 255, 0.78); }
+.parent-title { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parent-file { color: var(--text-tertiary); font-size: 11px; flex-shrink: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.parent-empty { padding: 12px; font-size: 12px; color: var(--text-tertiary); text-align: center; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-2); }
+.parent-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+}
 
 .err {
   margin-top: 14px;
   padding: 10px 14px;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   color: var(--error);
   font-size: 13px;
+  font-weight: 800;
 }
 
 .df { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }

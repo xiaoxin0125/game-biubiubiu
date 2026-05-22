@@ -265,56 +265,57 @@ function fmtTime(v) {
 </script>
 
 <style scoped>
-.my-page { padding-bottom: 60px; }
+.my-page { max-width: 960px; padding-bottom: 60px; }
 
 .tabs {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 24px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0 2px;
+  padding: 2px 6px 12px 2px;
 }
 .tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  border: 0;
+  height: 34px;
+  padding: 0 14px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   background: transparent;
-  color: var(--text-secondary);
+  color: #111;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 900;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color var(--t-fast), border-color var(--t-fast);
+  transition: transform 0.2s, box-shadow 0.2s;
   white-space: nowrap;
 }
-.tab:hover { color: var(--text-primary); }
-.tab.active { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--accent); }
+.tab:hover:not(.active) {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
+.tab.active { color: #fff; background: #111; box-shadow: none; }
 .tab .n {
   font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  min-width: 20px;
+  font-weight: 900;
+  padding: 0;
+  min-width: auto;
   text-align: center;
-  border-radius: var(--r-pill);
-  background: var(--bg-3);
-  color: var(--text-tertiary);
+  border-radius: 0;
+  background: transparent;
+  color: #111;
   font-variant-numeric: tabular-nums;
 }
-.tab.active .n { background: var(--accent-soft); color: var(--accent); }
+.tab.active .n { background: transparent; color: #fff; }
 
 .trash-hint {
   padding: 12px 16px;
   margin-bottom: 16px;
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
-  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.72);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.55;
@@ -324,7 +325,7 @@ function fmtTime(v) {
 .spinner {
   width: 28px; height: 28px; margin: 0 auto 12px;
   border-radius: 50%;
-  border: 3px solid var(--border);
+  border: 3px solid var(--border-color, #111);
   border-top-color: var(--accent);
   animation: spin 0.8s linear infinite;
 }
@@ -332,12 +333,13 @@ function fmtTime(v) {
 .empty-icon {
   width: 64px; height: 64px;
   margin: 0 auto 16px;
-  border-radius: var(--r-md);
-  background: var(--bg-3);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   display: flex; align-items: center; justify-content: center;
-  color: var(--text-tertiary);
+  color: #111;
 }
-.empty-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.empty-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 900; color: #111; }
 .empty-card p, .loading-card p { margin: 0 0 18px; color: var(--text-tertiary); font-size: 14px; }
 
 .rom-table { padding: 6px; }
@@ -347,60 +349,61 @@ function fmtTime(v) {
   gap: 16px;
   align-items: center;
   padding: 14px 16px;
-  border-radius: var(--r-md);
+  border-radius: 7px;
   transition: background var(--t-fast);
 }
 .trow.trow-trash {
   grid-template-columns: 40px minmax(0, 1fr) 110px 100px 150px 200px;
 }
-.trow:not(.trow-head):hover { background: var(--bg-3); }
+.trow:not(.trow-head):hover { background: rgba(17, 17, 17, 0.06); }
 .trow-head {
-  font-size: 12px; font-weight: 500; color: var(--text-tertiary);
+  font-size: 12px; font-weight: 900; color: #111;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border-color, #111);
   border-radius: 0;
 }
 .col-check { display: flex; align-items: center; }
-.pdot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.pdot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
 .col-title { min-width: 0; }
 .rt {
-  font-size: 14px; font-weight: 600;
-  color: var(--text-primary);
+  font-size: 14px; font-weight: 900;
+  color: #111;
   display: inline-flex; align-items: center; gap: 6px;
   max-width: 100%;
   overflow: hidden;
   cursor: text;
-  border-radius: 4px;
+  border-radius: 7px;
   padding: 2px 4px;
   margin: -2px -4px;
   transition: background var(--t-fast);
 }
-.rt:hover { background: var(--bg-3); }
+.rt:hover { background: rgba(17, 17, 17, 0.06); }
 .rt:hover .rt-pen { opacity: 1; }
 .rt-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .rt-pen { opacity: 0; flex-shrink: 0; color: var(--text-tertiary); transition: opacity var(--t-fast); }
 .rt-edit { padding: 0; }
 .rt-input {
   width: 100%;
-  font-size: 14px; font-weight: 600;
+  font-size: 14px; font-weight: 900;
   font-family: inherit;
-  color: var(--text-primary);
-  background: var(--bg-1);
-  border: 1px solid var(--accent);
-  border-radius: 6px;
+  color: #111;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   padding: 4px 8px;
   outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: none;
 }
 .rf { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plat-badge {
   --pc: var(--accent);
   display: inline-flex; align-items: center;
   padding: 3px 10px;
-  border-radius: var(--r-pill);
+  border-radius: 7px;
   font-size: 11px;
-  font-weight: 600;
-  background: color-mix(in srgb, var(--pc) 14%, transparent);
+  font-weight: 900;
+  background: #fff;
+  border: 2px solid var(--pc);
   color: var(--pc);
 }
 .muted { color: var(--text-secondary); font-size: 13px; }
@@ -412,24 +415,24 @@ function fmtTime(v) {
 .track {
   position: relative;
   width: 40px; height: 24px;
-  border-radius: 12px;
-  background: var(--bg-3);
-  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   transition: background var(--t), border-color var(--t);
 }
 .thumb {
   position: absolute;
   top: 2px; left: 2px;
-  width: 18px; height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: var(--shadow-xs);
+  width: 16px; height: 16px;
+  background: #111;
+  border-radius: 5px;
+  box-shadow: none;
   transition: transform var(--t) var(--ease-spring);
 }
-.switch input:checked + .track { background: var(--success); border-color: var(--success); }
-.switch input:checked + .track .thumb { transform: translateX(16px); }
-.switch-label { font-size: 12px; color: var(--text-tertiary); font-weight: 500; min-width: 28px; }
-.switch input:checked ~ .switch-label { color: var(--success); }
+.switch input:checked + .track { background: #111; border-color: #111; }
+.switch input:checked + .track .thumb { background: #fff; transform: translateX(16px); }
+.switch-label { font-size: 12px; color: var(--text-tertiary); font-weight: 900; min-width: 28px; }
+.switch input:checked ~ .switch-label { color: #111; }
 
 @media (max-width: 820px) {
   .trow, .trow-head { grid-template-columns: 32px minmax(0, 1fr) 80px; gap: 10px; }

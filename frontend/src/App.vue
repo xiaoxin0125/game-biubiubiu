@@ -9,7 +9,8 @@
       </Transition>
     </router-view>
     <footer v-if="showChrome" class="app-footer">
-      <span>筱信游戏</span>
+      <span>MADE BY</span>
+      <a class="footer-author" href="https://www.hanxin.vip/" target="_blank" rel="noopener noreferrer">XIAOXIN</a>
       <span class="dot">·</span>
       <span class="mono">v1.0</span>
     </footer>
@@ -44,6 +45,12 @@ const showChrome = computed(() => !route.meta?.fullscreen)
   letter-spacing: 0.04em;
 }
 .app-footer .dot { color: var(--text-quaternary, #B4B4B8); }
+.app-footer .footer-author {
+  color: #111;
+  font-weight: 900;
+  text-decoration: none;
+}
+.app-footer .footer-author:hover { color: #111; text-decoration: underline; }
 .app-footer .mono {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   letter-spacing: 0.1em;

@@ -176,47 +176,49 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
 </script>
 
 <style scoped>
-.rooms-page { padding-bottom: 60px; }
+.rooms-page { max-width: 960px; padding-bottom: 60px; }
 
 .section { margin-bottom: 32px; }
 .section-title {
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 900;
+  color: #111;
   margin: 0 0 12px;
+  letter-spacing: 0.02em;
 }
 
-.list { display: flex; flex-direction: column; gap: 0; }
+.list { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-bottom-width: 0;
+  min-height: 96px;
+  padding: 18px 16px;
+  background: transparent;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   cursor: pointer;
-  transition: background var(--t-fast);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-.row:first-child { border-radius: var(--r-md) var(--r-md) 0 0; }
-.row:last-child { border-radius: 0 0 var(--r-md) var(--r-md); border-bottom-width: 1px; }
-.row:only-child { border-radius: var(--r-md); }
-.row:hover { background: var(--bg-3); }
+.row:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
 .row.offline { opacity: 0.6; }
-.row.is-mine { border-left: 3px solid var(--accent); }
+.row.is-mine { background: rgba(255, 255, 255, 0.44); }
 
 .row-main { flex: 1; min-width: 0; }
 .row-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   flex-wrap: wrap;
 }
 .name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 900;
+  color: #111;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -239,31 +241,36 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
   flex-wrap: wrap;
 }
 .meta-item { display: inline-flex; align-items: center; gap: 6px; }
-.pc-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.pc-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
 .meta-code {
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--bg-2);
-  color: var(--text-secondary);
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
+  color: #111;
   letter-spacing: 0.05em;
 }
 
 .row-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-.state {
-  padding: 24px;
+.state,
+.empty-state {
+  padding: 40px 24px;
   text-align: center;
   color: var(--text-tertiary);
   font-size: 13px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
 }
 .spinner {
   display: inline-block;
   width: 14px; height: 14px;
   margin-right: 6px;
   border-radius: 50%;
-  border: 2px solid var(--border-strong);
+  border: 2px solid var(--border-color, #111);
   border-top-color: var(--accent);
   animation: spin 0.7s linear infinite;
   vertical-align: -3px;
@@ -274,6 +281,6 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
   .page-head { flex-direction: column; align-items: stretch; }
   .page-head-actions { flex-direction: row; gap: 8px; }
   .row { flex-direction: column; align-items: stretch; }
-  .row-actions { justify-content: flex-start; }
+  .row-actions { justify-content: flex-start; flex-wrap: wrap; }
 }
 </style>

@@ -176,7 +176,7 @@ async function submit() {
 <style scoped>
 .mask {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.38);
+  background: rgba(17, 17, 17, 0.28);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   z-index: 300;
@@ -192,30 +192,30 @@ async function submit() {
   max-height: 90vh;
   overflow-y: auto;
   padding: 24px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  box-shadow: 6px 6px 0 var(--border-color, #111);
   animation: popIn 0.2s var(--ease-spring);
 }
-@keyframes popIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes popIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 .dh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
-.dh h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.dh h3 { margin: 0; font-size: 18px; font-weight: 900; color: #111; }
 .form { display: flex; flex-direction: column; gap: 14px; }
 
 .room-hint {
   padding: 10px 14px;
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   font-size: 12px;
   color: var(--text-secondary);
 }
 .room-hint .code {
   font-family: var(--mono-stack);
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 900;
+  color: #111;
   letter-spacing: 0.08em;
   margin-left: 4px;
 }
@@ -224,9 +224,9 @@ async function submit() {
 .rom-list {
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
 }
 .rom-row {
   width: 100%;
@@ -235,51 +235,70 @@ async function submit() {
   align-items: center;
   padding: 10px 14px;
   border: none;
+  border-bottom: 2px solid var(--border-color, #111);
   background: transparent;
-  color: var(--text-primary);
+  color: #111;
   font-family: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: background var(--t-fast);
-  border-bottom: 1px solid var(--border);
+  transition: background var(--t-fast), color var(--t-fast);
 }
 .rom-row:last-child { border-bottom: none; }
-.rom-row:hover { background: var(--bg-3); }
-.rom-row.selected { background: var(--accent-soft); color: var(--accent); }
-.rt { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rp { color: var(--text-tertiary); font-size: 11px; margin-left: 8px; flex-shrink: 0; }
-.rom-empty { padding: 14px; font-size: 12px; color: var(--text-tertiary); text-align: center; }
+.rom-row:hover { background: rgba(17, 17, 17, 0.06); }
+.rom-row.selected { background: #111; color: #fff; }
+.rom-row.selected .rp { color: rgba(255, 255, 255, 0.78); }
+.rt { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp { color: var(--text-tertiary); font-size: 11px; margin-left: 8px; flex-shrink: 0; font-weight: 900; }
+.rom-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+}
 .rom-warn {
   padding: 8px 12px;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   color: var(--warn);
   font-size: 12px;
+  font-weight: 800;
 }
 
-.opt { display: flex; gap: 14px; align-items: center; cursor: pointer; }
+.opt {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  cursor: pointer;
+  padding: 12px 14px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.46);
+}
 .sw { position: relative; flex-shrink: 0; }
 .sw input { opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; margin: 0; cursor: pointer; }
 .track {
   position: relative; display: block;
   width: 40px; height: 24px;
-  border-radius: 12px;
-  background: var(--bg-3);
-  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   transition: all var(--t);
 }
 .thumb {
   position: absolute; top: 2px; left: 2px;
-  width: 18px; height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: var(--shadow-xs);
+  width: 16px; height: 16px;
+  background: #111;
+  border-radius: 5px;
+  box-shadow: none;
   transition: transform var(--t) var(--ease-spring);
 }
-.sw input:checked + .track { background: var(--success); border-color: var(--success); }
-.sw input:checked + .track .thumb { transform: translateX(16px); }
-.pt { font-size: 14px; font-weight: 600; }
+.sw input:checked + .track { background: #111; border-color: #111; }
+.sw input:checked + .track .thumb { background: #fff; transform: translateX(16px); }
+.pt { font-size: 14px; font-weight: 900; color: #111; }
 .ps { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
 .pw-area { display: flex; flex-direction: column; gap: 8px; }
@@ -287,20 +306,22 @@ async function submit() {
 .pw-badge {
   display: inline-flex; align-items: center;
   padding: 3px 10px;
-  border-radius: var(--r-pill);
-  font-size: 11px; font-weight: 600;
-  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-radius: 7px;
+  font-size: 11px; font-weight: 900;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   color: var(--success);
 }
-.pw-badge-clear { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.pw-badge-clear { color: var(--warn); }
 
 .err {
   padding: 10px 12px;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--error) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-radius: 7px;
+  background: #fff;
+  border: 2px solid var(--border-color, #111);
   color: var(--error);
   font-size: 13px;
+  font-weight: 800;
   text-align: center;
 }
 .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }

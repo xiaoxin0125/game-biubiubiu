@@ -41,7 +41,7 @@
           </div>
         </template>
         <template v-else>
-          <router-link to="/auth" class="btn btn-primary btn-sm">登录</router-link>
+          <router-link to="/auth" class="header-login">登录</router-link>
         </template>
       </div>
     </div>
@@ -108,11 +108,10 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   position: sticky;
   top: 0;
   z-index: 50;
-  background: var(--glass-bg);
+  background: rgba(255, 247, 237, 0.88);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--glass-border);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+  box-shadow: none;
 }
 .inner {
   max-width: 960px;
@@ -129,11 +128,13 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   align-items: center;
   gap: 10px;
   text-decoration: none;
-  color: var(--text-primary);
+  color: #111;
+  transition: transform 0.2s;
 }
+.brand:hover { color: #111; transform: translate(-1px, -1px); }
 .brand-text {
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: -0.03em;
 }
 
@@ -143,50 +144,81 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   align-items: center;
   height: 34px;
   padding: 0 14px;
-  color: var(--text-secondary);
+  border: 2px solid transparent;
+  border-radius: 7px;
+  color: #111;
+  background: transparent;
   font-size: 14px;
-  font-weight: 700;
-  border-radius: var(--r-pill);
-  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+  font-weight: 900;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
 }
-.nav-item:hover { color: var(--accent); text-decoration: none; background: var(--accent-soft); transform: translateY(-1px); }
+.nav-item:hover {
+  color: #111;
+  text-decoration: none;
+  border-color: var(--border-color, #111);
+}
 .nav-item.active {
-  color: #fff;
-  background: var(--accent);
-  box-shadow: var(--shadow-accent-sm);
+  color: #ffffff;
+  background: #111;
+  border-color: #111;
+  box-shadow: none;
 }
 
 .header-right { display: flex; align-items: center; gap: 8px; }
+.header-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: transparent;
+  color: #111;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.header-login:hover {
+  color: #111;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
 
 .user-menu { position: relative; }
 .user-chip {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 8px 0 3px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-2);
-  color: var(--text-primary);
+  height: 34px;
+  padding: 0 10px 0 4px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: #111;
   font-family: inherit;
   font-size: 13px;
+  font-weight: 900;
   cursor: pointer;
-  transition: border-color var(--t-fast) var(--ease-out);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
-.user-chip:hover { border-color: var(--text-tertiary); }
-.user-chip svg { color: var(--text-tertiary); }
+.user-chip:hover {
+  border-color: var(--border-color, #111);
+}
+.user-chip svg { color: #111; }
 
 .avatar {
-  width: 22px; height: 22px;
-  border-radius: 4px;
-  background: var(--accent);
-  color: #fff;
+  width: 24px; height: 24px;
+  border-radius: 7px;
+  border: 2px solid #111;
+  background: #fff;
+  color: #111;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 900;
 }
 .user-name {
   max-width: 120px;
@@ -198,13 +230,13 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 .menu {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   min-width: 220px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   padding: 6px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
   z-index: 60;
 }
 .menu-head { padding: 8px 10px 10px; }
@@ -215,18 +247,19 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 .menu-item {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 10px;
   text-align: left;
   border: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: #111;
   font-size: 13px;
   font-family: inherit;
+  font-weight: 800;
   cursor: pointer;
-  border-radius: 4px;
-  transition: background var(--t-fast) var(--ease-out);
+  border-radius: 7px;
+  transition: background 0.2s;
 }
-.menu-item:hover { background: var(--bg-2); }
+.menu-item:hover { background: rgba(17, 17, 17, 0.08); }
 .menu-item-meta {
   float: right;
   color: var(--text-tertiary);

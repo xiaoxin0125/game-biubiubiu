@@ -2,20 +2,36 @@
   <div class="gallery-page container">
     <section class="blog-hero">
       <div class="hero-profile">
-        <span class="hero-logo">筱</span>
         <div>
           <p class="hero-kicker">RETRO GAME LIBRARY</p>
           <h1>{{ settings.siteTitle }}</h1>
           <p>{{ settings.siteSubtitle || '把经典游戏整理成一页温暖、清爽、好访问的线上收藏夹。' }}</p>
         </div>
       </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-art-card hero-art-card-main">
+          <div class="hero-art-screen">
+            <span class="hero-art-pixel"></span>
+            <span class="hero-art-pixel"></span>
+            <span class="hero-art-pixel"></span>
+          </div>
+          <div class="hero-art-controls">
+            <span class="hero-art-dpad"></span>
+            <span class="hero-art-dot"></span>
+            <span class="hero-art-dot hero-art-dot-alt"></span>
+          </div>
+        </div>
+        <div class="hero-art-card hero-art-card-mini">ROM</div>
+        <div class="hero-art-spark hero-art-spark-a"></div>
+        <div class="hero-art-spark hero-art-spark-b"></div>
+      </div>
       <div class="hero-actions">
         <div class="search blog-search">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input v-model="query" placeholder="搜索游戏" aria-label="搜索" />
         </div>
-        <router-link v-if="isAuthed" to="/my" class="btn btn-primary">上传 ROM</router-link>
-        <router-link v-else to="/auth?mode=register" class="btn btn-primary">注册</router-link>
+        <router-link v-if="isAuthed" to="/my" class="tab action-tab">上传 ROM</router-link>
+        <router-link v-else to="/auth?mode=register" class="tab action-tab">注册</router-link>
       </div>
     </section>
 
@@ -63,13 +79,13 @@
       <h3>{{ query ? '没有匹配结果' : '游戏库为空' }}</h3>
       <p v-if="!query">{{ isAuthed ? '上传你的第一个 ROM' : '登录后可以上传自己的 ROM' }}</p>
       <p v-else>换个关键词试试</p>
-      <router-link v-if="!query && isAuthed" to="/my" class="btn btn-primary">去上传</router-link>
-      <router-link v-if="!query && !isAuthed" to="/auth" class="btn btn-primary">登录 / 注册</router-link>
-      <button v-if="query" class="btn" @click="query = ''">清除搜索</button>
+      <router-link v-if="!query && isAuthed" to="/my" class="tab action-tab">去上传</router-link>
+      <router-link v-if="!query && !isAuthed" to="/auth" class="tab action-tab">登录 / 注册</router-link>
+      <button v-if="query" class="tab action-tab" @click="query = ''">清除搜索</button>
     </div>
     <div v-else class="rom-card-grid">
       <article
-        v-for="rom in filtered"
+        v-for="rom in pagedRoms"
         :key="rom.id"
         class="rom-card"
         tabindex="0"
@@ -109,6 +125,23 @@
         </button>
       </article>
     </div>
+    <nav v-if="!loading && filtered.length > pageSize" class="pagination" aria-label="ROM 分页">
+      <button class="tab page-btn" type="button" :disabled="page <= 1" @click="page -= 1">‹ 上一页</button>
+      <template v-for="(item, index) in pageItems" :key="`${item}-${index}`">
+        <span v-if="item === 'ellipsis'" class="pagination-ellipsis">···</span>
+        <button
+          v-else
+          class="tab page-btn page-number"
+          :class="{ active: item === page }"
+          type="button"
+          @click="page = item"
+        >
+          {{ item }}
+        </button>
+      </template>
+      <button class="tab page-btn" type="button" :disabled="page >= pageCount" @click="page += 1">下一页 ›</button>
+      <button class="tab page-btn" type="button" @click="jumpToPage">跳转 »</button>
+    </nav>
 
     <VersionPickerDialog
       v-if="pickerRom"
@@ -138,6 +171,8 @@ const favoriteRoms = ref([])
 const loading = ref(true)
 const query = ref('')
 const activeTab = ref('all')
+const page = ref(1)
+const pageSize = 10
 
 async function loadPublic() {
   loading.value = true
@@ -187,6 +222,34 @@ const filtered = computed(() => {
   if (q) list = list.filter((r) => r.title.toLowerCase().includes(q))
   return [...list].sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
 })
+const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
+const pagedRoms = computed(() => {
+  const start = (page.value - 1) * pageSize
+  return filtered.value.slice(start, start + pageSize)
+})
+const pageItems = computed(() => {
+  const count = pageCount.value
+  const current = page.value
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1)
+
+  const middle = [current - 1, current, current + 1]
+    .filter((n) => n > 1 && n < count)
+  const items = [1, ...middle, 'ellipsis', count]
+  return items.filter((item, index) => items.indexOf(item) === index)
+})
+
+watch([query, activeTab], () => { page.value = 1 })
+watch(pageCount, (count) => {
+  if (page.value > count) page.value = count
+})
+
+function jumpToPage() {
+  const input = prompt(`跳转到第几页？1 - ${pageCount.value}`)
+  if (!input) return
+  const next = Number.parseInt(input, 10)
+  if (!Number.isFinite(next)) return
+  page.value = Math.min(Math.max(next, 1), pageCount.value)
+}
 
 async function toggleFavorite(rom) {
   const prev = !!rom.isFavorite
@@ -243,14 +306,14 @@ function onVersionPicked(v) {
 <style scoped>
 .gallery-page {
   max-width: 960px;
-  padding-bottom: 72px;
 }
 
 .blog-hero {
   position: relative;
   margin: 28px 0 26px;
   padding: 34px;
-  border: 1px solid var(--border);
+  min-height: 238px;
+  border: 2px solid #111;
   border-radius: var(--r-xl);
   background: radial-gradient(circle at 90% 10%, rgba(245, 158, 11, 0.20), transparent 28%), linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 247, 237, 0.88));
   box-shadow: var(--shadow-md);
@@ -266,26 +329,116 @@ function onVersionPicked(v) {
   pointer-events: none;
 }
 .hero-profile,
-.hero-actions { position: relative; z-index: 1; }
+.hero-actions,
+.hero-art { position: relative; z-index: 1; }
 .hero-profile {
   display: flex;
   align-items: center;
   gap: 18px;
+  max-width: 570px;
 }
-.hero-logo {
-  width: 72px;
+.hero-art {
+  position: absolute;
+  right: 38px;
+  top: 50%;
+  width: 230px;
+  height: 168px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.hero-art-card {
+  position: absolute;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 5px 5px 0 var(--border-color, #111);
+}
+.hero-art-card-main {
+  inset: 18px 18px 10px 18px;
+  padding: 18px;
+  transform: rotate(-3deg);
+}
+.hero-art-screen {
   height: 72px;
-  border-radius: 22px;
+  border: 2px solid #111;
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 88, 12, 0.06)),
+    #fff7ed;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: end;
+  gap: 8px;
+  padding: 14px;
+}
+.hero-art-pixel {
+  display: block;
+  height: 18px;
+  border: 2px solid #111;
+  border-radius: 6px;
   background: var(--accent-gradient);
-  color: #fff;
-  display: inline-flex;
+}
+.hero-art-pixel:nth-child(2) { height: 34px; background: #f97316; }
+.hero-art-pixel:nth-child(3) { height: 26px; background: #facc15; }
+.hero-art-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.hero-art-dpad {
+  position: relative;
+  width: 34px;
+  height: 34px;
+}
+.hero-art-dpad::before,
+.hero-art-dpad::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 5px;
+  background: #111;
+  transform: translate(-50%, -50%);
+}
+.hero-art-dpad::before { width: 34px; height: 12px; }
+.hero-art-dpad::after { width: 12px; height: 34px; }
+.hero-art-dot {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #111;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 24px 0 0 #f59e0b;
+}
+.hero-art-dot-alt { display: none; }
+.hero-art-card-mini {
+  right: 0;
+  top: 0;
+  width: 76px;
+  height: 46px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
-  font-weight: 800;
-  box-shadow: var(--shadow-glow);
-  flex-shrink: 0;
+  border-radius: 14px;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  transform: rotate(7deg);
 }
+.hero-art-spark {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #111;
+  border-radius: 5px;
+  background: #facc15;
+  transform: rotate(16deg);
+}
+.hero-art-spark-a { left: 6px; top: 16px; }
+.hero-art-spark-b { right: 16px; bottom: 0; background: #fb923c; transform: rotate(-12deg); }
 .hero-kicker {
   margin: 0 0 8px;
   font-size: 12px;
@@ -302,7 +455,7 @@ function onVersionPicked(v) {
 }
 .blog-hero p:last-child {
   margin: 12px 0 0;
-  max-width: 620px;
+  max-width: 520px;
   color: var(--text-secondary);
   font-size: 15px;
 }
@@ -321,7 +474,7 @@ function onVersionPicked(v) {
   height: 42px;
   padding: 0 14px;
   background: rgba(255, 255, 255, 0.88);
-  border: 1px solid var(--border-strong);
+  border: 2px solid #111;
   border-radius: var(--r-pill);
   color: var(--text-tertiary);
   min-width: 260px;
@@ -352,7 +505,7 @@ function onVersionPicked(v) {
   margin-bottom: 24px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 2px 12px;
+  padding: 2px 6px 12px 2px;
 }
 .tab {
   display: inline-flex;
@@ -360,38 +513,40 @@ function onVersionPicked(v) {
   gap: 6px;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  background: var(--bg-1);
-  color: var(--text-secondary);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: transparent;
+  color: #111;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 900;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
-  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
+  transition: transform 0.2s, box-shadow 0.2s;
   white-space: nowrap;
 }
-.tab:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); transform: translateY(-1px); }
+.tab:hover:not(:disabled) {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
 .tab.active {
-  color: #fff;
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: var(--shadow-glow);
+  color: #ffffff;
+  background: #111;
+  box-shadow: none;
 }
 .tab:disabled { opacity: 0.45; cursor: not-allowed; }
 .tab .n {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 900;
   padding: 1px 7px;
   min-width: 20px;
   text-align: center;
-  border-radius: var(--r-pill);
-  background: var(--bg-2);
-  color: var(--text-tertiary);
+  border-radius: 7px;
+  background: transparent;
+  color: #111;
   font-variant-numeric: tabular-nums;
 }
-.tab.active .n { background: rgba(255,255,255,0.22); color: #fff; }
+.tab.active .n { background: transparent; color: #ffffff; }
+.action-tab { height: 40px; text-decoration: none; }
 .tab-fav svg { color: var(--sys-yellow); }
 
 .rom-card-grid {
@@ -407,7 +562,7 @@ function onVersionPicked(v) {
   min-height: 100px;
   padding: 20px 16px;
   border: 2px solid var(--border-color, #111);
-  border-radius: 12px;
+  border-radius: 7px;
   overflow: hidden;
   cursor: pointer;
   outline: none;
@@ -524,6 +679,33 @@ function onVersionPicked(v) {
 .fav-btn:active { transform: scale(0.92); }
 
 .rom-card-skel { cursor: default; }
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.page-btn {
+  height: 38px;
+  min-width: 42px;
+  justify-content: center;
+}
+.page-number {
+  padding: 0 12px;
+}
+.pagination-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  min-width: 42px;
+  color: #111;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
 .blog-empty {
   margin: 24px auto 0;
   max-width: 520px;
@@ -535,9 +717,9 @@ function onVersionPicked(v) {
 
 @media (max-width: 768px) {
   .gallery-page { max-width: 100%; }
-  .blog-hero { margin-top: 18px; padding: 24px; }
-  .hero-profile { align-items: flex-start; }
-  .hero-logo { width: 58px; height: 58px; border-radius: 18px; font-size: 28px; }
+  .blog-hero { margin-top: 18px; padding: 24px; min-height: auto; }
+  .hero-profile { align-items: flex-start; max-width: none; }
+  .hero-art { display: none; }
   .hero-actions { align-items: stretch; }
   .search { flex: 1 1 100%; min-width: 0; }
   .rom-card-grid { grid-template-columns: 1fr; gap: 16px; }
