@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, createReadStream, statSync, unlinkSync } from 'node:fs'
@@ -12,9 +12,11 @@ import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
+import { assertInsideRoot } from '../storage.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
+const USER_UPLOAD_QUOTA_BYTES = Number(process.env.USER_UPLOAD_QUOTA_BYTES) || 2 * 1024 * 1024 * 1024
 const ALLOWED_PLATFORMS = new Set([
   'arcade',
   'nes', 'famicom', 'fds', 'sfc', 'snes', 'gb', 'gbc', 'gba',
@@ -107,6 +109,27 @@ async function favoriteSetFor(user, romIds) {
     .from(favorites)
     .where(and(eq(favorites.userId, user.id), inArray(favorites.romId, romIds)))
   return new Set(rows.map((r) => r.romId))
+}
+
+async function usedUploadBytes(userId) {
+  const [row] = await db.select({ total: sum(roms.fileSize) })
+    .from(roms)
+    .where(and(eq(roms.userId, userId), eq(roms.status, STATUS.normal)))
+  return Number(row?.total || 0)
+}
+
+function checkedUploadPath(...parts) {
+  return assertInsideRoot(UPLOADS_DIR, join(UPLOADS_DIR, ...parts))
+}
+
+function safeUnlink(root, filePath) {
+  const checked = assertInsideRoot(root, filePath)
+  unlinkSync(checked)
+}
+
+function openReadStream(root, filePath) {
+  const checked = assertInsideRoot(root, filePath)
+  return { path: checked, stat: statSync(checked), stream: createReadStream(checked) }
 }
 
 romRoutes.get('/mine', requireAuth, async (c) => {
@@ -275,6 +298,12 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   const file = body.file
   if (!file || typeof file === 'string') return c.json({ error: '未收到文件' }, 400)
   if (file.size > MAX_SIZE) return c.json({ error: `文件超过 ${Math.round(MAX_SIZE / 1024 / 1024)}MB` }, 413)
+  if (user.role !== 'admin') {
+    const used = await usedUploadBytes(user.id)
+    if (used + file.size > USER_UPLOAD_QUOTA_BYTES) {
+      return c.json({ error: `用户上传总量超过 ${Math.round(USER_UPLOAD_QUOTA_BYTES / 1024 / 1024)}MB` }, 413)
+    }
+  }
 
   const platform = String(body.platform || '')
   if (!ALLOWED_PLATFORMS.has(platform)) return c.json({ error: '不支持的平台' }, 400)
@@ -304,11 +333,11 @@ romRoutes.post('/upload', requireAuth, async (c) => {
     }
   }
 
-  const userDir = join(UPLOADS_DIR, String(user.id), platform)
+  const userDir = checkedUploadPath(String(user.id), platform)
   mkdirSync(userDir, { recursive: true })
   const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
   const storedName = `${randomUUID()}${safeExt}`
-  const filePath = join(userDir, storedName)
+  const filePath = assertInsideRoot(userDir, join(userDir, storedName))
   const buf = Buffer.from(await file.arrayBuffer())
   await writeFile(filePath, buf)
 
@@ -423,10 +452,10 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
     // save-state files
     const states = await db.select().from(saveStates).where(eq(saveStates.romId, t.id))
     for (const s of states) {
-      try { unlinkSync(s.filePath) } catch {}
+      try { safeUnlink(resolve(process.env.SAVES_DIR || 'data/saves'), s.filePath) } catch {}
     }
     // the rom file itself
-    try { unlinkSync(t.filePath) } catch {}
+    try { safeUnlink(UPLOADS_DIR, t.filePath) } catch {}
   }
 
   // DB: children first, then the parent. FK cascades remove favorites/save_states/rooms.
@@ -457,12 +486,17 @@ async function serveRomFile(c) {
     return c.json({ error: 'forbidden' }, 403)
   }
 
-  const st = statSync(rom.filePath)
+  let file
+  try {
+    file = openReadStream(UPLOADS_DIR, rom.filePath)
+  } catch {
+    return c.json({ error: 'ROM 文件缺失' }, 404)
+  }
   c.header('Content-Type', 'application/octet-stream')
-  c.header('Content-Length', String(st.size))
+  c.header('Content-Length', String(file.stat.size))
   c.header('Content-Disposition', `inline; filename="${encodeURIComponent(rom.fileName)}"`)
   return stream(c, async (s) => {
-    const fileStream = createReadStream(rom.filePath)
+    const fileStream = file.stream
     await s.pipe(new ReadableStream({
       start(controller) {
         fileStream.on('data', (chunk) => controller.enqueue(chunk))

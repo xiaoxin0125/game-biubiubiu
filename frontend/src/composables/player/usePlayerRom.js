@@ -82,9 +82,9 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
         } catch {}
       }
       if (isRoomMode) {
-        const pw = sessionStorage.getItem(`room:${roomCode}:pw`) || ''
         try {
-          const room = await api.roomJoin(roomCode, pw)
+          const room = await api.roomJoin(roomCode, '')
+          if (room.roomTicket) api.roomStoreTicket(room.code, room.roomTicket)
           roomInfo.value = room
           if (!found && room.romId === id) {
             found = { id: room.romId, title: room.romTitle, platform: room.romPlatform, fileName: '', isPublic: false }

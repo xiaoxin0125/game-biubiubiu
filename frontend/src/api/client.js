@@ -85,6 +85,10 @@ export const api = {
   roomsMine:   () => request('/api/rooms/mine'),
   roomCreate:  (body) => request('/api/rooms', { method: 'POST', body }),
   roomJoin:    (code, password) => request(`/api/rooms/${encodeURIComponent(code)}/join`, { method: 'POST', body: { password: password || '' } }),
+  roomStoreTicket: (code, roomTicket) => {
+    if (!code || !roomTicket) return
+    sessionStorage.setItem(`room:${String(code).toUpperCase()}:ticket`, roomTicket)
+  },
   roomUpdate:  (code, patch) => request(`/api/rooms/${encodeURIComponent(code)}`, { method: 'PATCH', body: patch }),
   roomClose:   (code) => request(`/api/rooms/${encodeURIComponent(code)}`, { method: 'DELETE' }),
 

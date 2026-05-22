@@ -1,11 +1,12 @@
-// Hono websocket upgrade at /api/rooms/:code/ws — validates auth + room +
-// password, then hands the socket off to room-hub for signaling relay.
+// Hono websocket upgrade at /api/rooms/:code/ws — validates auth, room and
+// short-lived room tickets, then hands the socket off to room-hub for signaling relay.
 
 import { and, eq } from 'drizzle-orm'
-import bcrypt from 'bcryptjs'
 import { db } from '../db/index.js'
 import { rooms, roms, STATUS } from '../db/schema.js'
 import { currentUser, consumeWebSocketTicket } from '../middleware/auth.js'
+import { clientIp } from '../middleware/security.js'
+import { consumeRoomTicket } from '../room-tickets.js'
 import { getSetting } from './settings.js'
 import { consumeRateLimit } from '../middleware/rate-limit.js'
 import { effectiveMaxPlayersForRom } from '../rom-players.js'
@@ -20,9 +21,10 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
     '/api/rooms/:code/ws',
     upgradeWebSocket(async (c) => {
       const code = (c.req.param('code') || '').toUpperCase()
-      const password = c.req.query('password') || ''
+      const roomTicket = c.req.query('roomTicket') || ''
       const ticket = c.req.query('ticket') || ''
       const user = await currentUser(c) || await consumeWebSocketTicket(ticket)
+      const roomTicketEntry = consumeRoomTicket(roomTicket, code)
 
       const row = (await db.select({
         room: rooms,
@@ -36,18 +38,18 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
 
       let peer = null
       let rejectReason = null
-      const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() || c.req.header('x-real-ip') || 'unknown'
+      const ip = clientIp(c)
       const connectLimit = consumeRateLimit(`ws-connect:${ip}:${code}`, { windowMs: 60_000, max: 20 })
       if (!connectLimit.ok) rejectReason = 'rate-limited'
       const netplayEnabled = await getSetting('netplayEnabled', '1')
-      // Anonymous visitors may spectate rooms; private rooms still require the
-      // password below. Only authenticated non-host players can receive control.
+      // Private rooms require a short-lived ticket from /join unless the caller
+      // is the host or an admin. Room passwords never travel on the WS URL.
       const isHostOrAdmin = !!user && (user.id === roomRow?.hostUserId || user.role === 'admin')
+      const hasValidRoomTicket = !!roomTicketEntry?.canJoin
       if (netplayEnabled !== '1' && user?.role !== 'admin') rejectReason = 'netplay-disabled'
       else if (!roomRow || roomRow.closedAt) rejectReason = 'room-not-found'
-      else if (roomRow.passwordHash && !isHostOrAdmin) {
-        const ok = await bcrypt.compare(password, roomRow.passwordHash)
-        if (!ok) rejectReason = 'bad-password'
+      else if (roomRow.passwordHash && !isHostOrAdmin && !hasValidRoomTicket) {
+        rejectReason = 'bad-room-ticket'
       }
 
       return {

@@ -119,16 +119,21 @@ pcsx_rearmed.wasm
 | `NODE_ENV` | 无 | 建议生产设置为 `production` |
 | `DATABASE_URL` | `mysql://games:games@127.0.0.1:3306/games_online` | MySQL 连接串 |
 | `ADMIN_USERNAME` | `admin` | 首次初始化管理员用户名，仅数据库为空时生效 |
-| `ADMIN_PASSWORD` | `admin123` | 首次初始化管理员密码，仅数据库为空时生效 |
+| `ADMIN_PASSWORD` | 开发默认 `admin123-dev`，生产无默认 | 首次初始化管理员密码；生产环境必须设置且至少 12 位 |
+| `TRUST_PROXY` | `0` | 仅在可信反代后方设为 `1`，用于读取 `x-forwarded-*` |
+| `CSRF_ALLOWED_ORIGINS` | 空 | 额外允许发起写请求的 Origin，逗号分隔 |
+| `CSRF_REQUIRE_ORIGIN` | 生产默认要求 | 设为 `0` 可允许无 Origin 写请求，仅建议可信非浏览器客户端使用 |
 | `MAX_UPLOAD_BYTES` | `104857600` | 单个 ROM 上传上限，默认 100 MB |
 | `MAX_STATE_BYTES` | `8388608` | 单个云存档上传上限，默认 8 MB |
+| `USER_UPLOAD_QUOTA_BYTES` | `2147483648` | 普通用户 live ROM 总上传配额，默认 2 GB |
+| `MAX_SAVE_SLOT` | `9` | 云存档槽位最大编号，默认允许 0-9 |
 | `UPLOADS_DIR` | `data/uploads` | ROM 上传目录 |
 | `BIOS_DIR` | `data/bios` | BIOS 目录 |
 | `SAVES_DIR` | `data/saves` | 云存档目录 |
 | `CORES_DIR` | `data/cores` | libretro 核心目录 |
 | `VITE_API_TARGET` | `http://127.0.0.1:3000` | 仅 Vite 开发代理使用 |
 
-首次启动且数据库没有用户时，会自动创建管理员。生产环境务必在首次启动前设置 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，或者首次登录后立刻修改密码。
+首次启动且数据库没有用户时，会自动创建管理员。生产环境必须在首次启动前设置 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，其中 `ADMIN_PASSWORD` 至少 12 位；普通注册接口不会再创建管理员账号。
 
 ## 本地开发
 
@@ -291,9 +296,14 @@ NODE_ENV=production
 PORT=3000
 DATABASE_URL=mysql://games:请改成强密码@127.0.0.1:3306/games_online
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=请改成首次启动管理员密码
+ADMIN_PASSWORD=请改成至少12位首次启动管理员密码
+TRUST_PROXY=1
+CSRF_ALLOWED_ORIGINS=https://你的域名
+CSRF_REQUIRE_ORIGIN=1
 MAX_UPLOAD_BYTES=104857600
 MAX_STATE_BYTES=8388608
+USER_UPLOAD_QUOTA_BYTES=2147483648
+MAX_SAVE_SLOT=9
 UPLOADS_DIR=/www/wwwroot/game/data/uploads
 BIOS_DIR=/www/wwwroot/game/data/bios
 SAVES_DIR=/www/wwwroot/game/data/saves
@@ -307,7 +317,7 @@ EOF
 sudo chmod 600 /etc/games-online.env
 ```
 
-注意：`ADMIN_USERNAME` / `ADMIN_PASSWORD` 只在数据库首次为空时创建初始管理员。已经初始化后，修改这两个变量不会改已有管理员密码。
+注意：`ADMIN_USERNAME` / `ADMIN_PASSWORD` 只在数据库首次为空时创建初始管理员。已经初始化后，修改这两个变量不会改已有管理员密码。生产环境 `ADMIN_PASSWORD` 必须至少 12 位，否则服务会拒绝启动。
 
 ### 7. 安装依赖并构建前端
 

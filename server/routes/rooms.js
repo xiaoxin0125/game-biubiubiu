@@ -10,6 +10,8 @@ import { getSetting } from './settings.js'
 import { updateRoomPermissions, isHostOnline, broadcastRoomClosed } from '../room-hub.js'
 import { effectiveMaxPlayersForRom } from '../rom-players.js'
 import { rateLimit } from '../middleware/rate-limit.js'
+import { clientIp } from '../middleware/security.js'
+import { createRoomTicket } from '../room-tickets.js'
 
 const liveRoom = (extra) =>
   extra ? and(eq(rooms.status, STATUS.normal), isNull(rooms.closedAt), extra)
@@ -32,7 +34,7 @@ const roomJoinLimiter = rateLimit({
   name: 'room-join',
   windowMs: 60_000,
   max: 30,
-  key: (c) => `${c.req.header('x-forwarded-for')?.split(',')[0].trim() || 'unknown'}:${c.req.param('code')?.toUpperCase() || ''}`,
+  key: (c) => `${clientIp(c)}:${c.req.param('code')?.toUpperCase() || ''}`,
 })
 
 function serializeRoom(row, extras = {}) {
@@ -169,24 +171,29 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
 
   if (!row || row.r.closedAt || row.r.status !== STATUS.normal) return c.json({ error: '房间不存在或已关闭' }, 404)
   const me = await currentUser(c)
+  const isHostOrAdmin = !!me && (me.id === row.r.hostUserId || me.role === 'admin')
   if (me?.role !== 'admin' && (await getSetting('netplayEnabled', '1')) !== '1') {
     return c.json({ error: '管理员已关闭对战功能' }, 403)
   }
 
-  if (row.r.passwordHash) {
+  if (row.r.passwordHash && !isHostOrAdmin) {
     if (!password) return c.json({ error: '此房间需要密码', needsPassword: true }, 401)
     const ok = await bcrypt.compare(password, row.r.passwordHash)
     if (!ok) return c.json({ error: '密码不正确' }, 401)
   }
 
-  return c.json(serializeRoom(row.r, {
+  const room = serializeRoom(row.r, {
     hostUsername: row.hostUsername,
     romTitle: row.romTitle,
     romPlatform: row.romPlatform,
     maxPlayers: row.romMaxPlayers ?? null,
     effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, platform: row.romPlatform }),
     hostOnline: isHostOnline(code),
-  }))
+  })
+  return c.json({
+    ...room,
+    roomTicket: createRoomTicket({ code, userId: me?.id ?? null, canJoin: true }),
+  })
 })
 
 const patchSchema = z.object({

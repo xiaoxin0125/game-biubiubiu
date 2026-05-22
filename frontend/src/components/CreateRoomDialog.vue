@@ -128,7 +128,7 @@ async function submit() {
       allowPlay: allowPlay.value,
       password: password.value || undefined,
     })
-    if (password.value) sessionStorage.setItem(`room:${room.code}:pw`, password.value)
+    if (room.roomTicket) api.roomStoreTicket(room.code, room.roomTicket)
     emit('created', room)
   } catch (err) {
     error.value = err?.message || '创建失败'

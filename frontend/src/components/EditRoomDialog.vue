@@ -162,8 +162,7 @@ async function submit() {
       return
     }
     const updated = await api.roomUpdate(props.room.code, patch)
-    if (patch.password === null) sessionStorage.removeItem(`room:${props.room.code}:pw`)
-    else if (patch.password) sessionStorage.setItem(`room:${props.room.code}:pw`, patch.password)
+    if (updated.roomTicket) api.roomStoreTicket(props.room.code, updated.roomTicket)
     emit('updated', updated)
   } catch (err) {
     error.value = err?.message || '保存失败'

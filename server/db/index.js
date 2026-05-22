@@ -47,18 +47,27 @@ async function cleanupDuplicateSaveStates() {
   `)
 }
 
+const MIN_ADMIN_PASSWORD_LENGTH = 12
+
+function requireInitialAdminPassword() {
+  const password = process.env.ADMIN_PASSWORD
+  if (password && password.length >= MIN_ADMIN_PASSWORD_LENGTH) return password
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`ADMIN_PASSWORD must be set to at least ${MIN_ADMIN_PASSWORD_LENGTH} characters in production`)
+  }
+  console.warn(`[db] ADMIN_PASSWORD is not set strongly; using development-only default password`)
+  return 'admin123-dev'
+}
+
 async function seedAdminUser() {
   const [row] = await db.select({ n: sql`count(*)`.as('n') }).from(users)
   if (Number(row?.n || 0) > 0) return
 
   const username = process.env.ADMIN_USERNAME || 'admin'
-  const password = process.env.ADMIN_PASSWORD || 'admin123'
+  const password = requireInitialAdminPassword()
   const passwordHash = bcrypt.hashSync(password, 10)
 
   await db.insert(users).values({ username, passwordHash, role: 'admin' })
 
   console.log(`[db] seeded initial admin: username="${username}", role=admin`)
-  if (!process.env.ADMIN_PASSWORD) {
-    console.log('[db] using default password "admin123" — change it via the profile page or ADMIN_PASSWORD env')
-  }
 }

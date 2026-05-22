@@ -7,6 +7,7 @@ import { stream } from 'hono/streaming'
 import { db } from '../db/index.js'
 import { saveStates, roms, STATUS } from '../db/schema.js'
 import { requireAuth } from '../middleware/auth.js'
+import { assertInsideRoot } from '../storage.js'
 
 const liveSave = (extra) =>
   extra ? and(eq(saveStates.status, STATUS.normal), extra) : eq(saveStates.status, STATUS.normal)
@@ -15,6 +16,7 @@ const liveRom = (extra) =>
 
 const SAVES_DIR = resolve(process.env.SAVES_DIR || 'data/saves')
 const MAX_STATE_BYTES = Number(process.env.MAX_STATE_BYTES) || 8 * 1024 * 1024 // 8 MB
+const MAX_SAVE_SLOT = Number(process.env.MAX_SAVE_SLOT) || 9
 
 export const saveRoutes = new Hono()
 
@@ -26,6 +28,25 @@ function serialize(row) {
     size: row.fileSize,
     updatedAt: row.updatedAt,
   }
+}
+
+function normalizeSlot(value) {
+  const slot = Number(value || 0)
+  if (!Number.isInteger(slot) || slot < 0 || slot > MAX_SAVE_SLOT) return null
+  return slot
+}
+
+function checkedSavePath(...parts) {
+  return assertInsideRoot(SAVES_DIR, join(SAVES_DIR, ...parts))
+}
+
+function openSaveFile(filePath) {
+  const checked = assertInsideRoot(SAVES_DIR, filePath)
+  return { stat: statSync(checked), stream: createReadStream(checked) }
+}
+
+function removeSaveFile(filePath) {
+  unlinkSync(assertInsideRoot(SAVES_DIR, filePath))
 }
 
 // List all saves for the current user
@@ -40,21 +61,22 @@ saveRoutes.get('/mine', requireAuth, async (c) => {
 saveRoutes.get('/:romId', requireAuth, async (c) => {
   const me = c.get('user')
   const romId = Number(c.req.param('romId'))
-  const slot = Number(c.req.query('slot') || 0)
+  const slot = normalizeSlot(c.req.query('slot'))
+  if (slot === null) return c.json({ error: '存档槽位不合法' }, 400)
   const row = (await db.select().from(saveStates)
     .where(liveSave(and(eq(saveStates.userId, me.id), eq(saveStates.romId, romId), eq(saveStates.slot, slot))))
     .limit(1))[0]
   if (!row) return c.json({ error: '无存档' }, 404)
 
-  let st
-  try { st = statSync(row.filePath) }
+  let file
+  try { file = openSaveFile(row.filePath) }
   catch { return c.json({ error: '存档文件缺失' }, 404) }
 
   c.header('Content-Type', 'application/octet-stream')
-  c.header('Content-Length', String(st.size))
+  c.header('Content-Length', String(file.stat.size))
   c.header('X-Save-Updated-At', String(row.updatedAt instanceof Date ? Math.floor(row.updatedAt.getTime()/1000) : row.updatedAt))
   return stream(c, async (s) => {
-    const rs = createReadStream(row.filePath)
+    const rs = file.stream
     await s.pipe(new ReadableStream({
       start(controller) {
         rs.on('data', (chunk) => controller.enqueue(chunk))
@@ -73,7 +95,8 @@ saveRoutes.post('/:romId', requireAuth, async (c) => {
   }
   const me = c.get('user')
   const romId = Number(c.req.param('romId'))
-  const slot = Number(c.req.query('slot') || 0)
+  const slot = normalizeSlot(c.req.query('slot'))
+  if (slot === null) return c.json({ error: '存档槽位不合法' }, 400)
 
   // Validate ROM exists + accessible
   const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, romId))).limit(1))[0]
@@ -86,10 +109,10 @@ saveRoutes.post('/:romId', requireAuth, async (c) => {
   if (!buf.length) return c.json({ error: '空存档' }, 400)
   if (buf.length > MAX_STATE_BYTES) return c.json({ error: `存档超过 ${Math.round(MAX_STATE_BYTES/1024/1024)}MB` }, 413)
 
-  const userDir = join(SAVES_DIR, String(me.id))
+  const userDir = checkedSavePath(String(me.id))
   mkdirSync(userDir, { recursive: true })
   const fileName = `${romId}.s${slot}.state`
-  const filePath = join(userDir, fileName)
+  const filePath = assertInsideRoot(userDir, join(userDir, fileName))
   await writeFile(filePath, buf)
 
   await db.insert(saveStates).values({
@@ -121,12 +144,13 @@ saveRoutes.post('/:romId', requireAuth, async (c) => {
 saveRoutes.delete('/:romId', requireAuth, async (c) => {
   const me = c.get('user')
   const romId = Number(c.req.param('romId'))
-  const slot = Number(c.req.query('slot') || 0)
+  const slot = normalizeSlot(c.req.query('slot'))
+  if (slot === null) return c.json({ error: '存档槽位不合法' }, 400)
   const row = (await db.select().from(saveStates)
     .where(liveSave(and(eq(saveStates.userId, me.id), eq(saveStates.romId, romId), eq(saveStates.slot, slot))))
     .limit(1))[0]
   if (!row) return c.json({ ok: true })
-  try { unlinkSync(row.filePath) } catch {}
+  try { removeSaveFile(row.filePath) } catch {}
   await db.update(saveStates).set({ status: STATUS.deleted }).where(eq(saveStates.id, row.id))
   return c.json({ ok: true })
 })

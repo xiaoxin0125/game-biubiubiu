@@ -2,6 +2,8 @@ import { and, eq, gt, lt } from 'drizzle-orm'
 import { randomBytes } from 'node:crypto'
 import { db } from '../db/index.js'
 import { users, sessions, STATUS } from '../db/schema.js'
+import { clientIp, isSecureRequest } from './security.js'
+import { clearRoomTicketsForUser, cleanupRoomTickets } from '../room-tickets.js'
 
 const COOKIE_NAME = 'session'
 const DEFAULT_TTL_DAYS = 30
@@ -17,7 +19,7 @@ function newToken() {
 export async function createSession(c, userId) {
   const token = newToken()
   const expiresAt = new Date(Date.now() + TTL_MS)
-  const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() || null
+  const ip = clientIp(c)
   const userAgent = (c.req.header('user-agent') || '').slice(0, 512)
   await db.insert(sessions).values({ userId, token, ip, userAgent, expiresAt })
   setCookie(c, token, expiresAt)
@@ -57,6 +59,7 @@ export async function invalidateUserSessions(userId, c = null) {
   for (const [ticket, entry] of wsTickets.entries()) {
     if (entry.userId === userId) wsTickets.delete(ticket)
   }
+  clearRoomTicketsForUser(userId)
   if (c) clearCookie(c)
 }
 
@@ -107,15 +110,6 @@ function readCookie(c) {
   }
   return null
 }
-function isSecureRequest(c) {
-  const forwardedProto = c.req.header('x-forwarded-proto')?.split(',')[0].trim().toLowerCase()
-  if (forwardedProto) return forwardedProto === 'https'
-  const forwardedSsl = c.req.header('x-forwarded-ssl')?.toLowerCase()
-  if (forwardedSsl === 'on') return true
-  const url = new URL(c.req.url)
-  return url.protocol === 'https:'
-}
-
 function setCookie(c, token, expiresAt) {
   const maxAge = Math.floor((expiresAt.getTime() - Date.now()) / 1000)
   const attrs = [
@@ -148,6 +142,7 @@ export async function cleanupExpiredSessions() {
     console.error('[api] failed to cleanup expired sessions', err)
   }
   cleanupExpiredWebSocketTickets()
+  cleanupRoomTickets()
 }
 
 function cleanupExpiredWebSocketTickets() {

@@ -7,8 +7,6 @@ import { users, STATUS } from '../db/schema.js'
 import { createSession, destroyCurrentSession, currentUser, createWebSocketTicket, invalidateUserSessions } from '../middleware/auth.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin'
-
 const credentialsSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
   password: z.string().min(6).max(128),
@@ -34,8 +32,7 @@ authRoutes.post('/register', authLimiter, async (c) => {
   }
 
   const passwordHash = await bcrypt.hash(password, 10)
-  const role = username === ADMIN_USERNAME ? 'admin' : 'user'
-  const row = await insertAndFetch(users, { username, passwordHash, role }, eq(users.username, username))
+  const row = await insertAndFetch(users, { username, passwordHash, role: 'user' }, eq(users.username, username))
 
   await createSession(c, row.id)
   return c.json({ id: row.id, username: row.username, role: row.role })

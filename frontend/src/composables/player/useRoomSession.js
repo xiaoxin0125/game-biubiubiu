@@ -44,8 +44,8 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
 
   function connect() {
     if (!isRoomMode || signal) return signal
-    const password = sessionStorage.getItem(`room:${roomCode}:pw`) || ''
-    signal = useRoomSignal({ code: roomCode, password })
+    const roomTicket = sessionStorage.getItem(`room:${roomCode}:ticket`) || ''
+    signal = useRoomSignal({ code: roomCode, roomTicket })
 
     signal.on('welcome', (msg) => {
       signalMe.value = {

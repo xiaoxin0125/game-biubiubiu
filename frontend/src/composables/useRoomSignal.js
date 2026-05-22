@@ -5,7 +5,7 @@
 import { ref } from 'vue'
 import { api } from '../api/client.js'
 
-export function useRoomSignal({ code, password = '' }) {
+export function useRoomSignal({ code, roomTicket = '' }) {
   const connected = ref(false)
   const listeners = new Map()   // event → Set<fn>
   let ws = null
@@ -35,7 +35,7 @@ export function useRoomSignal({ code, password = '' }) {
     terminalClose = false
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const params = new URLSearchParams()
-    if (password) params.set('password', password)
+    if (roomTicket) params.set('roomTicket', roomTicket)
     try {
       const { ticket } = await api.webSocketTicket()
       if (ticket) params.set('ticket', ticket)

@@ -1,3 +1,5 @@
+import { clientIp } from './security.js'
+
 const buckets = new Map()
 
 function consumeBucket(bucketKey, { windowMs = 60_000, max = 60 } = {}) {
@@ -22,12 +24,6 @@ function consumeBucket(bucketKey, { windowMs = 60_000, max = 60 } = {}) {
 
 export function consumeRateLimit(key, options = {}) {
   return consumeBucket(String(key || 'unknown'), options)
-}
-
-function clientIp(c) {
-  return c.req.header('x-forwarded-for')?.split(',')[0].trim()
-    || c.req.header('x-real-ip')
-    || 'unknown'
 }
 
 export function rateLimit({ name = 'default', windowMs = 60_000, max = 60, key } = {}) {

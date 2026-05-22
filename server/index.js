@@ -15,6 +15,7 @@ import { installRoomsWebSocket } from './routes/rooms-ws.js'
 import { saveRoutes } from './routes/saves.js'
 import { publicSettingsRoutes, adminSettingsRoutes } from './routes/settings.js'
 import { cleanupExpiredSessions } from './middleware/auth.js'
+import { csrfProtection, securityHeaders } from './middleware/security.js'
 
 process.on('uncaughtException', (err) => {
   console.error('[api] uncaught exception', err)
@@ -31,6 +32,8 @@ const cleanupTimer = setInterval(cleanupExpiredSessions, 60 * 60 * 1000)
 cleanupTimer.unref?.()
 
 const app = new Hono()
+app.use('*', securityHeaders())
+app.use('/api/*', csrfProtection())
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 installRoomsWebSocket(app, upgradeWebSocket)
 
