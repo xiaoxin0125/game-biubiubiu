@@ -13,6 +13,7 @@
     "build": "npm --workspace frontend run build",
     "db:import:sqlite": "node server/db/import-sqlite-to-mysql.js",
     "preview": "npm --workspace frontend run preview",
+    "security:matrix": "node server/security-matrix.js",
     "start": "node server/index.js"
   },
   "dependencies": {

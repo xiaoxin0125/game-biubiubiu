@@ -16,7 +16,7 @@
           </div>
           <div>
             <label class="label">新密码</label>
-            <input v-model="newPassword" class="input" type="password" autocomplete="new-password" placeholder="至少 6 位" required />
+            <input v-model="newPassword" class="input" type="password" autocomplete="new-password" placeholder="至少 10 位，包含大小写字母和数字" required />
           </div>
           <div>
             <label class="label">确认新密码</label>
@@ -52,10 +52,14 @@ const error = ref('')
 const success = ref(false)
 const busy = ref(false)
 
+function validPassword(value) {
+  return value.length >= 10 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value)
+}
+
 async function submit() {
   error.value = ''
   success.value = false
-  if (newPassword.value.length < 6) { error.value = '新密码至少 6 位'; return }
+  if (!validPassword(newPassword.value)) { error.value = '新密码至少 10 位，并包含大小写字母和数字'; return }
   if (newPassword.value !== confirmPassword.value) { error.value = '两次输入的新密码不一致'; return }
   busy.value = true
   try {

@@ -15,6 +15,13 @@
       "when": 1779353600000,
       "tag": "0001_rom_max_players",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1779434200000,
+      "tag": "0002_audit_logs",
+      "breakpoints": true
     }
   ]
 }

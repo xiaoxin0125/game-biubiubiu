@@ -16,6 +16,7 @@ import { saveRoutes } from './routes/saves.js'
 import { publicSettingsRoutes, adminSettingsRoutes } from './routes/settings.js'
 import { cleanupExpiredSessions } from './middleware/auth.js'
 import { csrfProtection, securityHeaders } from './middleware/security.js'
+import { installErrorHandler, requestId } from './middleware/error-handler.js'
 
 process.on('uncaughtException', (err) => {
   console.error('[api] uncaught exception', err)
@@ -32,6 +33,8 @@ const cleanupTimer = setInterval(cleanupExpiredSessions, 60 * 60 * 1000)
 cleanupTimer.unref?.()
 
 const app = new Hono()
+installErrorHandler(app)
+app.use('*', requestId())
 app.use('*', securityHeaders())
 app.use('/api/*', csrfProtection())
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })

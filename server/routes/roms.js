@@ -13,6 +13,7 @@ import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { assertInsideRoot } from '../storage.js'
+import { audit } from '../audit.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
@@ -353,6 +354,12 @@ romRoutes.post('/upload', requireAuth, async (c) => {
     versionLabel,
   }, and(eq(roms.userId, user.id), eq(roms.filePath, filePath)))
 
+  await audit(c, {
+    action: 'rom.upload',
+    targetType: 'rom',
+    targetId: row.id,
+    metadata: { platform, fileSize: file.size, isPublic, parentRomId },
+  })
   return c.json(serialize(row))
 })
 
@@ -401,6 +408,15 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   if (updated?.parentRomId) {
     parent = (await db.select().from(roms).where(liveRom(eq(roms.id, updated.parentRomId))).limit(1))[0] || null
   }
+  await audit(c, {
+    action: 'rom.update',
+    targetType: 'rom',
+    targetId: id,
+    metadata: {
+      before: { title: rom.title, isPublic: Boolean(rom.isPublic), maxPlayers: rom.maxPlayers ?? null },
+      after: { title: updated.title, isPublic: Boolean(updated.isPublic), maxPlayers: updated.maxPlayers ?? null },
+    },
+  })
   return c.json(serialize(updated, null, { parentRom: parent }))
 })
 
@@ -441,6 +457,12 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
     await db.update(roms)
       .set({ status: STATUS.deleted })
       .where(inArray(roms.id, liveTargets.map((row) => row.id)))
+    await audit(c, {
+      action: 'rom.delete.soft',
+      targetType: 'rom',
+      targetId: id,
+      metadata: { affectedIds: liveTargets.map((row) => row.id) },
+    })
     return c.json({ ok: true, mode: 'soft', affectedCount: liveTargets.length })
   }
 
@@ -464,6 +486,12 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
   }
   await db.delete(roms).where(eq(roms.id, rom.id))
 
+  await audit(c, {
+    action: 'rom.delete.permanent',
+    targetType: 'rom',
+    targetId: id,
+    metadata: { purgedIds: targets.map((row) => row.id) },
+  })
   return c.json({ ok: true, mode: 'permanent', purgedCount: targets.length })
 })
 

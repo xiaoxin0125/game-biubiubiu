@@ -8,6 +8,7 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  bigint,
 } from 'drizzle-orm/mysql-core'
 
 export const STATUS = Object.freeze({
@@ -23,6 +24,23 @@ export const settings = mysqlTable('settings', {
   value: text('value').notNull(),
   updatedAt: ts('updated_at').$onUpdateFn(() => new Date()),
 })
+
+export const auditLogs = mysqlTable('audit_logs', {
+  id: bigint('id', { mode: 'number' }).primaryKey().autoincrement(),
+  actorUserId: int('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  actorUsername: varchar('actor_username', { length: 64 }),
+  action: varchar('action', { length: 80 }).notNull(),
+  targetType: varchar('target_type', { length: 64 }),
+  targetId: varchar('target_id', { length: 128 }),
+  ip: varchar('ip', { length: 64 }),
+  userAgent: varchar('user_agent', { length: 512 }),
+  metadata: text('metadata'),
+  createdAt: ts('created_at'),
+}, (t) => [
+  index('idx_audit_logs_actor').on(t.actorUserId),
+  index('idx_audit_logs_action').on(t.action),
+  index('idx_audit_logs_created').on(t.createdAt),
+])
 
 export const users = mysqlTable('users', {
   id: int('id').primaryKey().autoincrement(),

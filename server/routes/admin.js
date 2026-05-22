@@ -8,6 +8,7 @@ import { users, roms, rooms, STATUS } from '../db/schema.js'
 import { requireAdmin, invalidateUserSessions } from '../middleware/auth.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
+import { audit } from '../audit.js'
 
 export const adminRoutes = new Hono()
 
@@ -119,6 +120,12 @@ adminRoutes.delete('/users/:id', async (c) => {
       ))
     for (const room of affectedRooms) broadcastRoomClosed(room.code, { reason: 'host-deleted' })
   }
+  await audit(c, {
+    action: 'admin.user.delete',
+    targetType: 'user',
+    targetId: id,
+    metadata: { releasedUsername: victim.username, closedRooms: affectedRooms.length, romCount: ownedRomIds.length },
+  })
   return c.json({ ok: true, releasedUsername: victim.username, closedRooms: affectedRooms.length })
 })
 
@@ -134,6 +141,12 @@ adminRoutes.patch('/users/:id', async (c) => {
     .where(and(eq(users.id, id), eq(users.status, STATUS.normal))).limit(1))[0]
   if (!target) return c.json({ error: 'not found' }, 404)
   const updated = await updateAndFetch(users, patch, eq(users.id, id))
+  await audit(c, {
+    action: 'admin.user.update',
+    targetType: 'user',
+    targetId: id,
+    metadata: { before: { role: target.role }, after: { role: updated.role } },
+  })
   return c.json({
     id: updated.id,
     username: updated.username,

@@ -21,7 +21,7 @@
         </div>
         <div class="field">
           <label class="label">密码</label>
-          <input v-model="password" class="input" type="password" autocomplete="current-password" placeholder="至少 6 位" required />
+          <input v-model="password" class="input" type="password" autocomplete="current-password" placeholder="至少 10 位，包含大小写字母和数字" required />
         </div>
         <div v-if="error" class="err">{{ error }}</div>
         <button class="btn btn-primary btn-lg btn-submit" :disabled="submitting">
@@ -56,10 +56,16 @@ const password = ref('')
 const error = ref('')
 const submitting = ref(false)
 
+function validPassword(value) {
+  return value.length >= 10 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value)
+}
+
 async function submit() {
   error.value = ''
   if (username.value.length < 3) return (error.value = '用户名至少 3 位')
-  if (password.value.length < 6) return (error.value = '密码至少 6 位')
+  if (mode.value === 'register' && !validPassword(password.value)) {
+    return (error.value = '密码至少 10 位，并包含大小写字母和数字')
+  }
   submitting.value = true
   try {
     if (mode.value === 'login') await login(username.value, password.value)

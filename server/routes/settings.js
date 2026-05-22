@@ -4,6 +4,7 @@ import { db } from '../db/index.js'
 import { rooms, settings, STATUS } from '../db/schema.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { broadcastRoomClosed, updateGuestPlayPermissions } from '../room-hub.js'
+import { audit } from '../audit.js'
 
 // Keys exposed to anonymous clients
 const PUBLIC_KEYS = new Set(['siteTitle', 'siteSubtitle', 'netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled'])
@@ -68,6 +69,8 @@ adminSettingsRoutes.get('/', async (c) => c.json(await getAll()))
 adminSettingsRoutes.patch('/', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   if (!body || typeof body !== 'object') return c.json({ error: '格式不正确' }, 400)
+  const before = await getAll()
+  const changed = {}
   for (const [k, v] of Object.entries(body)) {
     if (!WRITABLE_KEYS.has(k)) continue
     // booleans/strings: coerce to string for storage
@@ -80,8 +83,16 @@ adminSettingsRoutes.patch('/', async (c) => {
       if (!val) continue
     }
     await upsert(k, val)
+    changed[k] = { before: before[k], after: val }
     if (k === 'guestPlayEnabled') updateGuestPlayPermissions(val === '1')
     if (k === 'netplayEnabled' && val !== '1') await closeOpenRooms('netplay-disabled')
+  }
+  if (Object.keys(changed).length) {
+    await audit(c, {
+      action: 'admin.settings.update',
+      targetType: 'settings',
+      metadata: { changed },
+    })
   }
   return c.json(await getAll())
 })
