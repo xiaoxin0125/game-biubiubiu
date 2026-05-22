@@ -33,6 +33,14 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
     signal?.sendChat(text)
   }
 
+  function applyRoomState(room) {
+    if (!room) return
+    if (typeof room.allowPlay === 'boolean') roomAllowPlay.value = room.allowPlay
+    if (Number.isFinite(Number(room.effectiveMaxPlayers || room.maxPlayers))) {
+      roomMaxPlayers.value = Number(room.effectiveMaxPlayers || room.maxPlayers)
+    }
+  }
+
   function roomClosedMessage(reason) {
     return ({
       'netplay-disabled': '管理员已关闭对战功能',
@@ -62,8 +70,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
       for (const p of msg.peers || []) signalPeers[p.id] = p
       if (!signalPeers[msg.peerId]) signalPeers[msg.peerId] = { ...signalMe.value, id: msg.peerId }
       signalChat.value = Array.isArray(msg.chat) ? msg.chat.slice(-50) : []
-      roomAllowPlay.value = msg.room?.allowPlay !== false
-      roomMaxPlayers.value = Number(msg.room?.effectiveMaxPlayers || msg.room?.maxPlayers || 4)
+      applyRoomState(msg.room)
       const hostPresent = msg.isHost || (msg.peers || []).some((p) => p.isHost)
       if (msg.isHost) connectionStatus.value = '等待玩家加入…'
       else connectionStatus.value = hostPresent ? '等待主机画面…' : '等待主机加入…'
@@ -86,10 +93,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
     signal.on('peers-updated', (msg) => {
       for (const id of Object.keys(signalPeers)) delete signalPeers[id]
       for (const p of msg.peers || []) signalPeers[p.id] = p
-      if (msg.room && typeof msg.room.allowPlay === 'boolean') roomAllowPlay.value = msg.room.allowPlay
-      if (msg.room && Number.isFinite(Number(msg.room.effectiveMaxPlayers || msg.room.maxPlayers))) {
-        roomMaxPlayers.value = Number(msg.room.effectiveMaxPlayers || msg.room.maxPlayers)
-      }
+      applyRoomState(msg.room)
       const nextMe = signalMe.value?.peerId ? signalPeers[signalMe.value.peerId] || null : null
       if (nextMe) {
         const nextIsGuest = !!nextMe.isGuest

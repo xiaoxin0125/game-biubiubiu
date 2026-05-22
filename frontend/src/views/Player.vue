@@ -46,7 +46,7 @@
         <EmulatorPortal
           v-if="rom && biosReady && (!isRoomMode || isHostMode)"
           ref="portalRef"
-          :core="platformInfo.core"
+          :core="activeCore"
           :rom="rom"
           :bios="bios"
           :retroarch-config="retroarchConfig"
@@ -141,7 +141,6 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { coreDisplayName } from '../constants/cores.js'
 import { getPlatform } from '../constants/platforms.js'
 import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildPlayerRetroarchConfig, buildRemotePlayersRetroarchConfig, buildRemotePlayerKeyMaps, TURBO_BUTTON_TARGETS } from '../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
@@ -251,6 +250,7 @@ const {
 
 const roomAllowsPlay = computed(() => (isRoomMode ? roomAllowPlay.value : roomInfo.value?.allowPlay !== false))
 const canShowVersionSwitch = computed(() => !isRoomMode || isHostMode.value === true)
+const activeCore = computed(() => platformInfo.value.core)
 const overlayPlatformInfo = computed(() => {
   if (romMeta.value) return platformInfo.value
   return {
@@ -258,7 +258,7 @@ const overlayPlatformInfo = computed(() => {
     color: '#6e6e73',
   }
 })
-const overlayCoreName = computed(() => romMeta.value ? coreDisplayName[platformInfo.value.core] : '')
+const overlayCoreName = computed(() => romMeta.value ? platformInfo.value.core : '')
 const canSaveState = computed(() => {
   if (!isAuthed.value) return false
   if (!isRoomMode) return true
@@ -494,6 +494,7 @@ watch(() => props.id, (now, prev) => {
   if (!prev || now === prev) return
   resetForRouteChange()
   booted.value = false
+  roomHostInputConfigSnapshot.value = null
   invitedRoomPeers.clear()
   loadMeta()
 })
