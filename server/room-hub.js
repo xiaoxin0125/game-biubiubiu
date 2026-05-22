@@ -59,17 +59,16 @@ export function isHostOnline(code) {
   return false
 }
 
-export function addPeer(code, { user, ws }) {
+export function addPeer(code, { user, ws, clientId = null }) {
   const room = rooms.get(code)
   if (!room) return null
 
-  // Authed users: dedupe any ghost socket from the same user id (page refresh
-  // race). Keep the transient room object even when this was the only peer;
-  // otherwise a solo host refresh removes the room from the hub before the new
-  // socket is added, leaving signaling/routing with a disconnected Map entry.
-  if (user?.id) {
+  // Authed users: dedupe only the same browser tab/session instance. This keeps
+  // page-refresh cleanup, while still allowing the same account to open multiple
+  // player seats from different tabs/devices for local testing or shared setups.
+  if (user?.id && clientId) {
     for (const existing of [...room.peers.values()]) {
-      if (existing.userId === user.id) {
+      if (existing.userId === user.id && existing.clientId === clientId) {
         try { existing.ws.close(4000, 'superseded') } catch {}
         removePeer(code, existing.id, { keepRoom: true })
       }
@@ -87,7 +86,7 @@ export function addPeer(code, { user, ws }) {
   const username = user?.username ?? `访客-${peerId.slice(0, 4)}`
   const isHost = userId != null && userId === room.hostUserId
   const isGuest = !userId
-  const peer = { id: peerId, userId, username, isHost, isGuest, playerIndex: null, canControl: false, ws }
+  const peer = { id: peerId, userId, username, isHost, isGuest, clientId, playerIndex: null, canControl: false, ws }
   room.peers.set(peerId, peer)
   recalculateControlSeats(room)
   const assignedPeer = room.peers.get(peerId) || peer

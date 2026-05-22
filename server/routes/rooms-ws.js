@@ -23,6 +23,7 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
       const code = (c.req.param('code') || '').toUpperCase()
       const roomTicket = c.req.query('roomTicket') || ''
       const ticket = c.req.query('ticket') || ''
+      const clientId = String(c.req.query('clientId') || '').slice(0, 80)
       const user = await currentUser(c) || await consumeWebSocketTicket(ticket)
       const roomTicketEntry = consumeRoomTicket(roomTicket, code)
 
@@ -64,7 +65,7 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
             maxPlayers: romRow?.maxPlayers ?? null,
             effectiveMaxPlayers: effectiveMaxPlayersForRom(romRow),
           })
-          peer = hub.addPeer(code, { user, ws })
+          peer = hub.addPeer(code, { user, ws, clientId })
         },
         onMessage(evt, ws) {
           if (!peer) return

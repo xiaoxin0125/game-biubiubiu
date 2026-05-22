@@ -59,25 +59,48 @@ const DEFAULT_KEYBOARD = {
   ll: '5', rr: '6', l2l2: '8', r2r2: '0',
 }
 
-const REMOTE_KEY_POOL = [
-  'i', 'k', 'j', 'l', 'u', 'o', 'y', 't', 'n', 'm', '7', '9', 'p', 'v',
-  'h', 'g', 'b', 'e', 'f', 'semicolon', 'minus', 'equal',
-  'f13', 'f14', 'f15', 'f16', 'f17', 'f18', 'f19', 'f20', 'f21', 'f22', 'f23', 'f24',
-  'num0', 'num1', 'num2', 'num3', 'num4', 'num5', 'num6', 'num7', 'num8', 'num9',
-  'decimal', 'numdivide', 'nummultiply', 'numsubtract', 'numadd', 'numenter',
+const REMOTE_PLAYER_KEY_LAYOUTS = {
+  2: {
+    up: 'i', down: 'k', left: 'j', right: 'l',
+    a: 'u', b: 'o', x: 'y', y: 't',
+    l: 'n', r: 'm', l2: '7', r2: '9',
+    l3: 'p', r3: 'v', start: 'h', select: 'g',
+  },
+  3: {
+    up: 'b', down: 'e', left: 'f', right: 'semicolon',
+    a: 'minus', b: 'equal', x: 'comma', y: 'period',
+    l: 'slash', r: 'quote', l2: 'leftbracket', r2: 'rightbracket',
+    l3: 'backquote', r3: 'tab', start: 'space', select: 'shift',
+  },
+  4: {
+    up: 'home', down: 'end', left: 'del', right: 'pagedown',
+    a: 'c', b: 'd', x: 'r', y: '0',
+    l: '5', r: '6', l2: '8', r2: 'backspace',
+    l3: 'capslock', r3: 'insert', start: 'pageup', select: 'rctrl',
+  },
+}
+
+const REMOTE_KEY_FALLBACK_POOL = [
+  ...Object.values(REMOTE_PLAYER_KEY_LAYOUTS[2]),
+  ...Object.values(REMOTE_PLAYER_KEY_LAYOUTS[3]),
+  ...Object.values(REMOTE_PLAYER_KEY_LAYOUTS[4]),
 ]
 
 function remotePlayerKeys(player, reserved = new Set()) {
   const out = {}
-  const offset = Math.max(0, player - 2)
-  const pool = [...REMOTE_KEY_POOL.slice(offset * 16), ...REMOTE_KEY_POOL.slice(0, offset * 16)]
-  let cursor = 0
+  const preferred = REMOTE_PLAYER_KEY_LAYOUTS[player] || {}
+  let fallbackCursor = 0
 
   for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
-    while (cursor < pool.length && reserved.has(pool[cursor])) cursor++
-    out[btn] = pool[cursor] || `f${13 + ((cursor + player) % 12)}`
-    reserved.add(out[btn])
-    cursor++
+    const preferredKey = preferred[btn]
+    if (preferredKey && !reserved.has(preferredKey)) {
+      out[btn] = preferredKey
+    } else {
+      while (fallbackCursor < REMOTE_KEY_FALLBACK_POOL.length && reserved.has(REMOTE_KEY_FALLBACK_POOL[fallbackCursor])) fallbackCursor++
+      out[btn] = REMOTE_KEY_FALLBACK_POOL[fallbackCursor] || 'nul'
+      fallbackCursor++
+    }
+    if (out[btn] && out[btn] !== 'nul') reserved.add(out[btn])
   }
   return out
 }
@@ -99,7 +122,11 @@ export const P2_KEY_MAP = REMOTE_PLAYER_KEY_MAPS[2]
 
 export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys = []) {
   const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeys)
-  const cfg = {}
+  const cfg = { input_max_users: 4 }
+  for (let player = 1; player <= 4; player++) {
+    cfg[`input_libretro_device_p${player}`] = 1
+    cfg[`input_player${player}_analog_dpad_mode`] = 1
+  }
   for (const [player, keyMap] of Object.entries(maps)) {
     for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
       const key = keyMap[btn]

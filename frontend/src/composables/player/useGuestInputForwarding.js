@@ -7,7 +7,7 @@ export function dispatchPlayerButton(playerIndex, action, button, keyMap = null)
   const turboTarget = TURBO_BUTTON_TARGETS[button]
   const targetButton = turboTarget || button
   const mappedKey = (keyMap || REMOTE_PLAYER_KEY_MAPS[playerIndex])?.[targetButton]
-  if (mappedKey) dispatchKeyboardEvent(eventType, mappedKey)
+  if (mappedKey) dispatchKeyboardEvent(eventType, mappedKey, { internal: true })
 }
 
 export function useGuestInputForwarding({ mapping, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {

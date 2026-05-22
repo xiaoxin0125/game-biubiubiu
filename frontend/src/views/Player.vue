@@ -117,7 +117,7 @@
     <VirtualGamepad
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
-      :on-button="gamepadButtonInterceptor"
+      :button-interceptor="gamepadButtonInterceptor"
     />
 
     <RoomPanel

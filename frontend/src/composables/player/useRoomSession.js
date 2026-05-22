@@ -16,6 +16,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
   const roomMaxPlayers = ref(4)
 
   let signal = null
+  let clientId = ''
   const isRoomMode = !!roomCode
   const isHostMode = computed(() => isRoomMode && !!signalMe.value?.isHost)
   const isGuestMode = computed(() => isRoomMode && signalMe.value && !signalMe.value.isHost)
@@ -45,7 +46,8 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
   function connect() {
     if (!isRoomMode || signal) return signal
     const roomTicket = sessionStorage.getItem(`room:${roomCode}:ticket`) || ''
-    signal = useRoomSignal({ code: roomCode, roomTicket })
+    if (!clientId) clientId = crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    signal = useRoomSignal({ code: roomCode, roomTicket, clientId })
 
     signal.on('welcome', (msg) => {
       signalMe.value = {

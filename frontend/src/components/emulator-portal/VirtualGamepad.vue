@@ -102,6 +102,7 @@ const props = defineProps({
   platform: { type: String, default: null },
   // Optional callback: guest mode forwards the button over the DataChannel
   // instead of dispatching a local key. Return true to swallow the default.
+  buttonInterceptor: { type: Function, default: null },
   onButton: { type: Function, default: null },
 })
 
@@ -281,11 +282,13 @@ watch(turboEnabled, (v) => {
 })
 
 function emitDown(btn) {
-  if (props.onButton && props.onButton('down', btn)) return
+  const interceptor = props.buttonInterceptor || props.onButton
+  if (interceptor && interceptor('down', btn)) return
   dispatchMappedButton('keydown', btn)
 }
 function emitUp(btn) {
-  if (props.onButton && props.onButton('up', btn)) return
+  const interceptor = props.buttonInterceptor || props.onButton
+  if (interceptor && interceptor('up', btn)) return
   dispatchMappedButton('keyup', btn)
 }
 

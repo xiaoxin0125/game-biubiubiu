@@ -12,9 +12,6 @@ import { audit } from '../audit.js'
 const passwordSchema = z.string()
   .min(10)
   .max(128)
-  .refine((value) => /[a-z]/.test(value), 'lowercase')
-  .refine((value) => /[A-Z]/.test(value), 'uppercase')
-  .refine((value) => /\d/.test(value), 'number')
 
 const credentialsSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
@@ -42,7 +39,7 @@ function rejectIfLimited(c, username, options) {
 }
 
 function passwordPolicyMessage() {
-  return '密码至少 10 位，并包含大小写字母和数字'
+  return '密码长度必须为 10-128 位'
 }
 
 export const authRoutes = new Hono()
