@@ -4,10 +4,11 @@
 import { and, eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { db } from '../db/index.js'
-import { rooms, STATUS } from '../db/schema.js'
+import { rooms, roms, STATUS } from '../db/schema.js'
 import { currentUser, consumeWebSocketTicket } from '../middleware/auth.js'
 import { getSetting } from './settings.js'
 import { consumeRateLimit } from '../middleware/rate-limit.js'
+import { effectiveMaxPlayersForRom } from '../rom-players.js'
 import * as hub from '../room-hub.js'
 
 const WS_MAX_MESSAGE_BYTES = 8192
@@ -23,9 +24,15 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
       const ticket = c.req.query('ticket') || ''
       const user = await currentUser(c) || await consumeWebSocketTicket(ticket)
 
-      const row = (await db.select().from(rooms)
+      const row = (await db.select({
+        room: rooms,
+        rom: roms,
+      }).from(rooms)
+        .innerJoin(roms, eq(roms.id, rooms.romId))
         .where(and(eq(rooms.code, code), eq(rooms.status, STATUS.normal)))
         .limit(1))[0]
+      const roomRow = row?.room
+      const romRow = row?.rom
 
       let peer = null
       let rejectReason = null
@@ -35,11 +42,11 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
       const netplayEnabled = await getSetting('netplayEnabled', '1')
       // Anonymous visitors may spectate rooms; private rooms still require the
       // password below. Only authenticated non-host players can receive control.
-      const isHostOrAdmin = !!user && (user.id === row?.hostUserId || user.role === 'admin')
+      const isHostOrAdmin = !!user && (user.id === roomRow?.hostUserId || user.role === 'admin')
       if (netplayEnabled !== '1' && user?.role !== 'admin') rejectReason = 'netplay-disabled'
-      else if (!row || row.closedAt) rejectReason = 'room-not-found'
-      else if (row.passwordHash && !isHostOrAdmin) {
-        const ok = await bcrypt.compare(password, row.passwordHash)
+      else if (!roomRow || roomRow.closedAt) rejectReason = 'room-not-found'
+      else if (roomRow.passwordHash && !isHostOrAdmin) {
+        const ok = await bcrypt.compare(password, roomRow.passwordHash)
         if (!ok) rejectReason = 'bad-password'
       }
 
@@ -50,7 +57,11 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
             ws.close()
             return
           }
-          hub.ensureRoom(code, row)
+          hub.ensureRoom(code, {
+            ...roomRow,
+            maxPlayers: romRow?.maxPlayers ?? null,
+            effectiveMaxPlayers: effectiveMaxPlayersForRom(romRow),
+          })
           peer = hub.addPeer(code, { user, ws })
         },
         onMessage(evt, ws) {

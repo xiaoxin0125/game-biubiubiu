@@ -11,6 +11,7 @@ import { requireAuth, currentUser } from '../middleware/auth.js'
 import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
+import { resolveMaxPlayersInfo } from '../rom-players.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
@@ -27,6 +28,7 @@ const liveRom = (extra) => extra ? and(eq(roms.status, STATUS.normal), extra) : 
 export const romRoutes = new Hono()
 
 function serialize(rom, owner, opts = {}) {
+  const maxPlayersInfo = resolveMaxPlayersInfo(rom, opts.parentRom || null)
   return {
     id: rom.id,
     title: rom.title,
@@ -34,6 +36,9 @@ function serialize(rom, owner, opts = {}) {
     fileName: rom.fileName,
     fileSize: rom.fileSize,
     isPublic: Boolean(rom.isPublic),
+    maxPlayers: rom.maxPlayers ?? null,
+    effectiveMaxPlayers: maxPlayersInfo.maxPlayers,
+    maxPlayersSourceRomId: maxPlayersInfo.sourceRomId,
     userId: rom.userId,
     owner: owner ? { id: owner.id, username: owner.username } : undefined,
     parentRomId: rom.parentRomId ?? null,
@@ -333,7 +338,8 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const nextTitle = typeof body.title === 'string' ? body.title.trim() : ''
   const wantsVisibility = typeof body.isPublic === 'boolean'
-  if (!nextTitle && !wantsVisibility) return c.json(serialize(rom))
+  const wantsMaxPlayers = user.role === 'admin' && Object.prototype.hasOwnProperty.call(body, 'maxPlayers')
+  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers) return c.json(serialize(rom))
 
   if (wantsVisibility) {
     const familyRoot = rom.parentRomId
@@ -351,9 +357,22 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   if (nextTitle) {
     await updateAndFetch(roms, { title: nextTitle }, eq(roms.id, id))
   }
+  if (wantsMaxPlayers) {
+    const nextMaxPlayers = body.maxPlayers === null || body.maxPlayers === ''
+      ? null
+      : Number(body.maxPlayers)
+    if (nextMaxPlayers !== null && (!Number.isInteger(nextMaxPlayers) || nextMaxPlayers < 1 || nextMaxPlayers > 4)) {
+      return c.json({ error: '人数必须是自动或 1-4' }, 400)
+    }
+    await updateAndFetch(roms, { maxPlayers: nextMaxPlayers }, eq(roms.id, id))
+  }
 
   const updated = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
-  return c.json(serialize(updated))
+  let parent = null
+  if (updated?.parentRomId) {
+    parent = (await db.select().from(roms).where(liveRom(eq(roms.id, updated.parentRomId))).limit(1))[0] || null
+  }
+  return c.json(serialize(updated, null, { parentRom: parent }))
 })
 
 // DELETE /api/roms/:id

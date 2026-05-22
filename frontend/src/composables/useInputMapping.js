@@ -5,7 +5,7 @@
 import { ref, computed, watch } from 'vue'
 import { useAuth } from './useAuth.js'
 
-export const BUTTON_DEFS = [
+export const RETROPAD_BUTTON_DEFS = [
   { key: 'up',     label: '上',      group: 'dpad' },
   { key: 'down',   label: '下',      group: 'dpad' },
   { key: 'left',   label: '左',      group: 'dpad' },
@@ -18,9 +18,34 @@ export const BUTTON_DEFS = [
   { key: 'r',      label: 'R',       group: 'shoulder' },
   { key: 'l2',     label: 'L2',      group: 'shoulder' },
   { key: 'r2',     label: 'R2',      group: 'shoulder' },
+  { key: 'l3',     label: 'L3',      group: 'shoulder' },
+  { key: 'r3',     label: 'R3',      group: 'shoulder' },
   { key: 'start',  label: 'Start',   group: 'system' },
   { key: 'select', label: 'Select',  group: 'system' },
 ]
+
+export const TURBO_BUTTON_TARGETS = {
+  aa: 'a',
+  bb: 'b',
+  xx: 'x',
+  yy: 'y',
+  ll: 'l',
+  rr: 'r',
+  l2l2: 'l2',
+  r2r2: 'r2',
+}
+
+export const TURBO_BUTTON_DEFS = Object.entries(TURBO_BUTTON_TARGETS).map(([key, target]) => {
+  const base = RETROPAD_BUTTON_DEFS.find((btn) => btn.key === target)
+  return {
+    key,
+    label: `${base?.label || target.toUpperCase()}${base?.label || target.toUpperCase()}`,
+    group: base?.group || 'face',
+    turboTarget: target,
+  }
+})
+
+export const BUTTON_DEFS = [...RETROPAD_BUTTON_DEFS, ...TURBO_BUTTON_DEFS]
 
 const DEFAULT_KEYBOARD = {
   up: 'up', down: 'down', left: 'left', right: 'right',
@@ -28,36 +53,75 @@ const DEFAULT_KEYBOARD = {
   x: 's', y: 'a',
   l: 'q', r: 'w',
   l2: '1', r2: '3',
+  l3: '2', r3: '4',
   start: 'enter', select: 'rshift',
+  aa: 'c', bb: 'd', xx: 'e', yy: 'f',
+  ll: '5', rr: '6', l2l2: '8', r2r2: '0',
 }
 
-// Player-2 retropad buttons map to a separate cluster of regular keyboard
-// keys. High F-keys (F13+) are inconsistently recognised across browsers /
-// emulators, which can cause remote P2 inputs to partially fail.
-export const P2_KEY_MAP = {
-  up: 'i', down: 'k', left: 'j', right: 'l',
-  a: 'u', b: 'o',
-  x: 'y', y: 't',
-  l: 'n', r: 'm',
-  l2: '7', r2: '9',
-  start: 'p', select: 'v',
+const REMOTE_KEY_POOL = [
+  'i', 'k', 'j', 'l', 'u', 'o', 'y', 't', 'n', 'm', '7', '9', 'p', 'v',
+  'h', 'g', 'b', 'e', 'f', 'semicolon', 'minus', 'equal',
+  'f13', 'f14', 'f15', 'f16', 'f17', 'f18', 'f19', 'f20', 'f21', 'f22', 'f23', 'f24',
+  'num0', 'num1', 'num2', 'num3', 'num4', 'num5', 'num6', 'num7', 'num8', 'num9',
+  'decimal', 'numdivide', 'nummultiply', 'numsubtract', 'numadd', 'numenter',
+]
+
+function remotePlayerKeys(player, reserved = new Set()) {
+  const out = {}
+  const offset = Math.max(0, player - 2)
+  const pool = [...REMOTE_KEY_POOL.slice(offset * 16), ...REMOTE_KEY_POOL.slice(0, offset * 16)]
+  let cursor = 0
+
+  for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+    while (cursor < pool.length && reserved.has(pool[cursor])) cursor++
+    out[btn] = pool[cursor] || `f${13 + ((cursor + player) % 12)}`
+    reserved.add(out[btn])
+    cursor++
+  }
+  return out
 }
 
-// RetroArch config fragment for P2 using the dedicated bindings above.
-export function buildPlayer2RetroarchConfig() {
+// Remote retropad buttons map to host-side reserved keyboard keys. These are
+// generated from the current P1 mapping at runtime, so P1 custom bindings never
+// get stolen by P2-P4.
+export function buildRemotePlayerKeyMaps(maxPlayers = 4, reservedKeys = []) {
+  const limit = Math.max(2, Math.min(4, Number(maxPlayers) || 4))
+  const reserved = new Set((reservedKeys || []).filter((key) => key != null && key !== '').map((key) => String(key)))
+  const maps = {}
+  for (let player = 2; player <= limit; player++) maps[player] = remotePlayerKeys(player, reserved)
+  return maps
+}
+
+export const REMOTE_PLAYER_KEY_MAPS = buildRemotePlayerKeyMaps(4)
+
+export const P2_KEY_MAP = REMOTE_PLAYER_KEY_MAPS[2]
+
+export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys = []) {
+  const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeys)
   const cfg = {}
-  for (const [btn, key] of Object.entries(P2_KEY_MAP)) {
-    cfg[`input_player2_${btn}`] = key
+  for (const [player, keyMap] of Object.entries(maps)) {
+    for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+      const key = keyMap[btn]
+      if (key) cfg[`input_player${player}_${btn}`] = key
+    }
   }
   return cfg
+}
+
+export function buildPlayer2RetroarchConfig() {
+  return buildRemotePlayersRetroarchConfig(2)
 }
 
 // numeric values are W3C Gamepad button indexes (Xbox layout).
 const DEFAULT_GAMEPAD = {
   a: 1, b: 0, x: 3, y: 2,
   l: 4, r: 5, l2: 6, r2: 7,
+  l3: 10, r3: 11,
   select: 8, start: 9,
   up: 12, down: 13, left: 14, right: 15,
+  aa: null, bb: null, xx: null, yy: null,
+  ll: null, rr: null, l2l2: null, r2r2: null,
 }
 
 function storageKey(userId) { return `input-mapping:${userId || 'guest'}` }
@@ -84,6 +148,28 @@ function refreshForUser(userId) {
   }
 }
 
+function withoutDuplicateBinding(current, btn, value) {
+  const next = { ...current }
+  for (const key of Object.keys(next)) {
+    if (key !== btn && value != null && next[key] === value) next[key] = null
+  }
+  next[btn] = value
+  return next
+}
+
+export function buildPlayerRetroarchConfig(inputMapping, platformButtons = null) {
+  const cfg = {}
+  const allowed = platformButtons ? new Set(platformButtons) : null
+  for (const { key } of RETROPAD_BUTTON_DEFS) {
+    const enabled = !allowed || allowed.has(key)
+    cfg[`input_player1_${key}`] = enabled ? (inputMapping?.keyboard?.[key] || 'nul') : 'nul'
+    const gp = inputMapping?.gamepad?.[key]
+    if (enabled && typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
+    else if (!enabled) cfg[`input_player1_${key}_btn`] = 'nul'
+  }
+  return cfg
+}
+
 export function useInputMapping() {
   const { user } = useAuth()
 
@@ -94,11 +180,11 @@ export function useInputMapping() {
   }
 
   function setKeyboard(btn, key) {
-    mapping.value = { ...mapping.value, keyboard: { ...mapping.value.keyboard, [btn]: key } }
+    mapping.value = { ...mapping.value, keyboard: withoutDuplicateBinding(mapping.value.keyboard, btn, key) }
     saveMapping(user.value?.id, mapping.value)
   }
   function setGamepad(btn, idx) {
-    mapping.value = { ...mapping.value, gamepad: { ...mapping.value.gamepad, [btn]: idx } }
+    mapping.value = { ...mapping.value, gamepad: withoutDuplicateBinding(mapping.value.gamepad, btn, idx) }
     saveMapping(user.value?.id, mapping.value)
   }
   function resetKeyboard() {
@@ -111,15 +197,7 @@ export function useInputMapping() {
   }
 
   // Retroarch-style input config for player 1 derived from the current mapping.
-  const retroarchConfig = computed(() => {
-    const cfg = {}
-    for (const { key } of BUTTON_DEFS) {
-      cfg[`input_player1_${key}`] = mapping.value.keyboard[key] || 'nul'
-      const gp = mapping.value.gamepad[key]
-      if (typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
-    }
-    return cfg
-  })
+  const retroarchConfig = computed(() => buildPlayerRetroarchConfig(mapping.value))
 
   return {
     mapping: computed(() => mapping.value),

@@ -9,6 +9,7 @@
 // playing until the host returns.
 
 import { nanoid } from 'nanoid'
+import { clampMaxPlayers } from './rom-players.js'
 
 const MAX_PEERS_PER_ROOM = 8
 
@@ -19,13 +20,24 @@ function send(ws, msg) {
   try { ws.send(JSON.stringify(msg)) } catch {}
 }
 
+function roomState(room) {
+  return {
+    allowPlay: room.allowPlay,
+    maxPlayers: room.maxPlayers ?? null,
+    effectiveMaxPlayers: clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers),
+  }
+}
+
 export function ensureRoom(code, row) {
   let r = rooms.get(code)
+  const effectiveMaxPlayers = clampMaxPlayers(row.effectiveMaxPlayers ?? row.maxPlayers)
   if (!r) {
     r = {
       code,
       hostUserId: row.hostUserId,
       allowPlay: row.allowPlay !== false,
+      maxPlayers: row.maxPlayers ?? null,
+      effectiveMaxPlayers,
       peers: new Map(),
       chatHistory: [],
     }
@@ -33,7 +45,10 @@ export function ensureRoom(code, row) {
   } else {
     r.hostUserId = row.hostUserId
     r.allowPlay = row.allowPlay !== false
+    r.maxPlayers = row.maxPlayers ?? r.maxPlayers ?? null
+    r.effectiveMaxPlayers = effectiveMaxPlayers
   }
+  recalculateControlSeats(r)
   return r
 }
 
@@ -72,31 +87,31 @@ export function addPeer(code, { user, ws }) {
   const username = user?.username ?? `访客-${peerId.slice(0, 4)}`
   const isHost = userId != null && userId === room.hostUserId
   const isGuest = !userId
-  const controlEligible = isHost || (!isGuest && room.allowPlay)
-  const playerIndex = controlEligible ? getPlayerIndex(room, isHost) : null
-  const canControl = playerIndex != null
-  const peer = { id: peerId, userId, username, isHost, isGuest, playerIndex, canControl, ws }
+  const peer = { id: peerId, userId, username, isHost, isGuest, playerIndex: null, canControl: false, ws }
   room.peers.set(peerId, peer)
+  recalculateControlSeats(room)
+  const assignedPeer = room.peers.get(peerId) || peer
 
   // Welcome the new peer with its id + current peer list
   send(ws, {
     type: 'welcome',
     peerId,
-    isHost,
+    isHost: assignedPeer.isHost,
     userId,
-    isGuest,
-    playerIndex,
-    canControl,
-    room: { allowPlay: room.allowPlay },
+    isGuest: !!assignedPeer.isGuest,
+    playerIndex: assignedPeer.playerIndex,
+    canControl: !!assignedPeer.canControl,
+    room: roomState(room),
     peers: [...room.peers.values()].map(summary),
     chat: room.chatHistory.slice(-50),
   })
   // Broadcast arrival to everyone else
   for (const other of room.peers.values()) {
     if (other.id === peerId) continue
-    send(other.ws, { type: 'peer-joined', peer: summary(peer) })
+    send(other.ws, { type: 'peer-joined', peer: summary(assignedPeer) })
   }
-  return peer
+  broadcastPeersUpdated(room)
+  return assignedPeer
 }
 
 export function removePeer(code, peerId, { keepRoom = false } = {}) {
@@ -198,26 +213,37 @@ export function relay(code, fromPeerId, msg) {
 
 function getPlayerIndex(room, isHost) {
   if (isHost) return 1
-  for (const peer of room.peers.values()) {
-    if (!peer.isHost && peer.playerIndex === 2) return null
+  const max = clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers)
+  for (let seat = 2; seat <= max; seat++) {
+    let taken = false
+    for (const peer of room.peers.values()) {
+      if (!peer.isHost && peer.playerIndex === seat) {
+        taken = true
+        break
+      }
+    }
+    if (!taken) return seat
   }
-  return 2
+  return null
 }
 
 function recalculateControlSeats(room) {
-  let p2Taken = false
+  const max = clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers)
   for (const peer of room.peers.values()) {
     if (peer.isHost) {
       peer.canControl = true
       peer.playerIndex = 1
-      continue
     }
+  }
 
-    const controlEligible = !peer.isGuest && room.allowPlay
-    if (controlEligible && !p2Taken) {
+  let nextSeat = 2
+  for (const peer of room.peers.values()) {
+    if (peer.isHost) continue
+
+    const controlEligible = !peer.isGuest && room.allowPlay && nextSeat <= max
+    if (controlEligible) {
       peer.canControl = true
-      peer.playerIndex = 2
-      p2Taken = true
+      peer.playerIndex = nextSeat++
     } else {
       peer.canControl = false
       peer.playerIndex = null
@@ -228,7 +254,7 @@ function recalculateControlSeats(room) {
 function broadcastPeersUpdated(room) {
   const peers = [...room.peers.values()].map(summary)
   for (const peer of room.peers.values()) {
-    send(peer.ws, { type: 'peers-updated', peers, room: { allowPlay: room.allowPlay } })
+    send(peer.ws, { type: 'peers-updated', peers, room: roomState(room) })
   }
 }
 

@@ -8,6 +8,13 @@
       "when": 1776699852299,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1779353600000,
+      "tag": "0001_rom_max_players",
+      "breakpoints": true
     }
   ]
 }

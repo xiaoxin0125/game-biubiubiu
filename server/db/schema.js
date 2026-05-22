@@ -72,6 +72,7 @@ export const roms = mysqlTable('roms', {
   filePath: varchar('file_path', { length: 1024 }).notNull(),
   fileSize: int('file_size').notNull(),
   isPublic: boolean('is_public').notNull().default(false),
+  maxPlayers: int('max_players'),
   // Optional parent ROM — for arcade clone/variant sets where the child depends
   // on shared data from the parent (e.g. kof97pls is a split clone of kof97).
   // Children are hidden from the main Gallery list and shown as a version

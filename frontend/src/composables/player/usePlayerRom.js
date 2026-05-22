@@ -14,6 +14,7 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
   const bios = shallowRef([])
   const biosReady = ref(false)
   const roomInfo = ref(null)
+  const localPeerCanLoad = computed(() => !isRoomMode || !!localPeer.value?.isHost)
 
   const platformInfo = computed(() => getPlatformInfo(romMeta.value?.platform))
   const currentVersionLabel = computed(() => {
@@ -118,7 +119,7 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
     biosReady.value = false
   }
 
-  watch([romMeta, parentForChild, localPeer], () => {
+  watch([() => romMeta.value?.id, () => parentForChild.value?.id, localPeerCanLoad], () => {
     rom.value = null
     if (isRoomMode) {
       if (!localPeer.value) return
@@ -127,7 +128,7 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
     resolveRomBlobs()
   })
 
-  watch([() => romMeta.value?.platform, localPeer], () => {
+  watch([() => romMeta.value?.platform, localPeerCanLoad], () => {
     if (isRoomMode && localPeer.value && !localPeer.value.isHost) return
     if (isRoomMode && !localPeer.value) return
     resolveBios()

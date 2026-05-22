@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useEmulator } from '../../composables/useEmulator.js'
 
 const props = defineProps({
@@ -16,7 +16,7 @@ const props = defineProps({
   bios: { type: Array, default: () => [] },
   retroarchConfig: { type: Object, default: () => ({}) },
 })
-const emit = defineEmits(['booted', 'error'])
+const emit = defineEmits(['booted', 'error', 'config-reloaded'])
 
 const {
   wrapperRef,
@@ -46,6 +46,18 @@ async function start() {
 
 onMounted(() => start())
 
+function configSignature(value) {
+  const entries = Object.entries(value || {}).sort(([a], [b]) => a.localeCompare(b))
+  return JSON.stringify(entries)
+}
+
+const retroarchConfigSignature = computed(() => configSignature(props.retroarchConfig))
+
+async function restart() {
+  await destroy()
+  await start()
+}
+
 // Re-boot on ROM change. Compare by primary fileContent URL (first entry of
 // an array or the single object) plus core name.
 function romKey(r) {
@@ -55,8 +67,13 @@ function romKey(r) {
 }
 watch(() => [romKey(props.rom), props.core], async ([newKey, newCore], [oldKey, oldCore]) => {
   if (newKey === oldKey && newCore === oldCore) return
-  await destroy()
-  await start()
+  await restart()
+})
+
+watch(retroarchConfigSignature, async (next, prev) => {
+  if (!prev || next === prev) return
+  await restart()
+  emit('config-reloaded')
 })
 
 defineExpose({
@@ -72,16 +89,25 @@ defineExpose({
 .portal {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
   position: relative;
+  overflow: hidden;
+  contain: layout paint;
 }
 /* Nostalgist's canvas is inserted via JS so the rule has to escape :deep() */
-.portal :deep(.portal-canvas) {
+.portal :deep(.portal-canvas),
+.portal :deep(#canvas) {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
   max-width: 100%;
   max-height: 100%;
+  object-fit: contain;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   background: #000;

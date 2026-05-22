@@ -13,6 +13,10 @@
       </div>
 
       <section class="is-grid">
+        <div v-if="activeConflicts.length" class="is-warning">
+          检测到 {{ activeConflicts.length }} 组重复绑定。重新绑定其中任意一个按钮会自动清除旧占用。
+        </div>
+
         <div v-for="b in relevantButtons" :key="b.key" class="is-row">
           <div class="is-label">
             <span class="is-btn" :class="`grp-${b.group}`">{{ b.label }}</span>
@@ -21,7 +25,7 @@
           <template v-if="tab === 'kb'">
             <button
               class="is-slot"
-              :class="{ listening: listening === b.key }"
+              :class="{ listening: listening === b.key, conflict: hasConflict(b.key) }"
               @click="startListen(b.key)"
             >
               {{ listening === b.key ? '按一个键…' : (mapping.keyboard[b.key] || '—') }}
@@ -31,7 +35,7 @@
           <template v-else>
             <button
               class="is-slot"
-              :class="{ listening: gpListening === b.key }"
+              :class="{ listening: gpListening === b.key, conflict: hasConflict(b.key) }"
               @click="startGpListen(b.key)"
             >
               {{ gpListening === b.key ? '按一个键…' : gamepadLabel(b.key) }}
@@ -81,10 +85,31 @@ const relevantButtons = computed(() => {
     const g = (groupOrder[a.group] ?? 9) - (groupOrder[b.group] ?? 9)
     if (g !== 0) return g
     if (a.group === 'dpad') return 0   // preserve up/down/left/right
+    const aTurbo = !!a.turboTarget
+    const bTurbo = !!b.turboTarget
+    if (aTurbo !== bTurbo) return aTurbo ? 1 : -1
     return String(a.label).localeCompare(String(b.label), undefined, { numeric: true })
   })
 })
 const platformName = computed(() => props.platform ? getPlatform(props.platform).displayName : null)
+
+const activeConflicts = computed(() => {
+  const source = tab.value === 'kb' ? mapping.value.keyboard : mapping.value.gamepad
+  const visible = new Set(relevantButtons.value.map((b) => b.key))
+  const byValue = new Map()
+  for (const btn of visible) {
+    const value = source?.[btn]
+    if (value == null || value === '') continue
+    const key = String(value)
+    if (!byValue.has(key)) byValue.set(key, [])
+    byValue.get(key).push(btn)
+  }
+  return [...byValue.values()].filter((buttons) => buttons.length > 1)
+})
+
+function hasConflict(btn) {
+  return activeConflicts.value.some((buttons) => buttons.includes(btn))
+}
 
 function startListen(btn) { listening.value = btn; gpListening.value = null }
 function startGpListen(btn) { gpListening.value = btn; listening.value = null }
@@ -98,8 +123,16 @@ function onKey(e) {
   else if (k === 'ArrowDown') k = 'down'
   else if (k === 'ArrowLeft') k = 'left'
   else if (k === 'ArrowRight') k = 'right'
-  else if (k === 'Enter') k = 'enter'
+  else if (k === 'Enter') k = e.location === 3 ? 'numenter' : 'enter'
   else if (k === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
+  else if (k === ';') k = 'semicolon'
+  else if (k === '-') k = 'minus'
+  else if (k === '=') k = 'equal'
+  else if (k === '/') k = e.location === 3 ? 'numdivide' : '/'
+  else if (k === '*') k = 'nummultiply'
+  else if (k === '+') k = 'numadd'
+  else if (k === '.') k = e.location === 3 ? 'decimal' : '.'
+  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(k)) k = k.toLowerCase()
   else if (k.length === 1) k = k.toLowerCase()
   else k = k.toLowerCase()
   setKeyboard(listening.value, k)
@@ -185,6 +218,16 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .is-tabs .active { background: rgba(10,132,255,0.22); border-color: rgba(10,132,255,0.5); color: #fff; }
+.is-warning {
+  margin: 10px 18px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 204, 0, 0.32);
+  background: rgba(255, 204, 0, 0.12);
+  color: #ffd966;
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 .is-grid {
   flex: 1;
@@ -225,6 +268,11 @@ onBeforeUnmount(() => {
   background: rgba(10,132,255,0.22);
   border-color: rgba(10,132,255,0.5);
   color: #7ac7ff;
+}
+.is-slot.conflict {
+  border-color: rgba(255, 204, 0, 0.55);
+  background: rgba(255, 204, 0, 0.12);
+  color: #ffd966;
 }
 
 .is-foot {

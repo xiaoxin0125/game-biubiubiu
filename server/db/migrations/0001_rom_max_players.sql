@@ -1,0 +1,1 @@
+ALTER TABLE `roms` ADD COLUMN `max_players` int;

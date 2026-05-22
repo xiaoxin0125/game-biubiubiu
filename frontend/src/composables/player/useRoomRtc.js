@@ -1,11 +1,11 @@
 import { nextTick } from 'vue'
 import { useWebRTC } from '../useWebRTC.js'
-import { dispatchP2Button } from './useGuestInputForwarding.js'
+import { dispatchPlayerButton } from './useGuestInputForwarding.js'
 
 // Owns host-side WebRTC invitation and guest-side stream handling. Signaling is
 // supplied lazily by useRoomSession so PeerConnection can be created before the
 // WebSocket is open.
-export function useRoomRtc({ getSignal, portalRef, isHostMode, canControlPeer, attachRemoteStream, setConnectionStatus }) {
+export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPeer, canControlPeer, remoteKeyMapForPlayer, attachRemoteStream, setConnectionStatus }) {
   const signalProxy = {
     sendOffer: (...args) => getSignal()?.sendOffer(...args),
     sendAnswer: (...args) => getSignal()?.sendAnswer(...args),
@@ -18,7 +18,10 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, canControlPeer, a
     onDataMessage: (data, peerId) => {
       if (isHostMode.value && data?.type === 'input' && data.button) {
         if (!canControlPeer?.(peerId)) return
-        dispatchP2Button(data.action, data.button)
+        const playerIndex = Number(playerIndexForPeer?.(peerId))
+        if (!Number.isInteger(playerIndex) || playerIndex < 2 || playerIndex > 4) return
+        const keyMap = remoteKeyMapForPlayer?.(playerIndex)
+        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap)
       }
     },
     onStateChange: (state) => {
@@ -61,6 +64,7 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, canControlPeer, a
     }
 
     rtc.startCall(peerId, stream)
+    setConnectionStatus('正在发送画面…')
   }
 
   return { rtc, inviteGuest }

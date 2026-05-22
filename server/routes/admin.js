@@ -2,10 +2,12 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { z } from 'zod'
 import { db, updateAndFetch } from '../db/index.js'
 import { users, roms, rooms, STATUS } from '../db/schema.js'
 import { requireAdmin, invalidateUserSessions } from '../middleware/auth.js'
 import { broadcastRoomClosed } from '../room-hub.js'
+import { resolveMaxPlayersInfo } from '../rom-players.js'
 
 export const adminRoutes = new Hono()
 
@@ -157,6 +159,8 @@ adminRoutes.get('/roms', async (c) => {
       fileName: rom.fileName,
       fileSize: rom.fileSize,
       isPublic: Boolean(rom.isPublic),
+      maxPlayers: rom.maxPlayers ?? null,
+      effectiveMaxPlayers: resolveMaxPlayersInfo(rom).maxPlayers,
       createdAt: rom.createdAt,
       owner: user,
     })),

@@ -13,6 +13,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
   const fatalRoomError = ref(null)
   const connectionStatus = ref('建立连接…')
   const roomAllowPlay = ref(true)
+  const roomMaxPlayers = ref(4)
 
   let signal = null
   const isRoomMode = !!roomCode
@@ -60,6 +61,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
       if (!signalPeers[msg.peerId]) signalPeers[msg.peerId] = { ...signalMe.value, id: msg.peerId }
       signalChat.value = Array.isArray(msg.chat) ? msg.chat.slice(-50) : []
       roomAllowPlay.value = msg.room?.allowPlay !== false
+      roomMaxPlayers.value = Number(msg.room?.effectiveMaxPlayers || msg.room?.maxPlayers || 4)
       const hostPresent = msg.isHost || (msg.peers || []).some((p) => p.isHost)
       if (msg.isHost) connectionStatus.value = '等待玩家加入…'
       else connectionStatus.value = hostPresent ? '等待主机画面…' : '等待主机加入…'
@@ -83,14 +85,17 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
       for (const id of Object.keys(signalPeers)) delete signalPeers[id]
       for (const p of msg.peers || []) signalPeers[p.id] = p
       if (msg.room && typeof msg.room.allowPlay === 'boolean') roomAllowPlay.value = msg.room.allowPlay
-      const me = signalMe.value?.peerId ? signalPeers[signalMe.value.peerId] : null
-      if (me) {
-        signalMe.value = {
-          ...signalMe.value,
-          isGuest: !!me.isGuest,
-          playerIndex: me.playerIndex,
-          canControl: !!me.canControl,
-        }
+      if (msg.room && Number.isFinite(Number(msg.room.effectiveMaxPlayers || msg.room.maxPlayers))) {
+        roomMaxPlayers.value = Number(msg.room.effectiveMaxPlayers || msg.room.maxPlayers)
+      }
+      const nextMe = signalMe.value?.peerId ? signalPeers[signalMe.value.peerId] || null : null
+      if (nextMe) {
+        const nextIsGuest = !!nextMe.isGuest
+        const nextPlayerIndex = nextMe.playerIndex ?? null
+        const nextCanControl = !!nextMe.canControl
+        if (signalMe.value.isGuest !== nextIsGuest) signalMe.value.isGuest = nextIsGuest
+        if (signalMe.value.playerIndex !== nextPlayerIndex) signalMe.value.playerIndex = nextPlayerIndex
+        if (signalMe.value.canControl !== nextCanControl) signalMe.value.canControl = nextCanControl
       }
     })
 
@@ -132,5 +137,5 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
     signal = null
   }
 
-  return { signal: () => signal, signalConnected, signalMe, signalPeers, signalChat, showRoom, fatalRoomError, connectionStatus, roomAllowPlay, isHostMode, isGuestMode, currentRoomPeer, setConnectionStatus, sendChat, connect, close }
+  return { signal: () => signal, signalConnected, signalMe, signalPeers, signalChat, showRoom, fatalRoomError, connectionStatus, roomAllowPlay, roomMaxPlayers, isHostMode, isGuestMode, currentRoomPeer, setConnectionStatus, sendChat, connect, close }
 }

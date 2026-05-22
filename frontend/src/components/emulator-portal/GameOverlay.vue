@@ -66,12 +66,12 @@ const canFullscreen = hasFs && !isIOS
 
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding:
-    calc(10px + env(safe-area-inset-top))
-    calc(14px + env(safe-area-inset-right))
-    10px
-    calc(14px + env(safe-area-inset-left));
+    calc(6px + env(safe-area-inset-top))
+    calc(10px + env(safe-area-inset-right))
+    6px
+    calc(10px + env(safe-area-inset-left));
   background: var(--b-bg);
   color: var(--b-text);
 }
@@ -81,7 +81,7 @@ const canFullscreen = hasFs && !isIOS
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 7px;
   overflow: hidden;
   min-width: 0;
 }
@@ -144,9 +144,9 @@ const canFullscreen = hasFs && !isIOS
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 36px;
-  min-height: 34px;
-  padding: 4px 10px;
+  min-width: 32px;
+  min-height: 30px;
+  padding: 3px 8px;
   border-radius: 6px;
   border: 1px solid var(--b-border);
   background: var(--b-btn-bg);
@@ -176,27 +176,30 @@ const canFullscreen = hasFs && !isIOS
 
 @media (max-width: 768px) {
   .bar-btn-label { display: none; }
-  .bar-btn { padding: 6px; min-width: 36px; min-height: 36px; }
-  .bar-title { font-size: 13px; }
-  .bar-core { display: none; }
+  .bar-btn { padding: 4px; min-width: 32px; min-height: 32px; }
+  .bar-title { font-size: 12px; }
+  .bar-badge { padding: 1px 6px; font-size: 10px; }
+  .bar-core, .playing-led { display: none; }
   .player-bar {
+    gap: 5px;
     padding:
-      calc(8px + env(safe-area-inset-top))
-      calc(10px + env(safe-area-inset-right))
-      8px
-      calc(10px + env(safe-area-inset-left));
+      calc(5px + env(safe-area-inset-top))
+      calc(8px + env(safe-area-inset-right))
+      5px
+      calc(8px + env(safe-area-inset-left));
   }
 }
 @media (max-height: 500px) and (orientation: landscape) {
   .player-bar {
+    gap: 4px;
     padding:
-      calc(4px + env(safe-area-inset-top))
-      calc(10px + env(safe-area-inset-right))
-      4px
-      calc(10px + env(safe-area-inset-left));
+      calc(2px + env(safe-area-inset-top))
+      calc(8px + env(safe-area-inset-right))
+      2px
+      calc(8px + env(safe-area-inset-left));
   }
-  .bar-btn { min-height: 30px; min-width: 30px; padding: 3px 8px; }
-  .bar-title { font-size: 12px; }
-  .bar-badge, .bar-core { display: none; }
+  .bar-btn { min-height: 28px; min-width: 28px; padding: 2px 6px; }
+  .bar-title { font-size: 11px; }
+  .bar-badge, .bar-core, .playing-led { display: none; }
 }
 </style>

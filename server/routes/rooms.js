@@ -8,6 +8,7 @@ import { rooms, roms, users, STATUS } from '../db/schema.js'
 import { requireAuth, currentUser } from '../middleware/auth.js'
 import { getSetting } from './settings.js'
 import { updateRoomPermissions, isHostOnline, broadcastRoomClosed } from '../room-hub.js'
+import { effectiveMaxPlayersForRom } from '../rom-players.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 
 const liveRoom = (extra) =>
@@ -44,6 +45,8 @@ function serializeRoom(row, extras = {}) {
     hasPassword: !!row.passwordHash,
     hostUserId: row.hostUserId,
     romId: row.romId,
+    maxPlayers: extras.maxPlayers ?? null,
+    effectiveMaxPlayers: extras.effectiveMaxPlayers ?? extras.maxPlayers ?? 4,
     createdAt: row.createdAt,
     ...extras,
   }
@@ -56,6 +59,7 @@ roomRoutes.get('/', async (c) => {
     hostUsername: users.username,
     romTitle: roms.title,
     romPlatform: roms.platform,
+    romMaxPlayers: roms.maxPlayers,
   })
     .from(rooms)
     .innerJoin(users, eq(users.id, rooms.hostUserId))
@@ -64,9 +68,11 @@ roomRoutes.get('/', async (c) => {
     .orderBy(desc(rooms.createdAt))
 
   return c.json({
-    rooms: rows.map(({ r, hostUsername, romTitle, romPlatform }) =>
+    rooms: rows.map(({ r, hostUsername, romTitle, romPlatform, romMaxPlayers }) =>
       serializeRoom(r, {
         hostUsername, romTitle, romPlatform,
+        maxPlayers: romMaxPlayers ?? null,
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, platform: romPlatform }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -80,15 +86,18 @@ roomRoutes.get('/mine', requireAuth, async (c) => {
     r: rooms,
     romTitle: roms.title,
     romPlatform: roms.platform,
+    romMaxPlayers: roms.maxPlayers,
   })
     .from(rooms)
     .innerJoin(roms, eq(roms.id, rooms.romId))
     .where(liveRoom(eq(rooms.hostUserId, me.id)))
     .orderBy(desc(rooms.createdAt))
   return c.json({
-    rooms: rows.map(({ r, romTitle, romPlatform }) =>
+    rooms: rows.map(({ r, romTitle, romPlatform, romMaxPlayers }) =>
       serializeRoom(r, {
         hostUsername: me.username, romTitle, romPlatform,
+        maxPlayers: romMaxPlayers ?? null,
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, platform: romPlatform }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -150,6 +159,7 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
     hostUsername: users.username,
     romTitle: roms.title,
     romPlatform: roms.platform,
+    romMaxPlayers: roms.maxPlayers,
   })
     .from(rooms)
     .innerJoin(users, eq(users.id, rooms.hostUserId))
@@ -173,6 +183,8 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
     hostUsername: row.hostUsername,
     romTitle: row.romTitle,
     romPlatform: row.romPlatform,
+    maxPlayers: row.romMaxPlayers ?? null,
+    effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, platform: row.romPlatform }),
     hostOnline: isHostOnline(code),
   }))
 })
@@ -218,13 +230,25 @@ roomRoutes.patch('/:code', requireAuth, async (c) => {
   }
   if (Object.keys(patch).length === 0) {
     const rom = (await db.select().from(roms).where(eq(roms.id, row.romId)).limit(1))[0]
-    return c.json(serializeRoom(row, { romTitle: rom?.title, romPlatform: rom?.platform, hostUsername: me.username }))
+    return c.json(serializeRoom(row, {
+      romTitle: rom?.title,
+      romPlatform: rom?.platform,
+      maxPlayers: rom?.maxPlayers ?? null,
+      effectiveMaxPlayers: effectiveMaxPlayersForRom(rom),
+      hostUsername: me.username,
+    }))
   }
 
   const updated = await updateAndFetch(rooms, patch, eq(rooms.code, code))
   updateRoomPermissions(code, { allowPlay: updated.allowPlay !== false })
   const rom = (await db.select().from(roms).where(eq(roms.id, updated.romId)).limit(1))[0]
-  return c.json(serializeRoom(updated, { romTitle: rom?.title, romPlatform: rom?.platform, hostUsername: me.username }))
+  return c.json(serializeRoom(updated, {
+    romTitle: rom?.title,
+    romPlatform: rom?.platform,
+    maxPlayers: rom?.maxPlayers ?? null,
+    effectiveMaxPlayers: effectiveMaxPlayersForRom(rom),
+    hostUsername: me.username,
+  }))
 })
 
 // Close a room (host or admin)

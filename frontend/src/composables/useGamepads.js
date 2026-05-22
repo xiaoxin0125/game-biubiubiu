@@ -1,5 +1,5 @@
-import { ref, onBeforeUnmount } from 'vue'
-import { useInputMapping } from './useInputMapping.js'
+import { ref, onBeforeUnmount, watch } from 'vue'
+import { useInputMapping, TURBO_BUTTON_TARGETS } from './useInputMapping.js'
 import { dispatchKeyboardEvent } from './dispatchKeyboardEvent.js'
 
 /**
@@ -17,6 +17,24 @@ export function useGamepads({ onButton } = {}) {
 
   let rafId = null
   const state = Object.create(null)   // "padIndex:buttonIndex" → pressed?
+
+  function releaseTrackedButtons() {
+    const gpMap = mapping.value.gamepad || {}
+    const reverseMap = invertGamepadMap(gpMap)
+    for (const key of Object.keys(state)) {
+      if (!state[key]) {
+        delete state[key]
+        continue
+      }
+      const buttonIndex = Number(key.split(':')[1])
+      const btn = reverseMap[buttonIndex]
+      if (btn) {
+        const handled = onButton ? !!onButton('up', btn) : false
+        if (!handled) dispatchMappedButton('keyup', btn)
+      }
+      delete state[key]
+    }
+  }
 
   function poll() {
     const pads = (navigator.getGamepads?.() || []).filter(Boolean)
@@ -38,8 +56,7 @@ export function useGamepads({ onButton } = {}) {
         if (!btn) continue
         const handled = onButton ? !!onButton(pressed ? 'down' : 'up', btn) : false
         if (handled) continue
-        const key = mapping.value.keyboard[btn]
-        if (key) dispatchKey(pressed ? 'keydown' : 'keyup', key)
+        dispatchMappedButton(pressed ? 'keydown' : 'keyup', btn)
       }
     }
     rafId = requestAnimationFrame(poll)
@@ -51,6 +68,12 @@ export function useGamepads({ onButton } = {}) {
     return out
   }
 
+  function dispatchMappedButton(type, btn) {
+    const turboTarget = TURBO_BUTTON_TARGETS[btn]
+    const key = mapping.value.keyboard[turboTarget || btn]
+    if (key) dispatchKey(type, key)
+  }
+
   function dispatchKey(type, key) {
     dispatchKeyboardEvent(type, key)
   }
@@ -60,10 +83,13 @@ export function useGamepads({ onButton } = {}) {
 
   const onConnect = () => start()
   window.addEventListener('gamepadconnected', onConnect)
+  const stopMappingWatch = watch(mapping, () => releaseTrackedButtons(), { deep: true })
   start()
 
   onBeforeUnmount(() => {
+    releaseTrackedButtons()
     stop()
+    stopMappingWatch()
     window.removeEventListener('gamepadconnected', onConnect)
   })
 

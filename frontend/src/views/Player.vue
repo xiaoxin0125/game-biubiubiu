@@ -51,6 +51,7 @@
           :bios="bios"
           :retroarch-config="retroarchConfig"
           @booted="onBooted"
+          @config-reloaded="onInputConfigReloaded"
           @error="(err) => { fatalError = err?.message || '模拟器启动失败' }"
         />
 
@@ -116,7 +117,7 @@
     <VirtualGamepad
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
-      :on-button="guestButtonInterceptor"
+      :on-button="gamepadButtonInterceptor"
     />
 
     <RoomPanel
@@ -141,7 +142,9 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { coreDisplayName } from '../constants/cores.js'
-import { useInputMapping, buildPlayer2RetroarchConfig } from '../composables/useInputMapping.js'
+import { getPlatform } from '../constants/platforms.js'
+import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildPlayerRetroarchConfig, buildRemotePlayersRetroarchConfig, buildRemotePlayerKeyMaps, TURBO_BUTTON_TARGETS } from '../composables/useInputMapping.js'
+import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
@@ -156,10 +159,13 @@ import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import RoomPanel from '../components/emulator-portal/RoomPanel.vue'
 import InputSettings from '../components/InputSettings.vue'
 
-const props = defineProps({ id: String })
+const props = defineProps({
+  id: String,
+})
 const router = useRouter()
 const route = useRoute()
-const { retroarchConfig: inputCfg, mapping } = useInputMapping()
+const { mapping } = useInputMapping()
+const roomHostInputConfigSnapshot = ref(null)
 const { isAuthed } = useAuth()
 
 const portalRef = ref(null)
@@ -175,6 +181,7 @@ const roomCode = (route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = !!roomCode
 let rtc = null
 let inviteRoomGuest = () => {}
+const invitedRoomPeers = new Set()
 
 function showToast(text) {
   toastText.value = text
@@ -258,11 +265,22 @@ const canSaveState = computed(() => {
   return signalMe.value?.isHost === true
 })
 
+const currentPlatformButtons = computed(() => romMeta.value?.platform ? getPlatform(romMeta.value.platform).buttons : null)
+const remotePlayerKeyMaps = computed(() => {
+  const reservedKeys = Object.entries(mapping.value.keyboard || {})
+    .filter(([btn, key]) => !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
+    .map(([, key]) => key)
+  const maxPlayers = roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || 4
+  return buildRemotePlayerKeyMaps(maxPlayers, reservedKeys)
+})
+
 const roomRtc = useRoomRtc({
   getSignal: () => roomSession.signal(),
   portalRef,
   isHostMode,
+  playerIndexForPeer: (peerId) => signalPeers[peerId]?.playerIndex,
   canControlPeer: (peerId) => signalPeers[peerId]?.canControl === true,
+  remoteKeyMapForPlayer: (playerIndex) => remotePlayerKeyMaps.value[playerIndex],
   attachRemoteStream,
   setConnectionStatus,
 })
@@ -280,8 +298,18 @@ const shouldShowVirtualGamepad = computed(() => {
   return canLocalControl.value
 })
 const retroarchConfig = computed(() => {
-  const base = inputCfg.value || {}
-  if (isRoomMode && signalMe.value?.isHost) return { ...base, ...buildPlayer2RetroarchConfig() }
+  const platformButtons = currentPlatformButtons.value
+  const base = buildPlayerRetroarchConfig(mapping.value, platformButtons)
+  if (isRoomMode && signalMe.value?.isHost) {
+    if (!roomHostInputConfigSnapshot.value) roomHostInputConfigSnapshot.value = { ...base }
+    const maxPlayers = roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || 4
+    const reservedKeys = Object.values(roomHostInputConfigSnapshot.value)
+      .filter((value) => typeof value === 'string' && value !== 'nul')
+    return {
+      ...roomHostInputConfigSnapshot.value,
+      ...buildRemotePlayersRetroarchConfig(maxPlayers, reservedKeys),
+    }
+  }
   return base
 })
 const displayName = computed(() =>
@@ -298,23 +326,151 @@ const { onSaveState, onLoadState } = useSaveState({
 
 const { guestKeyHandler, guestButtonInterceptor } = useGuestInputForwarding({
   mapping,
+  platformButtons: currentPlatformButtons,
   roomRtc: () => rtc,
   isRoomMode,
   localPeer: signalMe,
   isGuestMode,
   canLocalControl,
 })
-useGamepads({ onButton: guestButtonInterceptor })
+const hostButtonInterceptor = (action, button) => {
+  if (!isRoomMode || !isHostMode.value) return false
+  const snapshotKeyboard = snapshotKeyboardMapping()
+  const key = snapshotKeyboard?.[button]
+  if (!key || key === 'nul') return false
+  dispatchKeyboardEvent(action === 'down' ? 'keydown' : 'keyup', key, { internal: true })
+  return true
+}
+
+const gamepadButtonInterceptor = (action, button) => {
+  if (guestButtonInterceptor(action, button)) return true
+  return hostButtonInterceptor(action, button)
+}
+useGamepads({ onButton: gamepadButtonInterceptor })
+
+function inviteConnectedRoomPeers() {
+  if (!isRoomMode || !isHostMode.value || !booted.value) return
+  for (const peer of Object.values(signalPeers)) {
+    if (!peer || peer.isHost || peer.id === signalMe.value?.peerId) continue
+    if (invitedRoomPeers.has(peer.id)) continue
+    invitedRoomPeers.add(peer.id)
+    setConnectionStatus('正在连接玩家画面…')
+    inviteRoomGuest(peer.id)
+    setTimeout(() => {
+      if (invitedRoomPeers.has(peer.id)) inviteRoomGuest(peer.id)
+    }, 2000)
+  }
+}
 
 function onBooted() {
   booted.value = true
   loadingSlow.value = false
   if (slowTimer) { clearTimeout(slowTimer); slowTimer = null }
+  inviteConnectedRoomPeers()
+}
+function onInputConfigReloaded() {
+  booted.value = true
+  loadingSlow.value = false
+  showToast('按键设置已保存，输入配置已重新载入')
 }
 function reloadPage() { window.location.reload() }
 function onFullscreen() { portalRef.value?.toggleFullscreen() }
 function onKeyDown(e) {
   if (e.key === 'Escape' && !document.fullscreenElement) goBack()
+  if (handleHostKeyboardRemap(e)) return
+  handleTurboKeyboard(e)
+}
+function onKeyUp(e) {
+  if (handleHostKeyboardRemap(e)) return
+  handleTurboKeyboard(e)
+}
+function snapshotKeyboardMapping() {
+  const snapshot = roomHostInputConfigSnapshot.value
+  if (!snapshot) return null
+  const out = {}
+  for (const { key } of BUTTON_DEFS) {
+    const target = TURBO_BUTTON_TARGETS[key] || key
+    out[key] = snapshot[`input_player1_${target}`] || 'nul'
+  }
+  return out
+}
+
+function inputButtonFromConfigKey(config, key, allowed = null, { includeTurbo = false } = {}) {
+  const defs = includeTurbo ? BUTTON_DEFS : RETROPAD_BUTTON_DEFS
+  for (const { key: button } of defs) {
+    if (allowed && !allowed.has(button)) continue
+    if (config?.[button] === key) return button
+  }
+  return null
+}
+
+function handleHostKeyboardRemap(e) {
+  if (e.__internalInputDispatch) return false
+  if (!isRoomMode || !isHostMode.value || showInput.value) return false
+  const snapshotKeyboard = snapshotKeyboardMapping()
+  if (!snapshotKeyboard) return false
+
+  const key = normalizeDomKey(e)
+  const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
+  const currentKeyboard = mapping.value.keyboard || {}
+  const currentButton = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includeTurbo: true })
+
+  if (currentButton) {
+    const targetButton = TURBO_BUTTON_TARGETS[currentButton] || currentButton
+    const snapshotKey = snapshotKeyboard[targetButton]
+    if (!snapshotKey || snapshotKey === 'nul') return false
+    if (snapshotKey === key) return false
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    dispatchKeyboardEvent(e.type, snapshotKey, { internal: true })
+    return true
+  }
+
+  const oldButton = inputButtonFromConfigKey(snapshotKeyboard, key, allowed)
+  if (oldButton && currentKeyboard[oldButton] !== key) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    return true
+  }
+
+  return false
+}
+
+function handleTurboKeyboard(e) {
+  if (showInput.value || isGuestMode.value) return
+  const snapshotKeyboard = snapshotKeyboardMapping()
+  const source = snapshotKeyboard || mapping.value.keyboard || {}
+  const key = normalizeDomKey(e)
+  const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
+  for (const [turboButton, targetButton] of Object.entries(TURBO_BUTTON_TARGETS)) {
+    if (allowed && !allowed.has(turboButton)) continue
+    if (source[turboButton] !== key) continue
+    const targetKey = source[targetButton]
+    const sourceKey = source[turboButton]
+    if (!targetKey || targetKey === sourceKey) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    dispatchKeyboardEvent(e.type, targetKey, { internal: true })
+    return
+  }
+}
+function normalizeDomKey(e) {
+  const raw = e.key
+  if (raw === 'ArrowUp') return 'up'
+  if (raw === 'ArrowDown') return 'down'
+  if (raw === 'ArrowLeft') return 'left'
+  if (raw === 'ArrowRight') return 'right'
+  if (raw === 'Enter') return e.location === 3 ? 'numenter' : 'enter'
+  if (raw === 'Shift') return e.location === 2 ? 'rshift' : 'shift'
+  if (raw === ' ') return 'space'
+  if (raw === ';') return 'semicolon'
+  if (raw === '-') return 'minus'
+  if (raw === '=') return 'equal'
+  if (raw === '/') return e.location === 3 ? 'numdivide' : '/'
+  if (raw === '*') return 'nummultiply'
+  if (raw === '+') return 'numadd'
+  if (raw === '.') return e.location === 3 ? 'decimal' : '.'
+  return raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase()
 }
 function goBack() {
   if (isRoomMode) {
@@ -330,10 +486,15 @@ function switchVersion(v) {
   router.push(`/play/${v.id}${suffix}`)
 }
 
+watch(() => Object.keys(signalPeers).join('|'), () => {
+  inviteConnectedRoomPeers()
+})
+
 watch(() => props.id, (now, prev) => {
   if (!prev || now === prev) return
   resetForRouteChange()
   booted.value = false
+  invitedRoomPeers.clear()
   loadMeta()
 })
 
@@ -342,7 +503,8 @@ onMounted(() => {
     showRotateHint.value = true
     setTimeout(() => { showRotateHint.value = false }, 3500)
   }
-  document.addEventListener('keydown', onKeyDown)
+  document.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('keyup', onKeyUp, true)
   loadMeta()
   slowTimer = setTimeout(() => { if (!booted.value) loadingSlow.value = true }, 30000)
   if (isRoomMode) {
@@ -358,7 +520,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('keydown', onKeyDown)
+  document.removeEventListener('keydown', onKeyDown, true)
+  document.removeEventListener('keyup', onKeyUp, true)
   document.removeEventListener('keydown', guestKeyHandler, true)
   document.removeEventListener('keyup', guestKeyHandler, true)
   if (slowTimer) { clearTimeout(slowTimer); slowTimer = null }
@@ -390,24 +553,35 @@ onBeforeUnmount(() => {
   touch-action: none;
 }
 .emu-area {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   position: relative;
   z-index: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
-.emu-frame { width: 100%; height: 100%; position: relative; overflow: hidden; }
+.emu-frame { width: 100%; height: 100%; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
 
 .guest-view {
-  position: absolute; inset: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   display: flex; align-items: center; justify-content: center;
   background: #000;
+  overflow: hidden;
 }
 .remote-video {
-  max-width: 100%; max-height: 100%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   background: #000;
   object-fit: contain;
 }

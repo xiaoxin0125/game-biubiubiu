@@ -95,7 +95,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { getPlatform } from '../../constants/platforms.js'
-import { useInputMapping } from '../../composables/useInputMapping.js'
+import { useInputMapping, TURBO_BUTTON_TARGETS } from '../../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../../composables/dispatchKeyboardEvent.js'
 
 const props = defineProps({
@@ -262,6 +262,8 @@ function resetAllButtons() {
   stickKnob.y = 0
 }
 
+watch(() => mapping.value.keyboard, () => resetAllButtons(), { deep: true })
+
 // ── Turbo / 连发（显式开关） ────────────────────────────
 // 用户点右下角 "连发" 开关决定 A/B/X/Y/L/R/L2/R2 是否自动连发。
 // 默认关闭 → 按住就是保持按住（赛车加速、马里奥跑步 OK）。
@@ -280,13 +282,17 @@ watch(turboEnabled, (v) => {
 
 function emitDown(btn) {
   if (props.onButton && props.onButton('down', btn)) return
-  const k = resolveKey(btn)
-  if (k) dispatch('keydown', k)
+  dispatchMappedButton('keydown', btn)
 }
 function emitUp(btn) {
   if (props.onButton && props.onButton('up', btn)) return
-  const k = resolveKey(btn)
-  if (k) dispatch('keyup', k)
+  dispatchMappedButton('keyup', btn)
+}
+
+function dispatchMappedButton(type, btn) {
+  const turboTarget = TURBO_BUTTON_TARGETS[btn]
+  const k = resolveKey(turboTarget || btn)
+  if (k) dispatch(type, k)
 }
 
 function press(btn) {

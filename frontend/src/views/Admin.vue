@@ -143,7 +143,7 @@
       </div>
       <div class="tbl">
         <div class="trow trow-head trow-roms">
-          <div>游戏</div><div>平台</div><div>上传者</div><div>上传时间</div><div>状态</div><div class="right">操作</div>
+          <div>游戏</div><div>平台</div><div>上传者</div><div>人数</div><div>上传时间</div><div>状态</div><div class="right">操作</div>
         </div>
         <div v-for="r in roms" :key="r.id" class="trow trow-roms">
           <div class="u-name">
@@ -157,6 +157,17 @@
             <span class="plat-badge" :style="{ '--pc': platColor(r.platform) }">{{ platLabel(r.platform) }}</span>
           </div>
           <div class="muted">@{{ r.owner?.username || '—' }}</div>
+          <div>
+            <select
+              class="select max-player-select"
+              :value="r.maxPlayers ?? ''"
+              :disabled="savingMaxPlayersId === r.id"
+              @change="updateMaxPlayers(r, $event.target.value)"
+            >
+              <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
+              <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
+            </select>
+          </div>
           <div class="muted">{{ fmtTime(r.createdAt) }}</div>
           <div>
             <button
@@ -337,6 +348,7 @@ async function deleteRom(r) {
 }
 
 const togglingId = ref(null)
+const savingMaxPlayersId = ref(null)
 async function togglePublic(r) {
   togglingId.value = r.id
   try {
@@ -346,6 +358,19 @@ async function togglePublic(r) {
     alert(err?.message || '切换失败')
   } finally {
     togglingId.value = null
+  }
+}
+
+async function updateMaxPlayers(r, value) {
+  savingMaxPlayersId.value = r.id
+  try {
+    const maxPlayers = value === '' ? null : Number(value)
+    await api.romUpdate(r.id, { maxPlayers })
+    await loadRoms()
+  } catch (err) {
+    alert(err?.message || '保存人数失败')
+  } finally {
+    savingMaxPlayersId.value = null
   }
 }
 
@@ -475,7 +500,7 @@ function fmtTime(v) {
   border-radius: var(--r-md);
   transition: background var(--t-fast);
 }
-.trow-roms { grid-template-columns: 2fr 110px 1fr 160px 90px 170px; }
+.trow-roms { grid-template-columns: 2fr 110px 1fr 120px 160px 90px 170px; }
 .trow:not(.trow-head):hover { background: var(--bg-3); }
 .trow-head {
   font-size: 12px; font-weight: 500; color: var(--text-tertiary);
@@ -501,6 +526,7 @@ function fmtTime(v) {
 .muted { color: var(--text-tertiary); font-size: 13px; }
 
 .actions { display: flex; gap: 6px; justify-content: flex-end; }
+.max-player-select { width: 112px; height: 32px; padding: 0 8px; font-size: 12px; }
 
 .pill-tag {
   display: inline-flex; align-items: center;

@@ -1,21 +1,24 @@
 import { computed } from 'vue'
-import { P2_KEY_MAP } from '../useInputMapping.js'
+import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS } from '../useInputMapping.js'
 import { dispatchKeyboardEvent } from '../dispatchKeyboardEvent.js'
 
-// Current netplay maps all controllable guests to the host's P2 bindings.
-// The room hub may allocate P2-P4 seats, but distinct P3/P4 RetroArch maps are
-// intentionally not implemented yet; docs/netplay.md calls this out explicitly.
-export function dispatchP2Button(action, button) {
-  const mappedKey = P2_KEY_MAP[button]
-  if (!mappedKey) return
-  dispatchKeyboardEvent(action === 'down' ? 'keydown' : 'keyup', mappedKey)
+export function dispatchPlayerButton(playerIndex, action, button, keyMap = null) {
+  const eventType = action === 'down' ? 'keydown' : 'keyup'
+  const turboTarget = TURBO_BUTTON_TARGETS[button]
+  const targetButton = turboTarget || button
+  const mappedKey = (keyMap || REMOTE_PLAYER_KEY_MAPS[playerIndex])?.[targetButton]
+  if (mappedKey) dispatchKeyboardEvent(eventType, mappedKey)
 }
 
-export function useGuestInputForwarding({ mapping, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {
+export function useGuestInputForwarding({ mapping, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {
   const reverseKeyMap = computed(() => {
     const cfg = mapping.value.keyboard || {}
+    const allowed = platformButtons?.value ? new Set(platformButtons.value) : null
     const out = {}
-    for (const [btn, key] of Object.entries(cfg)) out[key] = btn
+    for (const [btn, key] of Object.entries(cfg)) {
+      if (allowed && !allowed.has(btn)) continue
+      out[key] = btn
+    }
     return out
   })
 
@@ -32,9 +35,16 @@ export function useGuestInputForwarding({ mapping, roomRtc, isRoomMode, localPee
     else if (raw === 'ArrowDown') k = 'down'
     else if (raw === 'ArrowLeft') k = 'left'
     else if (raw === 'ArrowRight') k = 'right'
-    else if (raw === 'Enter') k = 'enter'
+    else if (raw === 'Enter') k = e.location === 3 ? 'numenter' : 'enter'
     else if (raw === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
     else if (raw === ' ') k = 'space'
+    else if (raw === ';') k = 'semicolon'
+    else if (raw === '-') k = 'minus'
+    else if (raw === '=') k = 'equal'
+    else if (raw === '/') k = e.location === 3 ? 'numdivide' : '/'
+    else if (raw === '*') k = 'nummultiply'
+    else if (raw === '+') k = 'numadd'
+    else if (raw === '.') k = e.location === 3 ? 'decimal' : '.'
     else k = raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase()
 
     const button = reverseKeyMap.value[k]
