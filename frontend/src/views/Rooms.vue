@@ -176,7 +176,7 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
 </script>
 
 <style scoped>
-.rooms-page { max-width: 960px; padding-bottom: 60px; }
+.rooms-page { max-width: 960px; }
 
 .section { margin-bottom: 32px; }
 .section-title {

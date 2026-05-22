@@ -2,7 +2,9 @@
   <header class="app-header">
     <div class="inner">
       <router-link class="brand" to="/">
-        <span class="orb-brand">筱</span>
+        <span class="orb-brand" aria-hidden="true">
+          <img src="../assets/brand-game.svg" alt="" />
+        </span>
         <span class="brand-text">{{ settings.siteTitle }}</span>
       </router-link>
 

@@ -471,7 +471,7 @@ function fmtTime(v) {
 </script>
 
 <style scoped>
-.admin { max-width: 960px; padding-bottom: 60px; }
+.admin { max-width: 960px; }
 
 .stats-row {
   display: grid;

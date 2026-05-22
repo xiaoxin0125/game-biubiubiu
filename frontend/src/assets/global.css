@@ -343,27 +343,21 @@ button { font-family: inherit; }
 .orb-brand {
   position: relative;
   width: 34px; height: 34px;
-  border-radius: 12px;
-  background: var(--accent-gradient);
-  color: #fff;
+  border-radius: 7px;
+  background: #fff7ed;
+  color: #111;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  font-weight: 800;
   flex-shrink: 0;
-  box-shadow:
-    var(--shadow-accent-sm),
-    inset 0 1px 0 rgba(255, 255, 255, 0.34),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  box-shadow: none;
   overflow: hidden;
 }
-.orb-brand::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0) 50%);
-  pointer-events: none;
+.orb-brand img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 /* ===== Scrollbar ===== */

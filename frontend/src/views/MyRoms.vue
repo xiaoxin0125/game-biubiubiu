@@ -349,7 +349,7 @@ function fmtTime(v) {
 </script>
 
 <style scoped>
-.my-page { max-width: 960px; padding-bottom: 60px; }
+.my-page { max-width: 960px; }
 
 .tabs {
   display: flex;
