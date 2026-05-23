@@ -62,7 +62,7 @@ export function useEmulator() {
     window.removeEventListener('blur', syncWakeLock)
   }
 
-  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, shader }) {
+  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader }) {
     if (!wrapperRef.value) throw new Error('wrapper not mounted')
     if (instance.value) return instance.value
     booting.value = true
@@ -73,7 +73,7 @@ export function useEmulator() {
       const romInput = rom !== undefined
         ? rom
         : (romFileName ? { fileName: romFileName, fileContent: romUrl } : romUrl)
-      const emu = await prepareEmulator({ core, rom: romInput, bios, retroarchConfig, shader })
+      const emu = await prepareEmulator({ core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader })
 
       // Re-check mount: prepareEmulator is async (seconds), the component may
       // have been torn down while we waited (e.g. guest role arrived and the

@@ -1,14 +1,48 @@
 import { getPlatform } from '../constants/platforms.js'
 
-export function getPlatformInfo(platformId) {
+export function getPlatformInfo(platformId, { core } = {}) {
   const p = getPlatform(platformId)
+  const selectedCore = core && p.cores.includes(core) ? core : p.cores[0]
   return {
-    core: p.cores[0],
+    core: selectedCore,
     label: p.shortLabel,
     displayName: p.displayName,
     color: p.color,
     manufacturer: p.manufacturer,
   }
+}
+
+const NES_FOUR_PLAYER_CORE_CONFIG = {
+  fceumm: {
+    four_score: { fceumm_4player: 'fourscore' },
+    famicom_expansion: { fceumm_4player: 'famicom' },
+  },
+  nestopia: {
+    four_score: { nestopia_select_adapter: 'ntsc' },
+    famicom_expansion: { nestopia_select_adapter: 'famicom' },
+  },
+}
+
+const NES_FOUR_PLAYER_AUTO_RULES = [
+  {
+    pattern: /battle\s*city.*(?:4\s*(?:players?|p)|four\s*players?)/i,
+    mode: 'famicom_expansion',
+  },
+]
+
+export function resolveNesFourPlayerMode({ platform, mode, title, fileName } = {}) {
+  if (!['nes', 'famicom'].includes(platform)) return null
+  if (mode && mode !== 'auto') return mode
+
+  const text = `${title || ''} ${fileName || ''}`
+  const rule = NES_FOUR_PLAYER_AUTO_RULES.find((item) => item.pattern.test(text))
+  return rule?.mode || null
+}
+
+export function buildNesFourPlayerCoreConfig({ platform, core, mode, title, fileName } = {}) {
+  const effectiveMode = resolveNesFourPlayerMode({ platform, mode, title, fileName })
+  if (!effectiveMode) return {}
+  return NES_FOUR_PLAYER_CORE_CONFIG[core]?.[effectiveMode] || {}
 }
 
 // Platforms that actually REQUIRE a BIOS to boot. Everything else (GB/GBC/GBA

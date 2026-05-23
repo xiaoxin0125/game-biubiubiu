@@ -51,14 +51,16 @@ export function securityHeaders() {
     c.header('Referrer-Policy', 'same-origin')
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
     c.header('X-Frame-Options', 'DENY')
-    c.header('Cross-Origin-Opener-Policy', 'same-origin')
+    if (isSecureRequest(c)) {
+      c.header('Cross-Origin-Opener-Policy', 'same-origin')
+    }
     c.header('Content-Security-Policy', [
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      "script-src 'self' 'wasm-unsafe-eval'",
+      "script-src 'self' blob: 'unsafe-eval' 'wasm-unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",

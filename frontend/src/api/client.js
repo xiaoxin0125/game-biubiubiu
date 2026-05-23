@@ -42,6 +42,7 @@ export const api = {
   romsMine: () => request('/api/roms/mine'),
   romsPublic: () => request('/api/roms/public'),
   romsFavorites: () => request('/api/roms/favorites'),
+  romGet: (id) => request(`/api/roms/${id}`),
   romUpload: (fd) => request('/api/roms/upload', { method: 'POST', formData: fd }),
   romUpdate: (id, patch) => request(`/api/roms/${id}`, { method: 'PATCH', body: patch }),
   romDelete: (id, { permanent = false } = {}) =>

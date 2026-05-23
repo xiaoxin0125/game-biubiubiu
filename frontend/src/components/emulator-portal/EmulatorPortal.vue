@@ -15,6 +15,7 @@ const props = defineProps({
   rom: { type: [Object, Array], required: true },
   bios: { type: Array, default: () => [] },
   retroarchConfig: { type: Object, default: () => ({}) },
+  retroarchCoreConfig: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['booted', 'error', 'config-reloaded'])
 
@@ -36,6 +37,7 @@ async function start() {
       rom: props.rom,
       bios: props.bios,
       retroarchConfig: props.retroarchConfig,
+      retroarchCoreConfig: props.retroarchCoreConfig,
     })
     emit('booted')
   } catch (err) {
@@ -52,6 +54,7 @@ function configSignature(value) {
 }
 
 const retroarchConfigSignature = computed(() => configSignature(props.retroarchConfig))
+const retroarchCoreConfigSignature = computed(() => configSignature(props.retroarchCoreConfig))
 
 async function restart() {
   await destroy()
@@ -70,8 +73,8 @@ watch(() => [romKey(props.rom), props.core], async ([newKey, newCore], [oldKey, 
   await restart()
 })
 
-watch(retroarchConfigSignature, async (next, prev) => {
-  if (!prev || next === prev) return
+watch([retroarchConfigSignature, retroarchCoreConfigSignature], async ([nextConfig, nextCoreConfig], [prevConfig, prevCoreConfig]) => {
+  if ((!prevConfig && !prevCoreConfig) || (nextConfig === prevConfig && nextCoreConfig === prevCoreConfig)) return
   await restart()
   emit('config-reloaded')
 })

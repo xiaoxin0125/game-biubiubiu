@@ -50,6 +50,7 @@
           :rom="rom"
           :bios="bios"
           :retroarch-config="retroarchConfig"
+          :retroarch-core-config="retroarchCoreConfig"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
           @error="(err) => { fatalError = err?.message || '模拟器启动失败' }"
@@ -152,6 +153,7 @@ import { useSaveState } from '../composables/player/useSaveState.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
 import { useRoomSession } from '../composables/player/useRoomSession.js'
 import { useRoomRtc } from '../composables/player/useRoomRtc.js'
+import { buildNesFourPlayerCoreConfig, resolveNesFourPlayerMode } from '../data/config.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
@@ -251,6 +253,19 @@ const {
 const roomAllowsPlay = computed(() => (isRoomMode ? roomAllowPlay.value : roomInfo.value?.allowPlay !== false))
 const canShowVersionSwitch = computed(() => !isRoomMode || isHostMode.value === true)
 const activeCore = computed(() => platformInfo.value.core)
+const nesFourPlayerMode = computed(() => resolveNesFourPlayerMode({
+  platform: romMeta.value?.platform,
+  mode: romMeta.value?.nesFourPlayerMode,
+  title: romMeta.value?.title,
+  fileName: romMeta.value?.fileName,
+}))
+const retroarchCoreConfig = computed(() => buildNesFourPlayerCoreConfig({
+  platform: romMeta.value?.platform,
+  core: activeCore.value,
+  mode: romMeta.value?.nesFourPlayerMode,
+  title: romMeta.value?.title,
+  fileName: romMeta.value?.fileName,
+}))
 const overlayPlatformInfo = computed(() => {
   if (romMeta.value) return platformInfo.value
   return {
@@ -271,7 +286,7 @@ const remotePlayerKeyMaps = computed(() => {
     .filter(([btn, key]) => !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
     .map(([, key]) => key)
   const maxPlayers = roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || 4
-  return buildRemotePlayerKeyMaps(maxPlayers, reservedKeys)
+  return buildRemotePlayerKeyMaps(maxPlayers, reservedKeys, currentPlatformButtons.value)
 })
 
 const roomRtc = useRoomRtc({
@@ -300,6 +315,14 @@ const shouldShowVirtualGamepad = computed(() => {
 const retroarchConfig = computed(() => {
   const platformButtons = currentPlatformButtons.value
   const base = buildPlayerRetroarchConfig(mapping.value, platformButtons)
+  if (!isRoomMode && nesFourPlayerMode.value) {
+    const reservedKeys = Object.values(base)
+      .filter((value) => typeof value === 'string' && value !== 'nul')
+    return {
+      ...base,
+      ...buildRemotePlayersRetroarchConfig(4, reservedKeys, platformButtons),
+    }
+  }
   if (isRoomMode && signalMe.value?.isHost) {
     if (!roomHostInputConfigSnapshot.value) roomHostInputConfigSnapshot.value = { ...base }
     const maxPlayers = roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || 4
@@ -307,7 +330,7 @@ const retroarchConfig = computed(() => {
       .filter((value) => typeof value === 'string' && value !== 'nul')
     return {
       ...roomHostInputConfigSnapshot.value,
-      ...buildRemotePlayersRetroarchConfig(maxPlayers, reservedKeys),
+      ...buildRemotePlayersRetroarchConfig(maxPlayers, reservedKeys, platformButtons),
     }
   }
   return base

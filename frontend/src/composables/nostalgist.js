@@ -48,6 +48,7 @@ function defaultRetroarchConfigForCore(core) {
  * @param {string} [opts.romFileName]
  * @param {Array<{fileName,fileContent}>} [opts.bios]
  * @param {Object} [opts.retroarchConfig]
+ * @param {Object} [opts.retroarchCoreConfig]
  * @param {string} [opts.shader]
  */
 export async function prepareEmulator({
@@ -57,6 +58,7 @@ export async function prepareEmulator({
   romFileName,   // legacy
   bios = [],
   retroarchConfig = {},
+  retroarchCoreConfig = {},
   shader,
 }) {
   // Normalize legacy arguments. When `rom` isn't passed, fall back to
@@ -70,6 +72,7 @@ export async function prepareEmulator({
     core,
     rom: resolvedRom,
     retroarchConfig: { ...defaultRetroarchConfigForCore(core), ...retroarchConfig },
+    retroarchCoreConfig,
     // Route core downloads through our backend, and cache the bytes in
     // IndexedDB so reopening a game is near-instant and works offline.
     // Backend already fetches once from jsdelivr and caches to disk

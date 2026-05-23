@@ -16,7 +16,7 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
   const roomInfo = ref(null)
   const localPeerCanLoad = computed(() => !isRoomMode || !!localPeer.value?.isHost)
 
-  const platformInfo = computed(() => getPlatformInfo(romMeta.value?.platform))
+  const platformInfo = computed(() => getPlatformInfo(romMeta.value?.platform, { core: romMeta.value?.defaultCore }))
   const currentVersionLabel = computed(() => {
     if (!romMeta.value) return ''
     if (!romMeta.value.parentRomId) return '原版'
@@ -70,16 +70,21 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
   async function loadMeta() {
     const id = Number(routeRomId())
     try {
-      const [{ roms: mine }, { roms: pub }] = await Promise.all([
-        api.romsMine().catch(() => ({ roms: [] })),
-        api.romsPublic().catch(() => ({ roms: [] })),
-      ])
-      let found = [...mine, ...pub].find((r) => r.id === id)
-      if (!found) {
-        try {
-          const { versions } = await api.romVersions(id)
-          found = versions.find((r) => r.id === id)
-        } catch {}
+      let found = null
+      try {
+        found = (await api.romGet(id)).rom
+      } catch {
+        const [{ roms: mine }, { roms: pub }] = await Promise.all([
+          api.romsMine().catch(() => ({ roms: [] })),
+          api.romsPublic().catch(() => ({ roms: [] })),
+        ])
+        found = [...mine, ...pub].find((r) => r.id === id)
+        if (!found) {
+          try {
+            const { versions } = await api.romVersions(id)
+            found = versions.find((r) => r.id === id)
+          } catch {}
+        }
       }
       if (isRoomMode) {
         try {

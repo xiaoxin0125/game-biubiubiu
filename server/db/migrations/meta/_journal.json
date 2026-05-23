@@ -22,6 +22,13 @@
       "when": 1779434200000,
       "tag": "0002_audit_logs",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1779499100000,
+      "tag": "0003_rom_compat",
+      "breakpoints": true
     }
   ]
 }

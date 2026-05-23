@@ -61,6 +61,27 @@
           </div>
         </div>
 
+        <div v-if="coreOptions.length" class="field compat-field">
+          <label class="label">默认核心</label>
+          <select v-model="defaultCore" class="select">
+            <option value="">跟随平台默认</option>
+            <option v-for="core in coreOptions" :key="core" :value="core">
+              {{ coreDisplayName[core] || core }}
+            </option>
+          </select>
+          <div class="hint-text">只影响启动前选择，不会在运行中切换核心。</div>
+        </div>
+
+        <div v-if="isNesPlatform" class="field compat-field">
+          <label class="label">NES 4P 控制器模式</label>
+          <select v-model="nesFourPlayerMode" class="select">
+            <option value="">关闭 / 自动</option>
+            <option value="four_score">Four Score</option>
+            <option value="famicom_expansion">FC 扩展手柄</option>
+          </select>
+          <div class="hint-text">4 人改版 ROM 建议配合 FCEUmm 或 Nestopia 测试。</div>
+        </div>
+
         <label class="pub-row">
           <div class="sw">
             <input type="checkbox" v-model="isPublic" :disabled="!!selectedParent" />
@@ -125,6 +146,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { platforms } from '../constants/platforms.js'
+import { coreDisplayName } from '../constants/cores.js'
 import { api } from '../api/client.js'
 
 const emit = defineEmits(['close', 'uploaded'])
@@ -142,6 +164,8 @@ const maxMb = 100
 const asVariant = ref(false)
 const parentRomId = ref(null)
 const versionLabel = ref('')
+const defaultCore = ref('')
+const nesFourPlayerMode = ref('')
 const existingRoms = ref([])
 const parentQuery = ref('')
 
@@ -160,6 +184,8 @@ onMounted(async () => {
 })
 
 const platformList = computed(() => Object.entries(platforms))
+const coreOptions = computed(() => platform.value ? platforms[platform.value]?.cores || [] : [])
+const isNesPlatform = computed(() => platform.value === 'nes' || platform.value === 'famicom')
 
 const sameCandidates = computed(() => {
   if (!platform.value) return []
@@ -179,7 +205,12 @@ const filteredParents = computed(() => {
 watch(asVariant, (on) => {
   if (!on) { parentRomId.value = null; versionLabel.value = ''; parentQuery.value = '' }
 })
-watch(platform, () => { parentRomId.value = null; parentQuery.value = '' })
+watch(platform, () => {
+  parentRomId.value = null
+  parentQuery.value = ''
+  defaultCore.value = ''
+  nesFourPlayerMode.value = ''
+})
 watch(selectedParent, (parent) => {
   if (parent) isPublic.value = !!parent.isPublic
 })
@@ -233,6 +264,8 @@ async function submit() {
     fd.append('title', title.value || file.value.name)
     fd.append('platform', platform.value)
     fd.append('isPublic', String(isPublic.value))
+    if (defaultCore.value) fd.append('defaultCore', defaultCore.value)
+    if (isNesPlatform.value && nesFourPlayerMode.value) fd.append('nesFourPlayerMode', nesFourPlayerMode.value)
     if (asVariant.value && parentRomId.value) {
       fd.append('parentRomId', String(parentRomId.value))
       fd.append('versionLabel', versionLabel.value || '变体')
@@ -348,6 +381,24 @@ async function submit() {
 .fs { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
 .field { margin-top: 18px; }
+.select {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+  color: #111;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+.hint-text {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
 
 .plat-grid {
   display: grid;

@@ -179,6 +179,28 @@
               <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
               <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
             </select>
+            <select
+              class="select compat-select"
+              :value="r.defaultCore ?? ''"
+              :disabled="savingCompatId === r.id"
+              @change="updateDefaultCore(r, $event.target.value)"
+            >
+              <option value="">默认核心</option>
+              <option v-for="core in coreOptionsFor(r.platform)" :key="core" :value="core">
+                {{ coreDisplayName[core] || core }}
+              </option>
+            </select>
+            <select
+              v-if="isNesPlatform(r.platform)"
+              class="select compat-select"
+              :value="r.nesFourPlayerMode ?? ''"
+              :disabled="savingCompatId === r.id"
+              @change="updateNesFourPlayerMode(r, $event.target.value)"
+            >
+              <option value="">4P 自动</option>
+              <option value="four_score">Four Score</option>
+              <option value="famicom_expansion">FC 扩展手柄</option>
+            </select>
             <span class="meta-chip">{{ fmtTime(r.createdAt) }}</span>
             <button
               class="pill-tag pill-toggle"
@@ -270,6 +292,7 @@ import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useSettings } from '../composables/useSettings.js'
 import { getPlatform } from '../constants/platforms.js'
+import { coreDisplayName } from '../constants/cores.js'
 import UploadDialog from '../components/UploadDialog.vue'
 
 const router = useRouter()
@@ -415,6 +438,7 @@ async function deleteRom(r) {
 
 const togglingId = ref(null)
 const savingMaxPlayersId = ref(null)
+const savingCompatId = ref(null)
 async function togglePublic(r) {
   togglingId.value = r.id
   try {
@@ -438,6 +462,47 @@ async function updateMaxPlayers(r, value) {
   } finally {
     savingMaxPlayersId.value = null
   }
+}
+
+async function updateDefaultCore(r, value) {
+  savingCompatId.value = r.id
+  const nextDefaultCore = value || null
+  try {
+    const updated = await api.romUpdate(r.id, { defaultCore: nextDefaultCore })
+    Object.assign(r, {
+      ...updated,
+      defaultCore: updated.defaultCore ?? nextDefaultCore,
+      owner: r.owner,
+    })
+  } catch (err) {
+    alert(err?.message || '保存核心失败')
+  } finally {
+    savingCompatId.value = null
+  }
+}
+
+async function updateNesFourPlayerMode(r, value) {
+  savingCompatId.value = r.id
+  const nextMode = value || null
+  try {
+    const updated = await api.romUpdate(r.id, { nesFourPlayerMode: nextMode })
+    Object.assign(r, {
+      ...updated,
+      nesFourPlayerMode: updated.nesFourPlayerMode ?? nextMode,
+      owner: r.owner,
+    })
+  } catch (err) {
+    alert(err?.message || '保存 4P 模式失败')
+  } finally {
+    savingCompatId.value = null
+  }
+}
+
+function coreOptionsFor(platform) {
+  return getPlatform(platform).cores || []
+}
+function isNesPlatform(platform) {
+  return platform === 'nes' || platform === 'famicom'
 }
 
 function play(r) { router.push(`/play/${r.id}`) }

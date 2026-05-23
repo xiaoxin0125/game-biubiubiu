@@ -86,12 +86,14 @@ const REMOTE_KEY_FALLBACK_POOL = [
   ...Object.values(REMOTE_PLAYER_KEY_LAYOUTS[4]),
 ]
 
-function remotePlayerKeys(player, reserved = new Set()) {
+function remotePlayerKeys(player, reserved = new Set(), platformButtons = null) {
   const out = {}
   const preferred = REMOTE_PLAYER_KEY_LAYOUTS[player] || {}
+  const allowed = platformButtons ? new Set(platformButtons) : null
   let fallbackCursor = 0
 
   for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+    if (allowed && !allowed.has(btn)) continue
     const preferredKey = preferred[btn]
     if (preferredKey && !reserved.has(preferredKey)) {
       out[btn] = preferredKey
@@ -108,11 +110,11 @@ function remotePlayerKeys(player, reserved = new Set()) {
 // Remote retropad buttons map to host-side reserved keyboard keys. These are
 // generated from the current P1 mapping at runtime, so P1 custom bindings never
 // get stolen by P2-P4.
-export function buildRemotePlayerKeyMaps(maxPlayers = 4, reservedKeys = []) {
+export function buildRemotePlayerKeyMaps(maxPlayers = 4, reservedKeys = [], platformButtons = null) {
   const limit = Math.max(2, Math.min(4, Number(maxPlayers) || 4))
   const reserved = new Set((reservedKeys || []).filter((key) => key != null && key !== '').map((key) => String(key)))
   const maps = {}
-  for (let player = 2; player <= limit; player++) maps[player] = remotePlayerKeys(player, reserved)
+  for (let player = 2; player <= limit; player++) maps[player] = remotePlayerKeys(player, reserved, platformButtons)
   return maps
 }
 
@@ -120,15 +122,17 @@ export const REMOTE_PLAYER_KEY_MAPS = buildRemotePlayerKeyMaps(4)
 
 export const P2_KEY_MAP = REMOTE_PLAYER_KEY_MAPS[2]
 
-export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys = []) {
-  const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeys)
+export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys = [], platformButtons = null) {
+  const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeys, platformButtons)
   const cfg = { input_max_users: 4 }
+  const allowed = platformButtons ? new Set(platformButtons) : null
   for (let player = 1; player <= 4; player++) {
     cfg[`input_libretro_device_p${player}`] = 1
     cfg[`input_player${player}_analog_dpad_mode`] = 1
   }
   for (const [player, keyMap] of Object.entries(maps)) {
     for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+      if (allowed && !allowed.has(btn)) continue
       const key = keyMap[btn]
       if (key) cfg[`input_player${player}_${btn}`] = key
     }

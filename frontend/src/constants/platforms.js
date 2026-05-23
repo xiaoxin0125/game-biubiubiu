@@ -50,6 +50,7 @@ export const platforms = {
     color: '#ff3b30',
     fileExtensions: ['.nes', '.unif', '.unf', '.zip'],
     cores: ['nestopia', 'fceumm', 'quicknes'],
+    buttons: withTurbo(BTN_NES),
   },
   famicom: {
     displayName: '任天堂红白机 (Famicom)',
@@ -60,6 +61,7 @@ export const platforms = {
     color: '#ff3b30',
     fileExtensions: ['.nes', '.unif', '.unf', '.zip'],
     cores: ['nestopia', 'fceumm', 'quicknes'],
+    buttons: withTurbo(BTN_NES),
   },
   fds: {
     displayName: '任天堂磁碟机',
@@ -70,6 +72,7 @@ export const platforms = {
     color: '#ff3b30',
     fileExtensions: ['.fds', '.zip'],
     cores: ['nestopia', 'fceumm'],
+    buttons: withTurbo(BTN_NES),
   },
   sfc: {
     displayName: 'Super Famicom',

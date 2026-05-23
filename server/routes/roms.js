@@ -24,6 +24,37 @@ const ALLOWED_PLATFORMS = new Set([
   'megadrive', 'genesis', 'sms', 'gamegear',
   'psx',
 ])
+const PLATFORM_CORES = Object.freeze({
+  arcade: ['fbneo', 'mame2003_plus'],
+  nes: ['nestopia', 'fceumm', 'quicknes'],
+  famicom: ['nestopia', 'fceumm', 'quicknes'],
+  fds: ['nestopia', 'fceumm'],
+  sfc: ['snes9x'],
+  snes: ['snes9x'],
+  gb: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
+  gbc: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
+  gba: ['mgba', 'vba_next'],
+  megadrive: ['genesis_plus_gx', 'picodrive'],
+  genesis: ['genesis_plus_gx', 'picodrive'],
+  sms: ['genesis_plus_gx', 'picodrive', 'gearsystem'],
+  gamegear: ['genesis_plus_gx', 'gearsystem'],
+  psx: ['pcsx_rearmed'],
+})
+const NES_4P_MODES = new Set(['auto', 'four_score', 'famicom_expansion'])
+
+function normalizeDefaultCore(platform, value) {
+  const core = String(value || '').trim()
+  if (!core) return null
+  const allowed = PLATFORM_CORES[platform] || []
+  return allowed.includes(core) ? core : undefined
+}
+
+function normalizeNesFourPlayerMode(platform, value) {
+  if (!['nes', 'famicom'].includes(platform)) return null
+  const mode = String(value || '').trim()
+  if (!mode) return null
+  return NES_4P_MODES.has(mode) ? mode : undefined
+}
 
 // Matches only live (non-soft-deleted) ROMs
 const liveRom = (extra) => extra ? and(eq(roms.status, STATUS.normal), extra) : eq(roms.status, STATUS.normal)
@@ -40,6 +71,8 @@ function serialize(rom, owner, opts = {}) {
     fileSize: rom.fileSize,
     isPublic: Boolean(rom.isPublic),
     maxPlayers: rom.maxPlayers ?? null,
+    defaultCore: rom.defaultCore ?? null,
+    nesFourPlayerMode: rom.nesFourPlayerMode ?? null,
     effectiveMaxPlayers: maxPlayersInfo.maxPlayers,
     maxPlayersSourceRomId: maxPlayersInfo.sourceRomId,
     userId: rom.userId,
@@ -286,6 +319,23 @@ romRoutes.delete('/:id/favorite', requireAuth, async (c) => {
   return c.json({ ok: true, isFavorite: false })
 })
 
+romRoutes.get('/:id', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: '不存在' }, 404)
+  const row = (await db.select({
+    rom: roms,
+    user: { id: users.id, username: users.username },
+  })
+    .from(roms)
+    .innerJoin(users, eq(users.id, roms.userId))
+    .where(liveRom(eq(roms.id, id)))
+    .limit(1))[0]
+  if (!row) return c.json({ error: '不存在' }, 404)
+  const me = await currentUser(c)
+  if (!canAccessRom(me, row.rom)) return c.json({ error: 'forbidden' }, 403)
+  return c.json({ rom: serialize(row.rom, row.user) })
+})
+
 romRoutes.post('/upload', requireAuth, async (c) => {
   const contentLength = Number(c.req.header('content-length') || 0)
   if (contentLength > MAX_SIZE + 1024 * 1024) {
@@ -342,6 +392,11 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   const buf = Buffer.from(await file.arrayBuffer())
   await writeFile(filePath, buf)
 
+  const rowDefaultCore = normalizeDefaultCore(platform, body.defaultCore)
+  if (rowDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
+  const rowNesFourPlayerMode = normalizeNesFourPlayerMode(platform, body.nesFourPlayerMode)
+  if (rowNesFourPlayerMode === undefined) return c.json({ error: 'NES 4P 模式不正确' }, 400)
+
   const row = await insertAndFetch(roms, {
     userId: user.id,
     title: title.data,
@@ -350,6 +405,8 @@ romRoutes.post('/upload', requireAuth, async (c) => {
     filePath,
     fileSize: file.size,
     isPublic,
+    defaultCore: rowDefaultCore,
+    nesFourPlayerMode: rowNesFourPlayerMode,
     parentRomId,
     versionLabel,
   }, and(eq(roms.userId, user.id), eq(roms.filePath, filePath)))
@@ -375,7 +432,9 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const nextTitle = typeof body.title === 'string' ? body.title.trim() : ''
   const wantsVisibility = typeof body.isPublic === 'boolean'
   const wantsMaxPlayers = user.role === 'admin' && Object.prototype.hasOwnProperty.call(body, 'maxPlayers')
-  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers) return c.json(serialize(rom))
+  const wantsDefaultCore = Object.prototype.hasOwnProperty.call(body, 'defaultCore')
+  const wantsNesFourPlayerMode = Object.prototype.hasOwnProperty.call(body, 'nesFourPlayerMode')
+  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore && !wantsNesFourPlayerMode) return c.json(serialize(rom))
 
   if (wantsVisibility) {
     const familyRoot = rom.parentRomId
@@ -402,6 +461,16 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     }
     await updateAndFetch(roms, { maxPlayers: nextMaxPlayers }, eq(roms.id, id))
   }
+  if (wantsDefaultCore) {
+    const nextDefaultCore = normalizeDefaultCore(rom.platform, body.defaultCore)
+    if (nextDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
+    await updateAndFetch(roms, { defaultCore: nextDefaultCore }, eq(roms.id, id))
+  }
+  if (wantsNesFourPlayerMode) {
+    const nextMode = normalizeNesFourPlayerMode(rom.platform, body.nesFourPlayerMode)
+    if (nextMode === undefined) return c.json({ error: 'NES 4P 模式不正确' }, 400)
+    await updateAndFetch(roms, { nesFourPlayerMode: nextMode }, eq(roms.id, id))
+  }
 
   const updated = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
   let parent = null
@@ -413,8 +482,20 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     targetType: 'rom',
     targetId: id,
     metadata: {
-      before: { title: rom.title, isPublic: Boolean(rom.isPublic), maxPlayers: rom.maxPlayers ?? null },
-      after: { title: updated.title, isPublic: Boolean(updated.isPublic), maxPlayers: updated.maxPlayers ?? null },
+      before: {
+        title: rom.title,
+        isPublic: Boolean(rom.isPublic),
+        maxPlayers: rom.maxPlayers ?? null,
+        defaultCore: rom.defaultCore ?? null,
+        nesFourPlayerMode: rom.nesFourPlayerMode ?? null,
+      },
+      after: {
+        title: updated.title,
+        isPublic: Boolean(updated.isPublic),
+        maxPlayers: updated.maxPlayers ?? null,
+        defaultCore: updated.defaultCore ?? null,
+        nesFourPlayerMode: updated.nesFourPlayerMode ?? null,
+      },
     },
   })
   return c.json(serialize(updated, null, { parentRom: parent }))
