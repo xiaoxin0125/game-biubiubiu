@@ -54,7 +54,7 @@
           :retroarch-core-config="retroarchCoreConfig"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
-          @error="(err) => { fatalError = err?.message || '模拟器启动失败' }"
+          @error="(err) => setFatalError(err?.message || '模拟器启动失败')"
         />
 
         <!-- Guest (or role not yet determined in a room): remote video stream -->
@@ -105,7 +105,7 @@
     </div>
 
     <Transition name="hint">
-      <div v-if="showRotateHint" class="rotate-hint" @click="showRotateHint = false">
+      <div v-if="showRotateHint" class="rotate-hint" @click="hideRotateHint">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></svg>
         横屏体验更佳
       </div>
@@ -142,7 +142,7 @@
       v-if="showInput && !isTouchLayout"
       :platform="romMeta?.platform"
       :local-players="!isRoomMode ? Math.min(2, activeMaxPlayers) : 1"
-      @close="showInput = false"
+      @close="closeInputSettings"
     />
   </div>
 </template>
@@ -161,6 +161,8 @@ import { useSaveState } from '../composables/player/useSaveState.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
 import { useRoomSession } from '../composables/player/useRoomSession.js'
 import { useRoomRtc } from '../composables/player/useRoomRtc.js'
+import { usePlayerUi } from '../composables/player/usePlayerUi.js'
+import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { buildPlatformCoreConfig } from '../data/config.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
@@ -178,17 +180,30 @@ const roomHostInputConfigSnapshot = ref(null)
 const { isAuthed } = useAuth()
 
 const portalRef = ref(null)
-const showRotateHint = ref(false)
-const showInput = ref(false)
-const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
-const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 768)
-const hasTouchInput = typeof window !== 'undefined'
-  && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
-const toastText = ref('')
-const fatalError = ref(null)
 const booted = ref(false)
-const loadingSlow = ref(false)
-let slowTimer = null
+
+const {
+  showRotateHint,
+  showInput,
+  toastText,
+  fatalError,
+  loadingSlow,
+  openInputSettings: openInputSettingsPanel,
+  closeInputSettings,
+  showToast,
+  setFatalError,
+  showRotateHintFor,
+  hideRotateHint,
+  startSlowLoadingTimer,
+  markBooted,
+} = usePlayerUi()
+
+const {
+  isTouchLayout,
+  shouldSuggestRotate,
+  start: startViewport,
+  stop: stopViewport,
+} = usePlayerViewport()
 
 const roomCode = (route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = !!roomCode
@@ -198,17 +213,7 @@ const invitedRoomPeers = new Set()
 const keyboardTurboLoops = new Map()
 
 function openInputSettings() {
-  if (isTouchLayout.value) return
-  showInput.value = true
-}
-function updateViewportSize() {
-  viewportWidth.value = window.innerWidth
-  viewportHeight.value = window.innerHeight
-  if (isTouchLayout.value) showInput.value = false
-}
-function showToast(text) {
-  toastText.value = text
-  setTimeout(() => { toastText.value = '' }, 1600)
+  openInputSettingsPanel({ blocked: isTouchLayout.value })
 }
 
 const {
@@ -248,7 +253,7 @@ const {
 } = roomSession
 
 watch(fatalRoomError, (message) => {
-  if (message) fatalError.value = message
+  if (message) setFatalError(message)
 })
 
 const {
@@ -269,7 +274,7 @@ const {
   isRoomMode,
   roomCode,
   localPeer: signalMe,
-  reportError: (message) => { fatalError.value = message },
+  reportError: setFatalError,
 })
 
 const roomAllowsPlay = computed(() => (isRoomMode ? roomAllowPlay.value : roomInfo.value?.allowPlay !== false))
@@ -299,7 +304,6 @@ const canSaveState = computed(() => {
 })
 
 const currentPlatformButtons = computed(() => romMeta.value?.platform ? getPlatform(romMeta.value.platform).buttons : null)
-const isTouchLayout = computed(() => hasTouchInput && viewportWidth.value < 900)
 const player1RuntimeKeyboard = computed(() => {
   const platform = romMeta.value?.platform || null
   const defaults = effectiveKeyboardForPlayer(null, 1, platform)
@@ -461,13 +465,12 @@ function inviteConnectedRoomPeers() {
 
 function onBooted() {
   booted.value = true
-  loadingSlow.value = false
-  if (slowTimer) { clearTimeout(slowTimer); slowTimer = null }
+  markBooted()
   inviteConnectedRoomPeers()
 }
 function onInputConfigReloaded() {
   booted.value = true
-  loadingSlow.value = false
+  markBooted()
   showToast('按键设置已保存，输入配置已重新载入')
 }
 function reloadPage() { window.location.reload() }
@@ -707,17 +710,12 @@ watch(() => props.id, (now, prev) => {
 })
 
 onMounted(() => {
-  if (window.innerWidth < 768 && window.innerHeight > window.innerWidth) {
-    showRotateHint.value = true
-    setTimeout(() => { showRotateHint.value = false }, 3500)
-  }
-  window.addEventListener('resize', updateViewportSize)
-  window.addEventListener('orientationchange', updateViewportSize)
-  updateViewportSize()
+  if (shouldSuggestRotate.value) showRotateHintFor()
+  startViewport({ onTouchLayout: closeInputSettings })
   document.addEventListener('keydown', onKeyDown, true)
   document.addEventListener('keyup', onKeyUp, true)
   loadMeta()
-  slowTimer = setTimeout(() => { if (!booted.value) loadingSlow.value = true }, 30000)
+  startSlowLoadingTimer({ isBooted: () => booted.value })
   if (isRoomMode) {
     const signal = roomSession.connect()
     if (signal) {
@@ -733,12 +731,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('keyup', onKeyUp, true)
-  window.removeEventListener('resize', updateViewportSize)
-  window.removeEventListener('orientationchange', updateViewportSize)
+  stopViewport()
   document.removeEventListener('keydown', guestKeyHandler, true)
   document.removeEventListener('keyup', guestKeyHandler, true)
   stopKeyboardTurboLoops()
-  if (slowTimer) { clearTimeout(slowTimer); slowTimer = null }
   try { rtc?.close() } catch {}
   roomSession.close()
 })
