@@ -23,12 +23,6 @@ async function request(path, { method = 'GET', body, formData, headers = {} } = 
 }
 
 export const api = {
-  get: (p) => request(p),
-  post: (p, body) => request(p, { method: 'POST', body }),
-  patch: (p, body) => request(p, { method: 'PATCH', body }),
-  del: (p) => request(p, { method: 'DELETE' }),
-  upload: (p, formData) => request(p, { method: 'POST', formData }),
-
   // auth
   me: () => request('/api/auth/me'),
   login: (username, password) => request('/api/auth/login', { method: 'POST', body: { username, password } }),
@@ -59,7 +53,6 @@ export const api = {
     : `/api/roms/${id}/file`,
 
   // saves
-  savesMine: () => request('/api/saves/mine'),
   saveLoad: async (romId, slot = 0) => {
     const res = await fetch(`/api/saves/${romId}?slot=${slot}`, { credentials: 'include' })
     if (res.status === 404) return null
@@ -92,9 +85,6 @@ export const api = {
   },
   roomUpdate:  (code, patch) => request(`/api/rooms/${encodeURIComponent(code)}`, { method: 'PATCH', body: patch }),
   roomClose:   (code) => request(`/api/rooms/${encodeURIComponent(code)}`, { method: 'DELETE' }),
-
-  // bios
-  biosList: (platform) => request(`/api/bios/${encodeURIComponent(platform)}`),
 
   // settings
   settings: () => request('/api/settings'),

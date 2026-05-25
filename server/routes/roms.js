@@ -175,11 +175,6 @@ function safeUnlink(root, filePath) {
   unlinkSync(checked)
 }
 
-function openReadStream(root, filePath) {
-  const checked = assertInsideRoot(root, filePath)
-  return { path: checked, stat: statSync(checked), stream: createReadStream(checked) }
-}
-
 romRoutes.get('/mine', requireAuth, async (c) => {
   const user = c.get('user')
   // `/mine` returns everything the user uploaded (parents + children) so they
