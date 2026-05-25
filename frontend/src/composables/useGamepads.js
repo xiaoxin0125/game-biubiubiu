@@ -1,12 +1,20 @@
 import { ref, onBeforeUnmount, watch } from 'vue'
-import { useInputMapping, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from './useInputMapping.js'
+import { effectiveKeyboardForPlayer, gamepadMappingFor, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from './useInputMapping.js'
 import { dispatchKeyboardEvent } from './dispatchKeyboardEvent.js'
 
-// Polls navigator.getGamepads() each animation frame and maps connected pads
-// to local players by order: pad #1 → P1, pad #2 → P2. Room guests still forward
-// their own first pad through the injected interceptor.
-export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlayers = 1 } = {}) {
-  const { mapping } = useInputMapping()
+// Polls navigator.getGamepads() each animation frame. Local play uses physical
+// slot #1 → P1 and slot #2 → P2; slot #3+ is ignored. Room play can force every
+// local physical pad into the current room role so no pad can control another
+// seat by device order.
+export function useGamepads({
+  mapping,
+  onButton,
+  pressButton,
+  releaseButton,
+  maxLocalPlayers = 1,
+  playerResolver = null,
+  platformButtons = null,
+} = {}) {
   const connected = ref(false)
   const padCount = ref(0)
 
@@ -15,21 +23,21 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
   const turboLoops = new Map()        // btn → setInterval id
 
   function releaseTrackedButtons() {
-    const gpMap = mapping.value.gamepad || {}
-    const reverseMap = invertGamepadMap(gpMap)
-    const activePads = (navigator.getGamepads?.() || []).filter(Boolean)
+    const activePads = getPhysicalPads()
     for (const key of Object.keys(state)) {
       if (!state[key]) {
         delete state[key]
         continue
       }
       const [padIndexRaw, buttonIndexRaw] = key.split(':')
+      const padIndex = Number(padIndexRaw)
       const buttonIndex = Number(buttonIndexRaw)
-      const btn = reverseMap[buttonIndex]
-      if (btn) {
-        const padPosition = activePads.findIndex((pad) => pad.index === Number(padIndexRaw))
-        const player = padPosition >= 0 ? padPosition + 1 : 1
-        const handled = onButton ? !!onButton('up', btn, player) : false
+      const padPosition = activePads.findIndex((pad) => pad.index === padIndex)
+      const slot = padPosition >= 0 ? padPosition + 1 : 1
+      const player = resolvePlayer(slot, activePads[padPosition])
+      const btn = buttonFromIndex(buttonIndex, slot)
+      if (btn && player) {
+        const handled = onButton ? !!onButton('up', btn, player, slot) : false
         if (!handled) dispatchMappedButton('keyup', btn, player)
       }
       delete state[key]
@@ -39,32 +47,33 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
       turboLoops.delete(loopKey)
       if (releaseButton) releaseButton(active.targetBtn, active.player || 1)
       else {
-        const key = mapping.value.keyboard[active.targetBtn]
+        const key = keyboardForPlayer(active.player || 1)[active.targetBtn]
         if (key) dispatchKey('keyup', key)
       }
     }
   }
 
   function poll() {
-    const pads = (navigator.getGamepads?.() || []).filter(Boolean)
+    const pads = getPhysicalPads()
     padCount.value = pads.length
     connected.value = pads.length > 0
 
     const playerLimit = Math.max(1, Math.min(2, Number(maxLocalPlayers?.value ?? maxLocalPlayers) || 1))
-    const gpMap = mapping.value.gamepad || {}
-    const reverseMap = invertGamepadMap(gpMap)
+    const activeLimit = playerResolver ? Math.min(2, pads.length) : Math.min(playerLimit, 2, pads.length)
 
-    for (const pad of pads.slice(0, playerLimit)) {
+    for (const pad of pads.slice(0, activeLimit)) {
+      const slot = pads.indexOf(pad) + 1
+      const player = resolvePlayer(slot, pad)
+      if (!player) continue
       for (let i = 0; i < pad.buttons.length; i++) {
         const pressed = pad.buttons[i].pressed
         const k = pad.index + ':' + i
         if (pressed === !!state[k]) continue
         state[k] = pressed
 
-        const btn = reverseMap[i]
+        const btn = buttonFromIndex(i, slot)
         if (!btn) continue
-        const player = pads.indexOf(pad) + 1
-        const handled = onButton ? !!onButton(pressed ? 'down' : 'up', btn, player) : false
+        const handled = onButton ? !!onButton(pressed ? 'down' : 'up', btn, player, slot) : false
         if (handled) continue
         dispatchMappedButton(pressed ? 'keydown' : 'keyup', btn, player)
       }
@@ -72,9 +81,35 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
     rafId = requestAnimationFrame(poll)
   }
 
+  function getPhysicalPads() {
+    return (navigator.getGamepads?.() || []).filter(Boolean)
+  }
+
+  function resolvePlayer(slot, pad) {
+    if (typeof playerResolver === 'function') {
+      const resolved = Number(playerResolver(slot, pad))
+      return Number.isInteger(resolved) && resolved >= 1 ? resolved : null
+    }
+    const playerLimit = Math.max(1, Math.min(2, Number(maxLocalPlayers?.value ?? maxLocalPlayers) || 1))
+    return slot <= playerLimit ? slot : null
+  }
+
+  function buttonFromIndex(buttonIndex, slot) {
+    const reverseMap = invertGamepadMap(gamepadMappingFor(mapping?.value, slot))
+    return reverseMap[buttonIndex]
+  }
+
+  function keyboardForPlayer(player = 1) {
+    return effectiveKeyboardForPlayer(mapping?.value, player)
+  }
+
   function invertGamepadMap(gpMap) {
+    const allowed = platformButtons?.value ? new Set(platformButtons.value) : null
     const out = {}
-    for (const [btn, idx] of Object.entries(gpMap)) out[idx] = btn
+    for (const [btn, idx] of Object.entries(gpMap || {})) {
+      if (allowed && !allowed.has(btn)) continue
+      if (typeof idx === 'number') out[idx] = btn
+    }
     return out
   }
 
@@ -90,7 +125,7 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
       else releaseButton(btn, player)
       return
     }
-    const key = mapping.value.keyboard[btn]
+    const key = keyboardForPlayer(player)[btn]
     if (key) dispatchKey(type, key)
   }
 
@@ -101,7 +136,7 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
       if (down && pressButton) pressButton(targetBtn, player)
       else if (!down && releaseButton) releaseButton(targetBtn, player)
       else {
-        const key = mapping.value.keyboard[targetBtn]
+        const key = keyboardForPlayer(player)[targetBtn]
         if (key) dispatchKey(down ? 'keydown' : 'keyup', key)
       }
     }
@@ -123,7 +158,7 @@ export function useGamepads({ onButton, pressButton, releaseButton, maxLocalPlay
     }
     if (releaseButton) releaseButton(targetBtn, player)
     else {
-      const key = mapping.value.keyboard[targetBtn]
+      const key = keyboardForPlayer(player)[targetBtn]
       if (key) dispatchKey('keyup', key)
     }
   }

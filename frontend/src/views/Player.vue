@@ -346,7 +346,7 @@ const shouldShowVirtualGamepad = computed(() => {
 const retroarchConfig = computed(() => {
   const platformButtons = currentPlatformButtons.value
   const runtimeKeyboard = player1RuntimeKeyboard.value
-  const base = buildPlayerRetroarchConfig(mapping.value, platformButtons, { runtimeKeyboard })
+  const base = buildPlayerRetroarchConfig(mapping.value, platformButtons, { runtimeKeyboard, includeNativeGamepad: false })
   if (!isRoomMode) {
     return {
       ...base,
@@ -418,17 +418,31 @@ function dispatchHostPlayer1Turbo(turboButton, targetButton, action, source = nu
 }
 
 const gamepadButtonInterceptor = (action, button, player = 1) => {
-  if (guestButtonInterceptor(action, button)) return true
-  if (player === 1 && hostButtonInterceptor(action, button)) return true
+  if (isRoomMode && !isHostMode.value && guestButtonInterceptor(action, button)) return true
+  if (isRoomMode && isHostMode.value) return hostButtonInterceptor(action, button)
   return false
+}
+const roomGamepadPlayer = computed(() => {
+  if (!isRoomMode) return null
+  if (isHostMode.value) return 1
+  if (!canLocalControl.value) return null
+  const playerIndex = Number(currentRoomPeer.value?.playerIndex || signalMe.value?.playerIndex)
+  return Number.isInteger(playerIndex) && playerIndex >= 2 && playerIndex <= 4 ? playerIndex : null
+})
+const resolveGamepadPlayer = (slot) => {
+  if (!isRoomMode) return slot <= Math.min(2, activeMaxPlayers.value) ? slot : null
+  return roomGamepadPlayer.value
 }
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
 useGamepads({
+  mapping,
   onButton: gamepadButtonInterceptor,
   pressButton: (button, player = 1) => pressLocalButton(button, player),
   releaseButton: (button, player = 1) => releaseLocalButton(button, player),
-  maxLocalPlayers: computed(() => (isRoomMode ? 1 : Math.min(2, activeMaxPlayers.value))),
+  maxLocalPlayers: computed(() => (isRoomMode ? 2 : Math.min(2, activeMaxPlayers.value))),
+  playerResolver: resolveGamepadPlayer,
+  platformButtons: currentPlatformButtons,
 })
 
 function inviteConnectedRoomPeers() {

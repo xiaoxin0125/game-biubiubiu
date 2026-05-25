@@ -263,6 +263,9 @@ export function buildLocalMultiplayerRetroarchConfig(maxPlayers = 2, platformBut
       if (key) cfg[`input_player${player}_${btn}`] = key
     }
   }
+  for (let player = 1; player <= 4; player++) {
+    for (const { key: btn } of RETROPAD_BUTTON_DEFS) cfg[`input_player${player}_${btn}_btn`] = 'nul'
+  }
   return cfg
 }
 
@@ -345,6 +348,9 @@ export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys =
       if (key) cfg[`input_player${player}_${btn}`] = key
     }
   }
+  for (let player = 1; player <= 4; player++) {
+    for (const { key: btn } of RETROPAD_BUTTON_DEFS) cfg[`input_player${player}_${btn}_btn`] = 'nul'
+  }
   return cfg
 }
 
@@ -352,15 +358,84 @@ export function buildPlayer2RetroarchConfig() {
   return buildRemotePlayersRetroarchConfig(2)
 }
 
-// numeric values are W3C Gamepad button indexes (Xbox layout).
-const DEFAULT_GAMEPAD = {
-  a: 1, b: 0, x: 3, y: 2,
-  l: 4, r: 5, l2: 6, r2: 7,
-  l3: 10, r3: 11,
-  select: 8, start: 9,
-  up: 12, down: 13, left: 14, right: 15,
-  aa: null, bb: null, xx: null, yy: null,
-  ll: null, rr: null, l2l2: null, r2r2: null,
+export const GAMEPAD_PROFILE_DEFS = [
+  { key: 'xbox', label: 'XBOX' },
+  { key: 'ps4', label: 'PS4' },
+  { key: 'ns', label: 'NS' },
+  { key: 'generic', label: '通用手柄' },
+]
+
+export const DEFAULT_GAMEPAD_PROFILE = 'xbox'
+const GAMEPAD_PROFILE_KEYS = new Set(GAMEPAD_PROFILE_DEFS.map((profile) => profile.key))
+
+// numeric values are W3C Gamepad button indexes. The browser standardizes most
+// modern pads to the same physical order; NS keeps a separate preset for users
+// who expect Nintendo face-button labels.
+const GAMEPAD_PROFILE_DEFAULTS = {
+  xbox: {
+    a: 1, b: 0, x: 3, y: 2,
+    l: 4, r: 5, l2: 6, r2: 7,
+    l3: 10, r3: 11,
+    select: 8, start: 9,
+    up: 12, down: 13, left: 14, right: 15,
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+  ps4: {
+    a: 1, b: 0, x: 3, y: 2,
+    l: 4, r: 5, l2: 6, r2: 7,
+    l3: 10, r3: 11,
+    select: 8, start: 9,
+    up: 12, down: 13, left: 14, right: 15,
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+  ns: {
+    a: 0, b: 1, x: 2, y: 3,
+    l: 4, r: 5, l2: 6, r2: 7,
+    l3: 10, r3: 11,
+    select: 8, start: 9,
+    up: 12, down: 13, left: 14, right: 15,
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+  generic: {
+    a: 1, b: 0, x: 3, y: 2,
+    l: 4, r: 5, l2: 6, r2: 7,
+    l3: 10, r3: 11,
+    select: 8, start: 9,
+    up: 12, down: 13, left: 14, right: 15,
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+}
+
+const DEFAULT_GAMEPAD = GAMEPAD_PROFILE_DEFAULTS[DEFAULT_GAMEPAD_PROFILE]
+
+export function normalizeGamepadProfile(profile) {
+  const key = String(profile || '').toLowerCase()
+  return GAMEPAD_PROFILE_KEYS.has(key) ? key : DEFAULT_GAMEPAD_PROFILE
+}
+
+function cloneGamepadProfiles() {
+  const out = {}
+  for (const { key } of GAMEPAD_PROFILE_DEFS) out[key] = { ...GAMEPAD_PROFILE_DEFAULTS[key] }
+  return out
+}
+
+function clonePlayerGamepads() {
+  return {
+    1: cloneGamepadProfiles(),
+    2: cloneGamepadProfiles(),
+  }
+}
+
+export function detectGamepadProfile(gamepadOrId = '') {
+  const id = String(typeof gamepadOrId === 'string' ? gamepadOrId : gamepadOrId?.id || '').toLowerCase()
+  if (/xbox|xinput|microsoft/.test(id)) return 'xbox'
+  if (/dualshock|dualsense|wireless controller|sony|playstation/.test(id)) return 'ps4'
+  if (/switch|joy-?con|pro controller|nintendo/.test(id)) return 'ns'
+  return 'generic'
 }
 
 function storageKey(userId) { return `input-mapping:${userId || 'guest'}` }
@@ -401,8 +476,9 @@ function isValidGamepadBinding(idx) {
   return false
 }
 
-function normalizeGamepadMapping(storedGamepad = {}) {
-  const out = { ...DEFAULT_GAMEPAD }
+function normalizeGamepadMapping(storedGamepad = {}, profile = DEFAULT_GAMEPAD_PROFILE) {
+  const defaults = GAMEPAD_PROFILE_DEFAULTS[normalizeGamepadProfile(profile)] || DEFAULT_GAMEPAD
+  const out = { ...defaults }
   for (const [btn, idx] of Object.entries(storedGamepad || {})) {
     if (!isValidGamepadBinding(idx)) continue
     out[btn] = typeof idx === 'number' ? idx : Number(idx)
@@ -410,15 +486,55 @@ function normalizeGamepadMapping(storedGamepad = {}) {
   return out
 }
 
+function normalizeGamepadProfiles(storedProfiles = {}) {
+  const out = cloneGamepadProfiles()
+  for (const { key: profile } of GAMEPAD_PROFILE_DEFS) {
+    out[profile] = normalizeGamepadMapping(storedProfiles?.[profile], profile)
+  }
+  return out
+}
+
+function normalizePlayerGamepads(storedGamepads = null, legacyGamepad = null) {
+  const out = clonePlayerGamepads()
+  for (const player of [1, 2]) {
+    const source = storedGamepads?.[player] || storedGamepads?.[String(player)]
+    out[player] = normalizeGamepadProfiles(source)
+  }
+  if (legacyGamepad) {
+    out[1][DEFAULT_GAMEPAD_PROFILE] = normalizeGamepadMapping(legacyGamepad, DEFAULT_GAMEPAD_PROFILE)
+  }
+  return out
+}
+
+function normalizeSelectedGamepadProfiles(stored = {}) {
+  return {
+    1: normalizeGamepadProfile(stored?.[1] || stored?.['1']),
+    2: normalizeGamepadProfile(stored?.[2] || stored?.['2']),
+  }
+}
+
+export function gamepadMappingFor(inputMapping = null, player = 1, profile = null) {
+  const slot = Number(player) === 2 ? 2 : 1
+  const activeProfile = normalizeGamepadProfile(profile || inputMapping?.gamepadProfiles?.[slot] || inputMapping?.gamepadProfiles?.[String(slot)])
+  return normalizeGamepadMapping(inputMapping?.gamepads?.[slot]?.[activeProfile], activeProfile)
+}
+
 const mapping = ref({
   keyboard: { ...DEFAULT_KEYBOARD },
   keyboardP2: { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] },
+  gamepadProfiles: {
+    1: DEFAULT_GAMEPAD_PROFILE,
+    2: DEFAULT_GAMEPAD_PROFILE,
+  },
+  gamepads: clonePlayerGamepads(),
   gamepad: { ...DEFAULT_GAMEPAD },
 })
 let loaded = false
 
 function refreshForUser(userId) {
   const stored = loadMapping(userId)
+  const gamepadProfiles = normalizeSelectedGamepadProfiles(stored?.gamepadProfiles)
+  const gamepads = normalizePlayerGamepads(stored?.gamepads, stored?.gamepad)
   mapping.value = {
     keyboard: isSavedDefaultKeyboard(stored?.keyboard)
       ? { ...DEFAULT_KEYBOARD }
@@ -426,7 +542,9 @@ function refreshForUser(userId) {
     keyboardP2: isSavedLocalPlayer2DefaultKeyboard(stored?.keyboardP2)
       ? { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] }
       : normalizeKeyboardMapping(stored?.keyboardP2, DEFAULT_LOCAL_PLAYER_KEYBOARDS[2]),
-    gamepad: normalizeGamepadMapping(stored?.gamepad),
+    gamepadProfiles,
+    gamepads,
+    gamepad: { ...gamepads[1][gamepadProfiles[1]] },
   }
 }
 
@@ -462,13 +580,14 @@ export function buildPlayerRetroarchConfig(inputMapping, platformButtons = null,
     options.runtimeKeyboard || inputMapping?.keyboard,
     options.runtimeKeyboard || DEFAULT_KEYBOARD,
   )
-  const gamepad = normalizeGamepadMapping(inputMapping?.gamepad)
+  const includeNativeGamepad = options.includeNativeGamepad !== false
+  const gamepad = includeNativeGamepad ? gamepadMappingFor(inputMapping, 1, options.gamepadProfile) : null
   for (const { key } of RETROPAD_BUTTON_DEFS) {
     const enabled = !allowed || allowed.has(key)
     cfg[`input_player1_${key}`] = enabled ? (keyboard[key] || 'nul') : 'nul'
-    const gp = gamepad[key]
-    if (enabled && typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
-    else if (!enabled) cfg[`input_player1_${key}_btn`] = 'nul'
+    const gp = gamepad?.[key]
+    if (includeNativeGamepad && enabled && typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
+    else cfg[`input_player1_${key}_btn`] = 'nul'
   }
   return cfg
 }
@@ -497,10 +616,41 @@ export function useInputMapping() {
     saveMapping(user.value?.id, mapping.value)
     return true
   }
-  function setGamepad(btn, idx) {
-    const normalized = isValidGamepadBinding(idx) ? (typeof idx === 'number' ? idx : Number(idx)) : DEFAULT_GAMEPAD[btn]
-    const gamepad = sanitizeGamepadSave(withoutDuplicateBinding(mapping.value.gamepad, btn, normalized))
-    mapping.value = { ...mapping.value, gamepad }
+  function setGamepadProfile(player = 1, profile = DEFAULT_GAMEPAD_PROFILE) {
+    const slot = Number(player) === 2 ? 2 : 1
+    const normalizedProfile = normalizeGamepadProfile(profile)
+    const gamepadProfiles = {
+      ...(mapping.value.gamepadProfiles || {}),
+      [slot]: normalizedProfile,
+    }
+    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
+    mapping.value = {
+      ...mapping.value,
+      gamepadProfiles,
+      gamepads,
+      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+    }
+    saveMapping(user.value?.id, mapping.value)
+  }
+  function setGamepad(btn, idx, player = 1, profile = null) {
+    const slot = Number(player) === 2 ? 2 : 1
+    const gamepadProfiles = normalizeSelectedGamepadProfiles(mapping.value.gamepadProfiles)
+    const activeProfile = normalizeGamepadProfile(profile || gamepadProfiles[slot])
+    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
+    const current = gamepads[slot][activeProfile]
+    const normalized = isValidGamepadBinding(idx)
+      ? (typeof idx === 'number' ? idx : Number(idx))
+      : GAMEPAD_PROFILE_DEFAULTS[activeProfile][btn]
+    gamepads[slot] = {
+      ...gamepads[slot],
+      [activeProfile]: sanitizeGamepadSave(withoutDuplicateBinding(current, btn, normalized)),
+    }
+    mapping.value = {
+      ...mapping.value,
+      gamepadProfiles,
+      gamepads,
+      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+    }
     saveMapping(user.value?.id, mapping.value)
   }
   function resetKeyboard(player = 1, platform = null) {
@@ -508,8 +658,21 @@ export function useInputMapping() {
     mapping.value = { ...mapping.value, [playerKey]: { ...defaultKeyboardForPlayer(player, platform) } }
     saveMapping(user.value?.id, mapping.value)
   }
-  function resetGamepad() {
-    mapping.value = { ...mapping.value, gamepad: { ...DEFAULT_GAMEPAD } }
+  function resetGamepad(player = 1, profile = null) {
+    const slot = Number(player) === 2 ? 2 : 1
+    const gamepadProfiles = normalizeSelectedGamepadProfiles(mapping.value.gamepadProfiles)
+    const activeProfile = normalizeGamepadProfile(profile || gamepadProfiles[slot])
+    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
+    gamepads[slot] = {
+      ...gamepads[slot],
+      [activeProfile]: { ...GAMEPAD_PROFILE_DEFAULTS[activeProfile] },
+    }
+    mapping.value = {
+      ...mapping.value,
+      gamepadProfiles,
+      gamepads,
+      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+    }
     saveMapping(user.value?.id, mapping.value)
   }
 
@@ -519,7 +682,7 @@ export function useInputMapping() {
   return {
     mapping: computed(() => mapping.value),
     retroarchConfig,
-    setKeyboard, setGamepad,
+    setKeyboard, setGamepad, setGamepadProfile,
     resetKeyboard, resetGamepad,
   }
 }

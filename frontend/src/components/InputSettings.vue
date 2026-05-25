@@ -12,10 +12,30 @@
         <button :class="{ active: tab === 'gp' }" @click="tab = 'gp'">手柄</button>
       </div>
 
-      <div v-if="localPlayers > 1" class="is-player-tabs">
-        <button :class="{ active: playerTab === 1 }" @click="playerTab = 1">P1</button>
-        <button :class="{ active: playerTab === 2 }" @click="playerTab = 2">P2</button>
+      <div v-if="activeSlotCount > 1" class="is-player-tabs">
+        <button
+          v-for="slot in activeSlotCount"
+          :key="slot"
+          :class="{ active: activeSlot === slot }"
+          @click="playerTab = slot"
+        >{{ tab === 'gp' ? `手柄${slot}` : `P${slot}` }}</button>
       </div>
+
+      <template v-if="tab === 'gp'">
+        <div class="is-gp-controls">
+          <label class="is-select-field">
+            <span>手柄类型</span>
+            <select v-model="activeGamepadProfile">
+              <option v-for="profile in GAMEPAD_PROFILE_DEFS" :key="profile.key" :value="profile.key">
+                {{ profile.label }}
+              </option>
+            </select>
+          </label>
+          <p class="is-gp-note">
+            当前配置只绑定手柄{{ activeSlot }}；第 3 个及以后手柄不会参与控制。
+          </p>
+        </div>
+      </template>
 
       <section class="is-grid">
         <div v-if="activeConflicts.length" class="is-warning">
@@ -50,8 +70,8 @@
       </section>
 
       <footer class="is-foot">
-        <button class="is-reset" @click="tab === 'kb' ? resetKeyboard(playerTab, props.platform) : resetGamepad()">
-          重置{{ tab === 'kb' ? `P${playerTab} 键盘` : '手柄' }}
+        <button class="is-reset" @click="tab === 'kb' ? resetKeyboard(activeSlot, props.platform) : resetGamepad(activeSlot, activeGamepadProfile)">
+          重置{{ tab === 'kb' ? `P${activeSlot} 键盘` : `手柄${activeSlot} ${activeGamepadProfileLabel}` }}
         </button>
         <button class="is-done" @click="$emit('close')">完成</button>
       </footer>
@@ -62,7 +82,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useInputMapping, BUTTON_DEFS, effectiveKeyboardForPlayer } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, effectiveKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile } from '../composables/useInputMapping.js'
 import { getPlatform } from '../constants/platforms.js'
 
 const props = defineProps({
@@ -71,7 +91,7 @@ const props = defineProps({
 })
 defineEmits(['close'])
 
-const { mapping, setKeyboard, setGamepad, resetKeyboard, resetGamepad } = useInputMapping()
+const { mapping, setKeyboard, setGamepad, setGamepadProfile, resetKeyboard, resetGamepad } = useInputMapping()
 const tab = ref('kb')
 const playerTab = ref(1)
 const listening = ref(null)     // keyboard mode: button being re-bound
@@ -102,10 +122,18 @@ const relevantButtons = computed(() => {
 })
 const platformName = computed(() => props.platform ? getPlatform(props.platform).displayName : null)
 const localPlayers = computed(() => Math.max(1, Math.min(2, Number(props.localPlayers) || 1)))
-const activeKeyboard = computed(() => effectiveKeyboardForPlayer(mapping.value, playerTab.value, props.platform))
+const activeSlotCount = computed(() => tab.value === 'gp' ? 2 : localPlayers.value)
+const activeSlot = computed(() => Math.max(1, Math.min(activeSlotCount.value, Number(playerTab.value) || 1)))
+const activeKeyboard = computed(() => effectiveKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
+const activeGamepadProfile = computed({
+  get: () => normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value]),
+  set: (profile) => setGamepadProfile(activeSlot.value, profile),
+})
+const activeGamepadProfileLabel = computed(() => GAMEPAD_PROFILE_DEFS.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
+const activeGamepad = computed(() => gamepadMappingFor(mapping.value, activeSlot.value, activeGamepadProfile.value))
 
 const activeConflicts = computed(() => {
-  const source = tab.value === 'kb' ? activeKeyboard.value : mapping.value.gamepad
+  const source = tab.value === 'kb' ? activeKeyboard.value : activeGamepad.value
   const visible = new Set(relevantButtons.value.map((b) => b.key))
   const byValue = new Map()
   for (const btn of visible) {
@@ -147,7 +175,7 @@ function onKey(e) {
   else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(k)) k = k.toLowerCase()
   else if (k.length === 1) k = k.toLowerCase()
   else k = k.toLowerCase()
-  const saved = setKeyboard(listening.value, k, playerTab.value, props.platform)
+  const saved = setKeyboard(listening.value, k, activeSlot.value, props.platform)
   if (saved !== false) listening.value = null
 }
 
@@ -156,24 +184,26 @@ const prevPressed = Object.create(null)
 function pollGp() {
   if (gpListening.value) {
     const pads = (navigator.getGamepads?.() || []).filter(Boolean)
-    const pad = pads[0]
+    const padSlot = Math.max(1, Math.min(2, Number(activeSlot.value) || 1))
+    const pad = pads[padSlot - 1]
     if (pad) {
       for (let i = 0; i < pad.buttons.length; i++) {
+        const key = `${pad.index}:${i}`
         const p = pad.buttons[i].pressed
-        if (p && !prevPressed[i]) {
-          setGamepad(gpListening.value, i)
+        if (p && !prevPressed[key]) {
+          setGamepad(gpListening.value, i, activeSlot.value, activeGamepadProfile.value)
           gpListening.value = null
-          prevPressed[i] = p
+          prevPressed[key] = p
           break
         }
-        prevPressed[i] = p
+        prevPressed[key] = p
       }
     }
   }
   rafId = requestAnimationFrame(pollGp)
 }
 function gamepadLabel(btn) {
-  const idx = mapping.value.gamepad[btn]
+  const idx = activeGamepad.value[btn]
   return typeof idx === 'number' ? `按钮 ${idx}` : '—'
 }
 
@@ -231,6 +261,36 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .is-tabs .active, .is-player-tabs .active { background: rgba(10,132,255,0.22); border-color: rgba(10,132,255,0.5); color: #fff; }
+.is-gp-controls {
+  display: grid;
+  gap: 8px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.is-select-field {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 10px;
+  color: rgba(255,255,255,0.62);
+  font-size: 12px;
+}
+.is-select-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  outline: none;
+}
+.is-select-field option { color: #111; }
+.is-gp-note {
+  margin: 0;
+  color: rgba(255,255,255,0.45);
+  font-size: 11px;
+  line-height: 1.45;
+}
 .is-warning {
   margin: 10px 18px 0;
   padding: 8px 10px;
