@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, createReadStream, statSync, unlinkSync } from 'node:fs'
+import { mkdirSync, createReadStream, statSync, unlinkSync, existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join, extname, resolve } from 'node:path'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
@@ -16,6 +16,10 @@ import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
+const LEGACY_UPLOAD_ROOTS = [
+  process.env.LEGACY_UPLOADS_DIR,
+  '/www/wwwroot/Xgame/data/uploads',
+].filter(Boolean).map((root) => resolve(root))
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
 const USER_UPLOAD_QUOTA_BYTES = Number(process.env.USER_UPLOAD_QUOTA_BYTES) || 2 * 1024 * 1024 * 1024
 const ALLOWED_PLATFORMS = new Set([
@@ -40,20 +44,11 @@ const PLATFORM_CORES = Object.freeze({
   gamegear: ['genesis_plus_gx', 'gearsystem'],
   psx: ['pcsx_rearmed'],
 })
-const NES_4P_MODES = new Set(['auto', 'four_score', 'famicom_expansion'])
-
 function normalizeDefaultCore(platform, value) {
   const core = String(value || '').trim()
   if (!core) return null
   const allowed = PLATFORM_CORES[platform] || []
   return allowed.includes(core) ? core : undefined
-}
-
-function normalizeNesFourPlayerMode(platform, value) {
-  if (!['nes', 'famicom'].includes(platform)) return null
-  const mode = String(value || '').trim()
-  if (!mode) return null
-  return NES_4P_MODES.has(mode) ? mode : undefined
 }
 
 // Matches only live (non-soft-deleted) ROMs
@@ -72,7 +67,6 @@ function serialize(rom, owner, opts = {}) {
     isPublic: Boolean(rom.isPublic),
     maxPlayers: rom.maxPlayers ?? null,
     defaultCore: rom.defaultCore ?? null,
-    nesFourPlayerMode: rom.nesFourPlayerMode ?? null,
     effectiveMaxPlayers: maxPlayersInfo.maxPlayers,
     maxPlayersSourceRomId: maxPlayersInfo.sourceRomId,
     userId: rom.userId,
@@ -154,6 +148,26 @@ async function usedUploadBytes(userId) {
 
 function checkedUploadPath(...parts) {
   return assertInsideRoot(UPLOADS_DIR, join(UPLOADS_DIR, ...parts))
+}
+
+function resolveReadableUploadPath(filePath) {
+  const candidates = [UPLOADS_DIR, ...LEGACY_UPLOAD_ROOTS]
+  for (const root of candidates) {
+    try {
+      const checked = assertInsideRoot(root, filePath)
+      if (existsSync(checked)) return checked
+    } catch {}
+  }
+  throw new Error('upload-file-not-found')
+}
+
+function safeUnlinkUpload(filePath) {
+  unlinkSync(resolveReadableUploadPath(filePath))
+}
+
+function openUploadReadStream(filePath) {
+  const checked = resolveReadableUploadPath(filePath)
+  return { path: checked, stat: statSync(checked), stream: createReadStream(checked) }
 }
 
 function safeUnlink(root, filePath) {
@@ -394,8 +408,6 @@ romRoutes.post('/upload', requireAuth, async (c) => {
 
   const rowDefaultCore = normalizeDefaultCore(platform, body.defaultCore)
   if (rowDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
-  const rowNesFourPlayerMode = normalizeNesFourPlayerMode(platform, body.nesFourPlayerMode)
-  if (rowNesFourPlayerMode === undefined) return c.json({ error: 'NES 4P 模式不正确' }, 400)
 
   const row = await insertAndFetch(roms, {
     userId: user.id,
@@ -406,7 +418,6 @@ romRoutes.post('/upload', requireAuth, async (c) => {
     fileSize: file.size,
     isPublic,
     defaultCore: rowDefaultCore,
-    nesFourPlayerMode: rowNesFourPlayerMode,
     parentRomId,
     versionLabel,
   }, and(eq(roms.userId, user.id), eq(roms.filePath, filePath)))
@@ -433,8 +444,7 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const wantsVisibility = typeof body.isPublic === 'boolean'
   const wantsMaxPlayers = user.role === 'admin' && Object.prototype.hasOwnProperty.call(body, 'maxPlayers')
   const wantsDefaultCore = Object.prototype.hasOwnProperty.call(body, 'defaultCore')
-  const wantsNesFourPlayerMode = Object.prototype.hasOwnProperty.call(body, 'nesFourPlayerMode')
-  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore && !wantsNesFourPlayerMode) return c.json(serialize(rom))
+  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore) return c.json(serialize(rom))
 
   if (wantsVisibility) {
     const familyRoot = rom.parentRomId
@@ -466,11 +476,6 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     if (nextDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
     await updateAndFetch(roms, { defaultCore: nextDefaultCore }, eq(roms.id, id))
   }
-  if (wantsNesFourPlayerMode) {
-    const nextMode = normalizeNesFourPlayerMode(rom.platform, body.nesFourPlayerMode)
-    if (nextMode === undefined) return c.json({ error: 'NES 4P 模式不正确' }, 400)
-    await updateAndFetch(roms, { nesFourPlayerMode: nextMode }, eq(roms.id, id))
-  }
 
   const updated = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
   let parent = null
@@ -487,14 +492,12 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
         isPublic: Boolean(rom.isPublic),
         maxPlayers: rom.maxPlayers ?? null,
         defaultCore: rom.defaultCore ?? null,
-        nesFourPlayerMode: rom.nesFourPlayerMode ?? null,
       },
       after: {
         title: updated.title,
         isPublic: Boolean(updated.isPublic),
         maxPlayers: updated.maxPlayers ?? null,
         defaultCore: updated.defaultCore ?? null,
-        nesFourPlayerMode: updated.nesFourPlayerMode ?? null,
       },
     },
   })
@@ -558,7 +561,7 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
       try { safeUnlink(resolve(process.env.SAVES_DIR || 'data/saves'), s.filePath) } catch {}
     }
     // the rom file itself
-    try { safeUnlink(UPLOADS_DIR, t.filePath) } catch {}
+    try { safeUnlinkUpload(t.filePath) } catch {}
   }
 
   // DB: children first, then the parent. FK cascades remove favorites/save_states/rooms.
@@ -597,7 +600,7 @@ async function serveRomFile(c) {
 
   let file
   try {
-    file = openReadStream(UPLOADS_DIR, rom.filePath)
+    file = openUploadReadStream(rom.filePath)
   } catch {
     return c.json({ error: 'ROM 文件缺失' }, 404)
   }

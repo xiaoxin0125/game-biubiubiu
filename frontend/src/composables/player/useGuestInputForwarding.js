@@ -1,18 +1,63 @@
 import { computed } from 'vue'
-import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS } from '../useInputMapping.js'
+import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, effectiveKeyboardForPlayer } from '../useInputMapping.js'
 import { dispatchKeyboardEvent } from '../dispatchKeyboardEvent.js'
 
-export function dispatchPlayerButton(playerIndex, action, button, keyMap = null) {
-  const eventType = action === 'down' ? 'keydown' : 'keyup'
+const remoteTurboLoops = new Map()
+
+export function dispatchPlayerButton(playerIndex, action, button, keyMap = null, controls = null) {
   const turboTarget = TURBO_BUTTON_TARGETS[button]
-  const targetButton = turboTarget || button
-  const mappedKey = (keyMap || REMOTE_PLAYER_KEY_MAPS[playerIndex])?.[targetButton]
+  if (turboTarget) {
+    dispatchPlayerTurboButton(playerIndex, action, button, turboTarget, keyMap, controls)
+    return
+  }
+  if (controls?.pressButton && controls?.releaseButton) {
+    if (action === 'down') controls.pressButton(button, playerIndex)
+    else controls.releaseButton(button, playerIndex)
+    return
+  }
+  const eventType = action === 'down' ? 'keydown' : 'keyup'
+  const mappedKey = (keyMap || REMOTE_PLAYER_KEY_MAPS[playerIndex])?.[button]
   if (mappedKey) dispatchKeyboardEvent(eventType, mappedKey, { internal: true })
 }
 
-export function useGuestInputForwarding({ mapping, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {
+function dispatchPlayerTurboButton(playerIndex, action, button, targetButton, keyMap = null, controls = null) {
+  const loopKey = `${playerIndex}:${button}`
+  const mappedKey = (keyMap || REMOTE_PLAYER_KEY_MAPS[playerIndex])?.[targetButton]
+  if (!mappedKey && !(controls?.pressButton && controls?.releaseButton)) return
+
+  const press = () => {
+    if (controls?.pressButton) controls.pressButton(targetButton, playerIndex)
+    else dispatchKeyboardEvent('keydown', mappedKey, { internal: true })
+  }
+  const release = () => {
+    if (controls?.releaseButton) controls.releaseButton(targetButton, playerIndex)
+    else dispatchKeyboardEvent('keyup', mappedKey, { internal: true })
+  }
+
+  if (action === 'down') {
+    if (remoteTurboLoops.has(loopKey)) return
+    let down = true
+    press()
+    const loop = setInterval(() => {
+      down = !down
+      if (down) press()
+      else release()
+    }, TURBO_FIRE_MS)
+    remoteTurboLoops.set(loopKey, loop)
+    return
+  }
+
+  const loop = remoteTurboLoops.get(loopKey)
+  if (loop) {
+    clearInterval(loop)
+    remoteTurboLoops.delete(loopKey)
+  }
+  release()
+}
+
+export function useGuestInputForwarding({ mapping, platform, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {
   const reverseKeyMap = computed(() => {
-    const cfg = mapping.value.keyboard || {}
+    const cfg = effectiveKeyboardForPlayer(mapping.value, 1, platform?.value || null)
     const allowed = platformButtons?.value ? new Set(platformButtons.value) : null
     const out = {}
     for (const [btn, key] of Object.entries(cfg)) {
@@ -35,16 +80,17 @@ export function useGuestInputForwarding({ mapping, platformButtons, roomRtc, isR
     else if (raw === 'ArrowDown') k = 'down'
     else if (raw === 'ArrowLeft') k = 'left'
     else if (raw === 'ArrowRight') k = 'right'
-    else if (raw === 'Enter') k = e.location === 3 ? 'numenter' : 'enter'
+    else if (raw === 'Enter') k = e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
     else if (raw === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
     else if (raw === ' ') k = 'space'
+    else if (/^[0-9]$/.test(raw)) k = raw
     else if (raw === ';') k = 'semicolon'
     else if (raw === '-') k = 'minus'
-    else if (raw === '=') k = 'equal'
-    else if (raw === '/') k = e.location === 3 ? 'numdivide' : '/'
-    else if (raw === '*') k = 'nummultiply'
-    else if (raw === '+') k = 'numadd'
-    else if (raw === '.') k = e.location === 3 ? 'decimal' : '.'
+    else if (raw === '=') k = 'equals'
+    else if (raw === '/') k = 'slash'
+    else if (raw === '*') k = 'multiply'
+    else if (raw === '+') k = 'add'
+    else if (raw === '.') k = 'period'
     else k = raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase()
 
     const button = reverseKeyMap.value[k]

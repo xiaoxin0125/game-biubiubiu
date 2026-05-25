@@ -174,7 +174,6 @@ adminRoutes.get('/roms', async (c) => {
       isPublic: Boolean(rom.isPublic),
       maxPlayers: rom.maxPlayers ?? null,
       defaultCore: rom.defaultCore ?? null,
-      nesFourPlayerMode: rom.nesFourPlayerMode ?? null,
       effectiveMaxPlayers: resolveMaxPlayersInfo(rom).maxPlayers,
       createdAt: rom.createdAt,
       owner: user,

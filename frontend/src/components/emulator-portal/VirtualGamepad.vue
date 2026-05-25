@@ -95,7 +95,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { getPlatform } from '../../constants/platforms.js'
-import { useInputMapping, TURBO_BUTTON_TARGETS } from '../../composables/useInputMapping.js'
+import { useInputMapping, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from '../../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../../composables/dispatchKeyboardEvent.js'
 
 const props = defineProps({
@@ -104,6 +104,8 @@ const props = defineProps({
   // instead of dispatching a local key. Return true to swallow the default.
   buttonInterceptor: { type: Function, default: null },
   onButton: { type: Function, default: null },
+  pressButton: { type: Function, default: null },
+  releaseButton: { type: Function, default: null },
 })
 
 const { mapping } = useInputMapping()
@@ -272,7 +274,6 @@ watch(() => mapping.value.keyboard, () => resetAllButtons(), { deep: true })
 // D-pad 和 start/select 永远不参与 —— 连发只会把它们搞乱。
 // 开关状态持久化到 localStorage，下次进入游戏还在。
 const TURBO_ELIGIBLE = new Set(['a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2'])
-const TURBO_FIRE_MS = 60          // ~16 Hz — 经典 NES 连发芯片频率
 const TURBO_STORAGE_KEY = 'vpad:turbo'
 const turboEnabled = ref(localStorage.getItem(TURBO_STORAGE_KEY) === '1')
 const turboLoops = new Map()      // btn → setInterval id
@@ -294,7 +295,13 @@ function emitUp(btn) {
 
 function dispatchMappedButton(type, btn) {
   const turboTarget = TURBO_BUTTON_TARGETS[btn]
-  const k = resolveKey(turboTarget || btn)
+  const target = turboTarget || btn
+  if (props.pressButton && props.releaseButton) {
+    if (type === 'keydown') props.pressButton(target)
+    else props.releaseButton(target)
+    return
+  }
+  const k = resolveKey(target)
   if (k) dispatch(type, k)
 }
 

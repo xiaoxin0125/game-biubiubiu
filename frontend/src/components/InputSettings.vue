@@ -12,6 +12,11 @@
         <button :class="{ active: tab === 'gp' }" @click="tab = 'gp'">手柄</button>
       </div>
 
+      <div v-if="localPlayers > 1" class="is-player-tabs">
+        <button :class="{ active: playerTab === 1 }" @click="playerTab = 1">P1</button>
+        <button :class="{ active: playerTab === 2 }" @click="playerTab = 2">P2</button>
+      </div>
+
       <section class="is-grid">
         <div v-if="activeConflicts.length" class="is-warning">
           检测到 {{ activeConflicts.length }} 组重复绑定。重新绑定其中任意一个按钮会自动清除旧占用。
@@ -28,7 +33,7 @@
               :class="{ listening: listening === b.key, conflict: hasConflict(b.key) }"
               @click="startListen(b.key)"
             >
-              {{ listening === b.key ? '按一个键…' : (mapping.keyboard[b.key] || '—') }}
+              {{ listening === b.key ? '按一个键…' : (activeKeyboard[b.key] || '—') }}
             </button>
           </template>
 
@@ -45,8 +50,8 @@
       </section>
 
       <footer class="is-foot">
-        <button class="is-reset" @click="tab === 'kb' ? resetKeyboard() : resetGamepad()">
-          重置{{ tab === 'kb' ? '键盘' : '手柄' }}
+        <button class="is-reset" @click="tab === 'kb' ? resetKeyboard(playerTab, props.platform) : resetGamepad()">
+          重置{{ tab === 'kb' ? `P${playerTab} 键盘` : '手柄' }}
         </button>
         <button class="is-done" @click="$emit('close')">完成</button>
       </footer>
@@ -57,14 +62,18 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useInputMapping, BUTTON_DEFS } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, effectiveKeyboardForPlayer } from '../composables/useInputMapping.js'
 import { getPlatform } from '../constants/platforms.js'
 
-const props = defineProps({ platform: { type: String, default: null } })
+const props = defineProps({
+  platform: { type: String, default: null },
+  localPlayers: { type: Number, default: 1 },
+})
 defineEmits(['close'])
 
 const { mapping, setKeyboard, setGamepad, resetKeyboard, resetGamepad } = useInputMapping()
 const tab = ref('kb')
+const playerTab = ref(1)
 const listening = ref(null)     // keyboard mode: button being re-bound
 const gpListening = ref(null)   // gamepad mode: button being re-bound
 
@@ -92,9 +101,11 @@ const relevantButtons = computed(() => {
   })
 })
 const platformName = computed(() => props.platform ? getPlatform(props.platform).displayName : null)
+const localPlayers = computed(() => Math.max(1, Math.min(2, Number(props.localPlayers) || 1)))
+const activeKeyboard = computed(() => effectiveKeyboardForPlayer(mapping.value, playerTab.value, props.platform))
 
 const activeConflicts = computed(() => {
-  const source = tab.value === 'kb' ? mapping.value.keyboard : mapping.value.gamepad
+  const source = tab.value === 'kb' ? activeKeyboard.value : mapping.value.gamepad
   const visible = new Set(relevantButtons.value.map((b) => b.key))
   const byValue = new Map()
   for (const btn of visible) {
@@ -123,20 +134,21 @@ function onKey(e) {
   else if (k === 'ArrowDown') k = 'down'
   else if (k === 'ArrowLeft') k = 'left'
   else if (k === 'ArrowRight') k = 'right'
-  else if (k === 'Enter') k = e.location === 3 ? 'numenter' : 'enter'
+  else if (k === 'Enter') k = e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
   else if (k === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
+  else if (/^[0-9]$/.test(k)) k = k
   else if (k === ';') k = 'semicolon'
   else if (k === '-') k = 'minus'
-  else if (k === '=') k = 'equal'
-  else if (k === '/') k = e.location === 3 ? 'numdivide' : '/'
-  else if (k === '*') k = 'nummultiply'
-  else if (k === '+') k = 'numadd'
-  else if (k === '.') k = e.location === 3 ? 'decimal' : '.'
+  else if (k === '=') k = 'equals'
+  else if (k === '/') k = 'slash'
+  else if (k === '*') k = 'multiply'
+  else if (k === '+') k = 'add'
+  else if (k === '.') k = 'period'
   else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(k)) k = k.toLowerCase()
   else if (k.length === 1) k = k.toLowerCase()
   else k = k.toLowerCase()
-  setKeyboard(listening.value, k)
-  listening.value = null
+  const saved = setKeyboard(listening.value, k, playerTab.value, props.platform)
+  if (saved !== false) listening.value = null
 }
 
 let rafId = null
@@ -206,8 +218,9 @@ onBeforeUnmount(() => {
 }
 .is-close:hover { background: rgba(255,255,255,0.08); color: #fff; }
 
-.is-tabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); }
-.is-tabs button {
+.is-tabs, .is-player-tabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.is-player-tabs { padding-top: 0; }
+.is-tabs button, .is-player-tabs button {
   flex: 1;
   padding: 8px 12px;
   background: transparent;
@@ -217,7 +230,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   cursor: pointer;
 }
-.is-tabs .active { background: rgba(10,132,255,0.22); border-color: rgba(10,132,255,0.5); color: #fff; }
+.is-tabs .active, .is-player-tabs .active { background: rgba(10,132,255,0.22); border-color: rgba(10,132,255,0.5); color: #fff; }
 .is-warning {
   margin: 10px 18px 0;
   padding: 8px 10px;

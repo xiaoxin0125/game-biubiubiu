@@ -22,7 +22,7 @@
     <button v-if="canSave" class="bar-btn" @click="$emit('load-state')" aria-label="读档" title="读取存档">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
     </button>
-    <button class="bar-btn bar-btn-keys" @click="$emit('keys')" aria-label="按键设置" title="按键设置">
+    <button v-if="showKeys" class="bar-btn bar-btn-keys" @click="$emit('keys')" aria-label="按键设置" title="按键设置">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>
     </button>
     <button v-if="canFullscreen" class="bar-btn bar-btn-accent" @click="$emit('fullscreen')" aria-label="全屏">
@@ -38,6 +38,7 @@ defineProps({
   platform: { type: Object, required: true },
   coreName: String,
   canSave: { type: Boolean, default: true },
+  showKeys: { type: Boolean, default: true },
 })
 defineEmits(['back', 'fullscreen', 'keys', 'save-state', 'load-state'])
 

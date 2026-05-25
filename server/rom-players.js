@@ -15,7 +15,28 @@ export function inferMaxPlayers(rom = {}) {
   const text = `${rom.title || ''} ${rom.fileName || ''}`.toLowerCase()
   const match = text.match(/(?:^|[^0-9])([1-4])\s*(?:p|players?|人|玩家)(?:[^0-9]|$)/i)
   if (match) return clampMaxPlayers(Number(match[1]))
-  return MAX_ROOM_PLAYERS
+  return defaultMaxPlayersForPlatform(rom?.platform)
+}
+
+const PLATFORM_DEFAULT_MAX_PLAYERS = Object.freeze({
+  arcade: 4,
+  nes: 2,
+  famicom: 2,
+  fds: 2,
+  sfc: 2,
+  snes: 2,
+  gb: 1,
+  gbc: 1,
+  gba: 1,
+  megadrive: 2,
+  genesis: 2,
+  sms: 1,
+  gamegear: 1,
+  psx: 2,
+})
+
+export function defaultMaxPlayersForPlatform(platform) {
+  return PLATFORM_DEFAULT_MAX_PLAYERS[platform] || 1
 }
 
 export function resolveMaxPlayersInfo(rom = {}, parent = null) {

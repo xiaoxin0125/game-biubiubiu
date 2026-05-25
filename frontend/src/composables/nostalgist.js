@@ -1,7 +1,6 @@
-// Thin wrapper around Nostalgist. Cores + shaders are loaded from Nostalgist's
-// default jsdelivr CDN. We use the two-phase prepare/start pattern — same as
-// retroassembly — so the caller can grab the canvas (via `emulator.getCanvas()`)
-// and insert it into their own layout before the emulator actually runs.
+// Thin wrapper around Nostalgist. Cores are served by our backend from
+// `data/cores`, not from Nostalgist's CDN. We keep the two-phase prepare/start
+// pattern so the caller can mount the generated canvas before the emulator runs.
 
 import { Nostalgist } from 'nostalgist'
 import { cachedFetch } from './useBlobCache.js'
@@ -27,6 +26,13 @@ const DEFAULT_RETROARCH_CONFIG = {
   run_ahead_frames: 1,
 }
 const RUN_AHEAD_DISABLED_CORES = new Set(['fbneo', 'mame2003_plus', 'pcsx_rearmed'])
+
+function localCoreFile(core, ext) {
+  return {
+    fileName: `${core}_libretro.${ext}`,
+    fileContent: cachedFetch(`/api/cores/${core}_libretro.${ext}`),
+  }
+}
 
 function defaultRetroarchConfigForCore(core) {
   if (!RUN_AHEAD_DISABLED_CORES.has(core)) return DEFAULT_RETROARCH_CONFIG
@@ -68,17 +74,22 @@ export async function prepareEmulator({
     ? rom
     : (romFileName ? { fileName: romFileName, fileContent: romUrl } : romUrl)
 
+  const localCore = typeof core === 'string'
+    ? {
+        name: core,
+        js: localCoreFile(core, 'js'),
+        wasm: localCoreFile(core, 'wasm'),
+      }
+    : core
+
   const options = {
-    core,
+    core: localCore,
     rom: resolvedRom,
+    respondToGlobalEvents: true,
     retroarchConfig: { ...defaultRetroarchConfigForCore(core), ...retroarchConfig },
     retroarchCoreConfig,
-    // Route core downloads through our backend, and cache the bytes in
-    // IndexedDB so reopening a game is near-instant and works offline.
-    // Backend already fetches once from jsdelivr and caches to disk
-    // (server/routes/cores.js); IDB is the client-side tier on top.
-    resolveCoreJs:   (c) => cachedFetch(`/api/cores/${c}.js`),
-    resolveCoreWasm: (c) => cachedFetch(`/api/cores/${c}.wasm`),
+    resolveCoreJs:   (c) => localCoreFile(c, 'js'),
+    resolveCoreWasm: (c) => localCoreFile(c, 'wasm'),
   }
   if (bios?.length) options.bios = bios
   if (shader) options.shader = shader

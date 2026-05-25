@@ -207,8 +207,26 @@ const BUTTON_PROFILES = {
   psx:        withTurbo(BTN_PSX),
 }
 
+export const platformDefaultMaxPlayers = {
+  arcade: 4,
+  nes: 2,
+  famicom: 2,
+  fds: 2,
+  sfc: 2,
+  snes: 2,
+  gb: 1,
+  gbc: 1,
+  gba: 1,
+  megadrive: 2,
+  genesis: 2,
+  sms: 1,
+  gamegear: 1,
+  psx: 2,
+}
+
 for (const [id, p] of Object.entries(platforms)) {
   p.buttons = BUTTON_PROFILES[id] || BTN_NES
+  p.maxPlayers = platformDefaultMaxPlayers[id] || 1
 }
 
 // Per-platform face-button label overrides. The internal retropad keys

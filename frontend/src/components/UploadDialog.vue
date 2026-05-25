@@ -72,16 +72,6 @@
           <div class="hint-text">只影响启动前选择，不会在运行中切换核心。</div>
         </div>
 
-        <div v-if="isNesPlatform" class="field compat-field">
-          <label class="label">NES 4P 控制器模式</label>
-          <select v-model="nesFourPlayerMode" class="select">
-            <option value="">关闭 / 自动</option>
-            <option value="four_score">Four Score</option>
-            <option value="famicom_expansion">FC 扩展手柄</option>
-          </select>
-          <div class="hint-text">4 人改版 ROM 建议配合 FCEUmm 或 Nestopia 测试。</div>
-        </div>
-
         <label class="pub-row">
           <div class="sw">
             <input type="checkbox" v-model="isPublic" :disabled="!!selectedParent" />
@@ -165,7 +155,6 @@ const asVariant = ref(false)
 const parentRomId = ref(null)
 const versionLabel = ref('')
 const defaultCore = ref('')
-const nesFourPlayerMode = ref('')
 const existingRoms = ref([])
 const parentQuery = ref('')
 
@@ -185,7 +174,6 @@ onMounted(async () => {
 
 const platformList = computed(() => Object.entries(platforms))
 const coreOptions = computed(() => platform.value ? platforms[platform.value]?.cores || [] : [])
-const isNesPlatform = computed(() => platform.value === 'nes' || platform.value === 'famicom')
 
 const sameCandidates = computed(() => {
   if (!platform.value) return []
@@ -209,7 +197,6 @@ watch(platform, () => {
   parentRomId.value = null
   parentQuery.value = ''
   defaultCore.value = ''
-  nesFourPlayerMode.value = ''
 })
 watch(selectedParent, (parent) => {
   if (parent) isPublic.value = !!parent.isPublic
@@ -265,7 +252,6 @@ async function submit() {
     fd.append('platform', platform.value)
     fd.append('isPublic', String(isPublic.value))
     if (defaultCore.value) fd.append('defaultCore', defaultCore.value)
-    if (isNesPlatform.value && nesFourPlayerMode.value) fd.append('nesFourPlayerMode', nesFourPlayerMode.value)
     if (asVariant.value && parentRomId.value) {
       fd.append('parentRomId', String(parentRomId.value))
       fd.append('versionLabel', versionLabel.value || '变体')

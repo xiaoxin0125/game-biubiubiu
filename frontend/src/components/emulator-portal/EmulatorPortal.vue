@@ -24,6 +24,8 @@ const {
   boot,
   saveState,
   loadState,
+  pressButton,
+  releaseButton,
   canvas,
   captureAudioStream,
   toggleFullscreen,
@@ -82,6 +84,8 @@ watch([retroarchConfigSignature, retroarchCoreConfigSignature], async ([nextConf
 defineExpose({
   saveState,
   loadState,
+  pressButton,
+  releaseButton,
   toggleFullscreen,
   captureAudioStream,
   get canvas() { return canvas() },

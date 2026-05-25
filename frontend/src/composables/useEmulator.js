@@ -119,6 +119,14 @@ export function useEmulator() {
     await instance.value.loadState(blobOrArrayBuffer)
   }
 
+  function pressButton(button, player = 1) {
+    try { instance.value?.pressDown?.({ button, player }) } catch {}
+  }
+
+  function releaseButton(button, player = 1) {
+    try { instance.value?.pressUp?.({ button, player }) } catch {}
+  }
+
   function canvas() { return currentCanvas }
 
   // Tap into Nostalgist's internal AudioContext via MediaStreamDestination so
@@ -173,8 +181,8 @@ export function useEmulator() {
     error,
     instance,
     boot,
-    saveState,
-    loadState,
+    pressButton,
+    releaseButton,
     canvas,
     captureAudioStream,
     toggleFullscreen,

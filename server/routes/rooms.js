@@ -74,7 +74,7 @@ roomRoutes.get('/', async (c) => {
       serializeRoom(r, {
         hostUsername, romTitle, romPlatform,
         maxPlayers: romMaxPlayers ?? null,
-        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, platform: romPlatform }),
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -99,7 +99,7 @@ roomRoutes.get('/mine', requireAuth, async (c) => {
       serializeRoom(r, {
         hostUsername: me.username, romTitle, romPlatform,
         maxPlayers: romMaxPlayers ?? null,
-        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, platform: romPlatform }),
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -187,7 +187,7 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
     romTitle: row.romTitle,
     romPlatform: row.romPlatform,
     maxPlayers: row.romMaxPlayers ?? null,
-    effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, platform: row.romPlatform }),
+    effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, fileName: '', platform: row.romPlatform }),
     hostOnline: isHostOnline(code),
   })
   return c.json({

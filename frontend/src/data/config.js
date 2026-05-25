@@ -9,40 +9,26 @@ export function getPlatformInfo(platformId, { core } = {}) {
     displayName: p.displayName,
     color: p.color,
     manufacturer: p.manufacturer,
+    maxPlayers: p.maxPlayers || 1,
   }
 }
 
-const NES_FOUR_PLAYER_CORE_CONFIG = {
-  fceumm: {
-    four_score: { fceumm_4player: 'fourscore' },
-    famicom_expansion: { fceumm_4player: 'famicom' },
-  },
-  nestopia: {
-    four_score: { nestopia_select_adapter: 'ntsc' },
-    famicom_expansion: { nestopia_select_adapter: 'famicom' },
+export function buildPlatformCoreConfig({ platform, core, players = 1 } = {}) {
+  return buildPlatformNetplayCoreConfig({ platform, core, players })
+}
+
+const PLATFORM_NETPLAY_CORE_CONFIG = {
+  psx: {
+    pcsx_rearmed: {
+      3: { pcsx_rearmed_multitap1: 'enabled' },
+      4: { pcsx_rearmed_multitap1: 'enabled' },
+    },
   },
 }
 
-const NES_FOUR_PLAYER_AUTO_RULES = [
-  {
-    pattern: /battle\s*city.*(?:4\s*(?:players?|p)|four\s*players?)/i,
-    mode: 'famicom_expansion',
-  },
-]
-
-export function resolveNesFourPlayerMode({ platform, mode, title, fileName } = {}) {
-  if (!['nes', 'famicom'].includes(platform)) return null
-  if (mode && mode !== 'auto') return mode
-
-  const text = `${title || ''} ${fileName || ''}`
-  const rule = NES_FOUR_PLAYER_AUTO_RULES.find((item) => item.pattern.test(text))
-  return rule?.mode || null
-}
-
-export function buildNesFourPlayerCoreConfig({ platform, core, mode, title, fileName } = {}) {
-  const effectiveMode = resolveNesFourPlayerMode({ platform, mode, title, fileName })
-  if (!effectiveMode) return {}
-  return NES_FOUR_PLAYER_CORE_CONFIG[core]?.[effectiveMode] || {}
+export function buildPlatformNetplayCoreConfig({ platform, core, players = 1 } = {}) {
+  const count = Math.max(1, Math.min(4, Number(players) || 1))
+  return PLATFORM_NETPLAY_CORE_CONFIG[platform]?.[core]?.[count] || {}
 }
 
 // Platforms that actually REQUIRE a BIOS to boot. Everything else (GB/GBC/GBA

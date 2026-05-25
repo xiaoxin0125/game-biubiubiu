@@ -24,6 +24,42 @@ export const RETROPAD_BUTTON_DEFS = [
   { key: 'select', label: 'Select',  group: 'system' },
 ]
 
+export const TURBO_FIRE_MS = 60
+
+export function normalizeRetroarchKey(key) {
+  if (key == null) return key
+  const value = String(key).trim().toLowerCase()
+  if (value === '') return value
+  const aliases = {
+    arrowup: 'up',
+    arrowdown: 'down',
+    arrowleft: 'left',
+    arrowright: 'right',
+    ' ': 'space',
+    ';': 'semicolon',
+    '-': 'minus',
+    '=': 'equals',
+    equal: 'equals',
+    ',': 'comma',
+    '.': 'period',
+    '/': 'slash',
+    "'": 'quote',
+    '[': 'leftbracket',
+    ']': 'rightbracket',
+    '`': 'backquote',
+    numenter: 'kp_enter',
+    decimal: 'kp_period',
+    numdivide: 'divide',
+    nummultiply: 'multiply',
+    numsubtract: 'subtract',
+    numadd: 'add',
+  }
+  if (/^numpad[0-9]$/.test(value)) return value.slice(6)
+  if (/^num[0-9]$/.test(value)) return value.slice(3)
+  if (/^kp_[0-9]$/.test(value)) return value.slice(3)
+  return aliases[value] || value
+}
+
 export const TURBO_BUTTON_TARGETS = {
   aa: 'a',
   bb: 'b',
@@ -49,14 +85,185 @@ export const BUTTON_DEFS = [...RETROPAD_BUTTON_DEFS, ...TURBO_BUTTON_DEFS]
 
 const DEFAULT_KEYBOARD = {
   up: 'up', down: 'down', left: 'left', right: 'right',
-  a: 'x', b: 'z',
-  x: 's', y: 'a',
+  a: 'z', b: 'x',
+  x: 'a', y: 's',
   l: 'q', r: 'w',
-  l2: '1', r2: '3',
-  l3: '2', r3: '4',
+  l2: null, r2: null,
+  l3: null, r3: null,
   start: 'enter', select: 'rshift',
-  aa: 'c', bb: 'd', xx: 'e', yy: 'f',
-  ll: '5', rr: '6', l2l2: '8', r2r2: '0',
+  aa: 'n', bb: 'm', xx: 'o', yy: 'k',
+  ll: null, rr: null, l2l2: null, r2r2: null,
+}
+
+const PLATFORM_DEFAULT_KEYBOARDS = {
+  arcade: {
+    ...DEFAULT_KEYBOARD,
+    b: 'z', a: 'x', y: 'c', x: 'd',
+    l: 'g', r: 'h',
+    bb: 'n', aa: 'm', yy: 'j', xx: 'f',
+    ll: 't', rr: 'y',
+  },
+  megadrive: {
+    ...DEFAULT_KEYBOARD,
+    b: 'z', a: 'x', y: 'c', x: 'b', l: 'u', r: 'i',
+    bb: 'n', aa: 'm', yy: 'j', xx: 'k', ll: 'o', rr: 'p',
+  },
+  genesis: {
+    ...DEFAULT_KEYBOARD,
+    b: 'z', a: 'x', y: 'c', x: 'b', l: 'u', r: 'i',
+    bb: 'n', aa: 'm', yy: 'j', xx: 'k', ll: 'o', rr: 'p',
+  },
+}
+
+export const DEFAULT_PLAYER1_RUNTIME_KEYBOARD = { ...DEFAULT_KEYBOARD }
+
+export function defaultPlayer1KeyboardForPlatform(platform = null) {
+  return PLATFORM_DEFAULT_KEYBOARDS[platform] || DEFAULT_KEYBOARD
+}
+
+const SAVED_DEFAULT_KEYBOARD_PROFILES = [
+  {
+    up: 'up', down: 'down', left: 'left', right: 'right',
+    a: 'x', b: 'z',
+    x: 's', y: 'a',
+    l: 'q', r: 'w',
+    l2: '1', r2: '3',
+    l3: '2', r3: '4',
+    start: 'enter', select: 'rshift',
+    aa: 'c', bb: 'd', xx: 'e', yy: 'f',
+    ll: '5', rr: '6', l2l2: '8', r2r2: '0',
+  },
+  {
+    up: 'up', down: 'down', left: 'left', right: 'right',
+    a: 'x', b: 'z',
+    x: 's', y: 'a',
+    l: 'd', r: 'f',
+    l2: 'g', r2: 'h',
+    l3: 'c', r3: 'v',
+    start: 'b', select: 'n',
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+]
+
+function isSavedDefaultKeyboard(storedKeyboard = {}) {
+  const entries = Object.entries(storedKeyboard || {})
+    .filter(([, key]) => key != null)
+  if (!entries.length) return false
+  return SAVED_DEFAULT_KEYBOARD_PROFILES.some((profile) =>
+    entries.every(([btn, key]) => normalizeRetroarchKey(key) === profile[btn]),
+  )
+}
+
+function isSavedLocalPlayer2DefaultKeyboard(storedKeyboard = {}) {
+  const entries = Object.entries(storedKeyboard || {})
+    .filter(([, key]) => key != null)
+  if (!entries.length) return false
+  const legacyProfiles = [
+    {
+      up: 'i', down: 'k', left: 'j', right: 'l',
+      a: 'u', b: 'o', x: 'y', y: 't',
+      l: 'q', r: 'w', l2: 'e', r2: 'r',
+      l3: 'p', r3: 'semicolon', start: 'space', select: 'tab',
+      aa: null, bb: null, xx: null, yy: null,
+      ll: null, rr: null, l2l2: null, r2r2: null,
+    },
+    {
+      up: '8', down: '2', left: '4', right: '6',
+      a: '1', b: '3', x: '7', y: '9',
+      l: 'subtract', r: 'add', l2: null, r2: null,
+      l3: null, r3: null, start: 'kp_enter', select: '0',
+      aa: null, bb: null, xx: null, yy: null,
+      ll: null, rr: null, l2l2: null, r2r2: null,
+    },
+  ]
+  return legacyProfiles.some((profile) =>
+    entries.every(([btn, key]) => normalizeRetroarchKey(key) === profile[btn]),
+  )
+}
+
+const EMPTY_KEYBOARD = {
+  up: null, down: null, left: null, right: null,
+  a: null, b: null, x: null, y: null,
+  l: null, r: null, l2: null, r2: null,
+  l3: null, r3: null, start: null, select: null,
+  aa: null, bb: null, xx: null, yy: null,
+  ll: null, rr: null, l2l2: null, r2r2: null,
+}
+
+const DEFAULT_LOCAL_PLAYER_KEYBOARDS = {
+  2: { ...EMPTY_KEYBOARD },
+}
+
+const LOCAL_PLAYER_RUNTIME_KEYBOARDS = {
+  2: {
+    up: 'i', down: 'k', left: 'j', right: 'l',
+    a: 'u', b: 'o', x: 'y', y: 't',
+    l: 'q', r: 'w', l2: 'e', r2: 'r',
+    l3: 'p', r3: 'semicolon', start: 'space', select: 'tab',
+    aa: null, bb: null, xx: null, yy: null,
+    ll: null, rr: null, l2l2: null, r2r2: null,
+  },
+}
+
+function keyboardStorageKeyForPlayer(player = 1) {
+  return Number(player) === 2 ? 'keyboardP2' : 'keyboard'
+}
+
+function defaultKeyboardForPlayer(player = 1, platform = null) {
+  return Number(player) === 2 ? DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] : defaultPlayer1KeyboardForPlatform(platform)
+}
+
+function keyboardMatchesProfile(keyboard = {}, profile = {}) {
+  const keys = new Set([...Object.keys(keyboard || {}), ...Object.keys(profile || {})])
+  for (const key of keys) {
+    if (normalizeRetroarchKey(keyboard?.[key]) !== normalizeRetroarchKey(profile?.[key])) return false
+  }
+  return true
+}
+
+export function effectiveKeyboardForPlayer(inputMapping = null, player = 1, platform = null) {
+  const defaults = defaultKeyboardForPlayer(player, platform)
+  const stored = inputMapping?.[keyboardStorageKeyForPlayer(player)]
+  if (Number(player) === 1 && platform && keyboardMatchesProfile(stored, DEFAULT_KEYBOARD)) {
+    return { ...defaults }
+  }
+  return normalizeKeyboardMapping(stored, defaults)
+}
+
+function localPlayerKeys(player, platformButtons = null, inputMapping = null) {
+  const preferred = effectiveKeyboardForPlayer(inputMapping, player)
+  const allowed = platformButtons ? new Set(platformButtons) : null
+  const out = {}
+  for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+    if (allowed && !allowed.has(btn)) continue
+    const key = normalizeRetroarchKey(preferred[btn])
+    if (key) out[btn] = key
+  }
+  return out
+}
+
+export function buildLocalPlayerKeyboardMap(player = 2, platformButtons = null) {
+  return localPlayerKeys(player, platformButtons, { [keyboardStorageKeyForPlayer(player)]: LOCAL_PLAYER_RUNTIME_KEYBOARDS[player] })
+}
+
+export function buildLocalMultiplayerRetroarchConfig(maxPlayers = 2, platformButtons = null, inputMapping = null) {
+  const limit = Math.max(1, Math.min(2, Number(maxPlayers) || 1))
+  const cfg = { input_max_users: limit }
+  const allowed = platformButtons ? new Set(platformButtons) : null
+  for (let player = 1; player <= limit; player++) {
+    cfg[`input_libretro_device_p${player}`] = 1
+    cfg[`input_player${player}_analog_dpad_mode`] = 1
+  }
+  for (let player = 2; player <= limit; player++) {
+    const keyMap = buildLocalPlayerKeyboardMap(player, platformButtons)
+    for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+      if (allowed && !allowed.has(btn)) continue
+      const key = normalizeRetroarchKey(keyMap[btn])
+      if (key) cfg[`input_player${player}_${btn}`] = key
+    }
+  }
+  return cfg
 }
 
 const REMOTE_PLAYER_KEY_LAYOUTS = {
@@ -94,12 +301,12 @@ function remotePlayerKeys(player, reserved = new Set(), platformButtons = null) 
 
   for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
     if (allowed && !allowed.has(btn)) continue
-    const preferredKey = preferred[btn]
-    if (preferredKey && !reserved.has(preferredKey)) {
-      out[btn] = preferredKey
+    const key = normalizeRetroarchKey(preferred[btn])
+    if (key && !reserved.has(key)) {
+      out[btn] = key
     } else {
-      while (fallbackCursor < REMOTE_KEY_FALLBACK_POOL.length && reserved.has(REMOTE_KEY_FALLBACK_POOL[fallbackCursor])) fallbackCursor++
-      out[btn] = REMOTE_KEY_FALLBACK_POOL[fallbackCursor] || 'nul'
+      while (fallbackCursor < REMOTE_KEY_FALLBACK_POOL.length && reserved.has(normalizeRetroarchKey(REMOTE_KEY_FALLBACK_POOL[fallbackCursor]))) fallbackCursor++
+      out[btn] = normalizeRetroarchKey(REMOTE_KEY_FALLBACK_POOL[fallbackCursor]) || 'nul'
       fallbackCursor++
     }
     if (out[btn] && out[btn] !== 'nul') reserved.add(out[btn])
@@ -111,8 +318,8 @@ function remotePlayerKeys(player, reserved = new Set(), platformButtons = null) 
 // generated from the current P1 mapping at runtime, so P1 custom bindings never
 // get stolen by P2-P4.
 export function buildRemotePlayerKeyMaps(maxPlayers = 4, reservedKeys = [], platformButtons = null) {
-  const limit = Math.max(2, Math.min(4, Number(maxPlayers) || 4))
-  const reserved = new Set((reservedKeys || []).filter((key) => key != null && key !== '').map((key) => String(key)))
+  const limit = Math.max(1, Math.min(4, Number(maxPlayers) || 4))
+  const reserved = new Set((reservedKeys || []).filter((key) => key != null && key !== '').map((key) => normalizeRetroarchKey(key)))
   const maps = {}
   for (let player = 2; player <= limit; player++) maps[player] = remotePlayerKeys(player, reserved, platformButtons)
   return maps
@@ -123,8 +330,9 @@ export const REMOTE_PLAYER_KEY_MAPS = buildRemotePlayerKeyMaps(4)
 export const P2_KEY_MAP = REMOTE_PLAYER_KEY_MAPS[2]
 
 export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys = [], platformButtons = null) {
-  const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeys, platformButtons)
-  const cfg = { input_max_users: 4 }
+  const limit = Math.max(1, Math.min(4, Number(maxPlayers) || 4))
+  const maps = buildRemotePlayerKeyMaps(limit, reservedKeys, platformButtons)
+  const cfg = { input_max_users: limit }
   const allowed = platformButtons ? new Set(platformButtons) : null
   for (let player = 1; player <= 4; player++) {
     cfg[`input_libretro_device_p${player}`] = 1
@@ -133,7 +341,7 @@ export function buildRemotePlayersRetroarchConfig(maxPlayers = 4, reservedKeys =
   for (const [player, keyMap] of Object.entries(maps)) {
     for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
       if (allowed && !allowed.has(btn)) continue
-      const key = keyMap[btn]
+      const key = normalizeRetroarchKey(keyMap[btn])
       if (key) cfg[`input_player${player}_${btn}`] = key
     }
   }
@@ -168,14 +376,57 @@ function saveMapping(userId, mapping) {
   localStorage.setItem(storageKey(userId), JSON.stringify(mapping))
 }
 
-const mapping = ref({ keyboard: { ...DEFAULT_KEYBOARD }, gamepad: { ...DEFAULT_GAMEPAD } })
+const INVALID_KEYBOARD_BINDINGS = new Set(['', 'nul', 'null', 'undefined', 'none', 'false'])
+
+function isValidKeyboardBinding(key) {
+  if (key == null) return false
+  return !INVALID_KEYBOARD_BINDINGS.has(String(key).trim().toLowerCase())
+}
+
+function normalizeKeyboardMapping(storedKeyboard = {}, defaults = DEFAULT_KEYBOARD) {
+  const out = { ...defaults }
+  for (const [btn, key] of Object.entries(storedKeyboard || {})) {
+    if (!isValidKeyboardBinding(key)) continue
+    const normalized = normalizeRetroarchKey(key)
+    if (!isValidKeyboardBinding(normalized)) continue
+    out[btn] = normalized
+  }
+  return out
+}
+
+function isValidGamepadBinding(idx) {
+  if (idx == null || idx === '') return false
+  if (typeof idx === 'number') return Number.isInteger(idx) && idx >= 0
+  if (typeof idx === 'string' && /^\d+$/.test(idx.trim())) return true
+  return false
+}
+
+function normalizeGamepadMapping(storedGamepad = {}) {
+  const out = { ...DEFAULT_GAMEPAD }
+  for (const [btn, idx] of Object.entries(storedGamepad || {})) {
+    if (!isValidGamepadBinding(idx)) continue
+    out[btn] = typeof idx === 'number' ? idx : Number(idx)
+  }
+  return out
+}
+
+const mapping = ref({
+  keyboard: { ...DEFAULT_KEYBOARD },
+  keyboardP2: { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] },
+  gamepad: { ...DEFAULT_GAMEPAD },
+})
 let loaded = false
 
 function refreshForUser(userId) {
   const stored = loadMapping(userId)
   mapping.value = {
-    keyboard: { ...DEFAULT_KEYBOARD, ...(stored?.keyboard || {}) },
-    gamepad:  { ...DEFAULT_GAMEPAD,  ...(stored?.gamepad  || {}) },
+    keyboard: isSavedDefaultKeyboard(stored?.keyboard)
+      ? { ...DEFAULT_KEYBOARD }
+      : normalizeKeyboardMapping(stored?.keyboard),
+    keyboardP2: isSavedLocalPlayer2DefaultKeyboard(stored?.keyboardP2)
+      ? { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] }
+      : normalizeKeyboardMapping(stored?.keyboardP2, DEFAULT_LOCAL_PLAYER_KEYBOARDS[2]),
+    gamepad: normalizeGamepadMapping(stored?.gamepad),
   }
 }
 
@@ -188,13 +439,34 @@ function withoutDuplicateBinding(current, btn, value) {
   return next
 }
 
-export function buildPlayerRetroarchConfig(inputMapping, platformButtons = null) {
+function sanitizeKeyboardSave(current) {
+  const out = {}
+  for (const [btn, key] of Object.entries(current || {})) {
+    out[btn] = isValidKeyboardBinding(key) ? normalizeRetroarchKey(key) : null
+  }
+  return out
+}
+
+function sanitizeGamepadSave(current) {
+  const out = {}
+  for (const [btn, idx] of Object.entries(current || {})) {
+    out[btn] = isValidGamepadBinding(idx) ? (typeof idx === 'number' ? idx : Number(idx)) : null
+  }
+  return out
+}
+
+export function buildPlayerRetroarchConfig(inputMapping, platformButtons = null, options = {}) {
   const cfg = {}
   const allowed = platformButtons ? new Set(platformButtons) : null
+  const keyboard = normalizeKeyboardMapping(
+    options.runtimeKeyboard || inputMapping?.keyboard,
+    options.runtimeKeyboard || DEFAULT_KEYBOARD,
+  )
+  const gamepad = normalizeGamepadMapping(inputMapping?.gamepad)
   for (const { key } of RETROPAD_BUTTON_DEFS) {
     const enabled = !allowed || allowed.has(key)
-    cfg[`input_player1_${key}`] = enabled ? (inputMapping?.keyboard?.[key] || 'nul') : 'nul'
-    const gp = inputMapping?.gamepad?.[key]
+    cfg[`input_player1_${key}`] = enabled ? (keyboard[key] || 'nul') : 'nul'
+    const gp = gamepad[key]
     if (enabled && typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
     else if (!enabled) cfg[`input_player1_${key}_btn`] = 'nul'
   }
@@ -210,16 +482,30 @@ export function useInputMapping() {
     watch(() => user.value?.id, (id) => refreshForUser(id))
   }
 
-  function setKeyboard(btn, key) {
-    mapping.value = { ...mapping.value, keyboard: withoutDuplicateBinding(mapping.value.keyboard, btn, key) }
+  function setKeyboard(btn, key, player = 1, platform = null) {
+    const playerKey = keyboardStorageKeyForPlayer(player)
+    const defaults = defaultKeyboardForPlayer(player, platform)
+    const current = effectiveKeyboardForPlayer(mapping.value, player, platform)
+    const normalized = isValidKeyboardBinding(key) ? normalizeRetroarchKey(key) : defaults[btn]
+    if (Number(player) === 2) {
+      const player1Keyboard = effectiveKeyboardForPlayer(mapping.value, 1, platform)
+      const p1Reserved = new Set(Object.values(player1Keyboard).filter(isValidKeyboardBinding).map((value) => normalizeRetroarchKey(value)))
+      if (p1Reserved.has(normalized)) return false
+    }
+    const keyboard = sanitizeKeyboardSave(withoutDuplicateBinding(current, btn, normalized))
+    mapping.value = { ...mapping.value, [playerKey]: keyboard }
     saveMapping(user.value?.id, mapping.value)
+    return true
   }
   function setGamepad(btn, idx) {
-    mapping.value = { ...mapping.value, gamepad: withoutDuplicateBinding(mapping.value.gamepad, btn, idx) }
+    const normalized = isValidGamepadBinding(idx) ? (typeof idx === 'number' ? idx : Number(idx)) : DEFAULT_GAMEPAD[btn]
+    const gamepad = sanitizeGamepadSave(withoutDuplicateBinding(mapping.value.gamepad, btn, normalized))
+    mapping.value = { ...mapping.value, gamepad }
     saveMapping(user.value?.id, mapping.value)
   }
-  function resetKeyboard() {
-    mapping.value = { ...mapping.value, keyboard: { ...DEFAULT_KEYBOARD } }
+  function resetKeyboard(player = 1, platform = null) {
+    const playerKey = keyboardStorageKeyForPlayer(player)
+    mapping.value = { ...mapping.value, [playerKey]: { ...defaultKeyboardForPlayer(player, platform) } }
     saveMapping(user.value?.id, mapping.value)
   }
   function resetGamepad() {

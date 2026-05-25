@@ -168,52 +168,57 @@
             </div>
           </div>
           <div class="admin-rom-meta">
-            <span class="plat-badge" :style="{ '--pc': platColor(r.platform) }">{{ platLabel(r.platform) }}</span>
-            <span class="meta-chip">@{{ r.owner?.username || '—' }}</span>
-            <select
-              class="select max-player-select"
-              :value="r.maxPlayers ?? ''"
-              :disabled="savingMaxPlayersId === r.id"
-              @change="updateMaxPlayers(r, $event.target.value)"
-            >
-              <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
-              <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
-            </select>
-            <select
-              class="select compat-select"
-              :value="r.defaultCore ?? ''"
-              :disabled="savingCompatId === r.id"
-              @change="updateDefaultCore(r, $event.target.value)"
-            >
-              <option value="">默认核心</option>
-              <option v-for="core in coreOptionsFor(r.platform)" :key="core" :value="core">
-                {{ coreDisplayName[core] || core }}
-              </option>
-            </select>
-            <select
-              v-if="isNesPlatform(r.platform)"
-              class="select compat-select"
-              :value="r.nesFourPlayerMode ?? ''"
-              :disabled="savingCompatId === r.id"
-              @change="updateNesFourPlayerMode(r, $event.target.value)"
-            >
-              <option value="">4P 自动</option>
-              <option value="four_score">Four Score</option>
-              <option value="famicom_expansion">FC 扩展手柄</option>
-            </select>
-            <span class="meta-chip">{{ fmtTime(r.createdAt) }}</span>
-            <button
-              class="pill-tag pill-toggle"
-              :class="r.isPublic ? 'pill-pub' : 'pill-priv'"
-              :disabled="togglingId === r.id"
-              @click="togglePublic(r)"
-              :title="r.isPublic ? '点击设为私密' : '点击设为公开'"
-            >
-              {{ togglingId === r.id ? '…' : (r.isPublic ? '公开' : '私密') }}
-            </button>
-            <div class="actions">
-              <button class="btn btn-sm" @click="play(r)">试玩</button>
-              <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
+            <div class="admin-rom-facts">
+              <span class="plat-badge" :style="{ '--pc': platColor(r.platform) }">{{ platLabel(r.platform) }}</span>
+              <span class="meta-chip">@{{ r.owner?.username || '—' }}</span>
+              <span class="meta-chip time-chip">{{ fmtTime(r.createdAt) }}</span>
+            </div>
+
+            <div class="admin-rom-settings">
+              <div class="rom-control rom-control-players">
+                <span class="rom-control-label">游玩人数</span>
+                <select
+                  class="admin-select max-player-select"
+                  :value="r.maxPlayers ?? ''"
+                  :disabled="savingMaxPlayersId === r.id"
+                  @change="updateMaxPlayers(r, $event.target.value)"
+                >
+                  <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
+                  <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
+                </select>
+              </div>
+              <div class="rom-control rom-control-core">
+                <span class="rom-control-label">核心</span>
+                <select
+                  class="admin-select compat-select"
+                  :value="r.defaultCore ?? ''"
+                  :disabled="savingCompatId === r.id"
+                  @change="updateDefaultCore(r, $event.target.value)"
+                >
+                  <option value="">默认核心</option>
+                  <option v-for="core in coreOptionsFor(r.platform)" :key="core" :value="core">
+                    {{ coreDisplayName[core] || core }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="admin-rom-actions">
+              <button
+                class="visibility-switch"
+                :class="{ active: r.isPublic }"
+                :disabled="togglingId === r.id"
+                @click="togglePublic(r)"
+                :title="r.isPublic ? '点击设为私密' : '点击设为公开'"
+              >
+                <span class="switch-label private-label">私密</span>
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+                <span class="switch-label public-label">公开</span>
+              </button>
+              <div class="actions">
+                <button class="btn btn-sm" @click="play(r)">试玩</button>
+                <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
+              </div>
             </div>
           </div>
         </article>
@@ -481,28 +486,8 @@ async function updateDefaultCore(r, value) {
   }
 }
 
-async function updateNesFourPlayerMode(r, value) {
-  savingCompatId.value = r.id
-  const nextMode = value || null
-  try {
-    const updated = await api.romUpdate(r.id, { nesFourPlayerMode: nextMode })
-    Object.assign(r, {
-      ...updated,
-      nesFourPlayerMode: updated.nesFourPlayerMode ?? nextMode,
-      owner: r.owner,
-    })
-  } catch (err) {
-    alert(err?.message || '保存 4P 模式失败')
-  } finally {
-    savingCompatId.value = null
-  }
-}
-
 function coreOptionsFor(platform) {
   return getPlatform(platform).cores || []
-}
-function isNesPlatform(platform) {
-  return platform === 'nes' || platform === 'famicom'
 }
 
 function play(r) { router.push(`/play/${r.id}`) }
@@ -705,11 +690,34 @@ function fmtTime(v) {
 }
 .admin-rom-title-wrap { min-width: 0; flex: 1; }
 .admin-rom-meta {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(260px, 1.2fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-left: 22px;
+}
+.admin-rom-facts,
+.admin-rom-settings,
+.admin-rom-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
   flex-wrap: wrap;
-  padding-left: 22px;
+}
+.admin-rom-settings {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.admin-rom-actions {
+  justify-content: flex-end;
+}
+.time-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .meta-chip {
   display: inline-flex;
@@ -759,19 +767,47 @@ function fmtTime(v) {
 .rf { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; overflow-wrap: anywhere; }
 .muted { color: var(--text-tertiary); font-size: 13px; }
 
-.actions { display: flex; gap: 6px; justify-content: flex-end; margin-left: auto; }
-.max-player-select {
-  width: 126px;
-  height: 30px;
-  padding: 0 8px;
+.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.rom-control {
+  display: inline-flex;
+  align-items: stretch;
+  width: 220px;
+  height: 32px;
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   background: #fff;
+  overflow: hidden;
+}
+.rom-control-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 70px;
+  padding: 0 8px;
+  background: #111;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.admin-select {
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  padding: 0 26px 0 8px;
+  border: 0;
+  background: #fff;
   color: #111;
+  font: inherit;
   font-size: 12px;
   font-weight: 900;
+  outline: none;
+  cursor: pointer;
 }
-
+.admin-select:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
 .pill-tag {
   display: inline-flex; align-items: center;
   padding: 3px 10px;
@@ -864,16 +900,56 @@ function fmtTime(v) {
 .bios-missing { color: var(--warn); }
 .empty-state { color: var(--text-tertiary); }
 
-.pill-toggle {
+.visibility-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 8px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
   cursor: pointer;
-  font-family: inherit;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
 }
-.pill-toggle:hover:not(:disabled) {
+.visibility-switch:hover:not(:disabled) {
   transform: translate(-2px, -2px);
   box-shadow: 3px 3px 0 var(--border-color, #111);
 }
-.pill-toggle:disabled { opacity: 0.6; cursor: wait; }
+.visibility-switch:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.switch-track {
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: #f2f2f2;
+  transition: background 0.2s;
+}
+.switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+  background: #111;
+  transition: transform 0.2s var(--ease-spring), background 0.2s;
+}
+.visibility-switch.active .switch-track { background: #111; }
+.visibility-switch.active .switch-thumb {
+  background: #fff;
+  transform: translateX(16px);
+}
+.switch-label { color: var(--text-tertiary); }
+.visibility-switch:not(.active) .private-label { color: #111; }
+.visibility-switch.active .public-label { color: var(--success); }
 
 .plat-badge {
   --pc: var(--accent);
@@ -916,8 +992,21 @@ function fmtTime(v) {
 @media (max-width: 900px) {
   .stats-row { grid-template-columns: repeat(2, 1fr); }
   .rom-toolbar { grid-template-columns: 1fr; }
-  .admin-rom-meta { padding-left: 0; }
-  .actions { width: 100%; margin-left: 0; }
+  .admin-rom-meta {
+    grid-template-columns: 1fr;
+    padding-left: 0;
+    align-items: stretch;
+  }
+  .admin-rom-facts,
+  .admin-rom-settings,
+  .admin-rom-actions {
+    justify-content: flex-start;
+  }
+  .admin-rom-actions {
+    padding-top: 2px;
+  }
+  .rom-control { width: min(220px, 100%); }
+  .actions { justify-content: flex-start; }
   .trow, .trow-roms { grid-template-columns: 1fr 1fr; gap: 10px; }
   .trow > div:nth-child(n+3), .trow-head > div:nth-child(n+3) { display: none; }
 }

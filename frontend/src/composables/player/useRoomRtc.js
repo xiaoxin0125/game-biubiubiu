@@ -21,7 +21,10 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPee
         const playerIndex = Number(playerIndexForPeer?.(peerId))
         if (!Number.isInteger(playerIndex) || playerIndex < 2 || playerIndex > 4) return
         const keyMap = remoteKeyMapForPlayer?.(playerIndex)
-        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap)
+        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap, {
+          pressButton: (button, player) => portalRef.value?.pressButton?.(button, player),
+          releaseButton: (button, player) => portalRef.value?.releaseButton?.(button, player),
+        })
       }
     },
     onStateChange: (state) => {
