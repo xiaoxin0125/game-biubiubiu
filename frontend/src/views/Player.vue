@@ -150,20 +150,17 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { getPlatform } from '../constants/platforms.js'
-import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildPlayerRetroarchConfig, buildLocalMultiplayerRetroarchConfig, buildLocalPlayerKeyboardMap, buildRemotePlayersRetroarchConfig, buildRemotePlayerKeyMaps, effectiveKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
-import { useGuestVideo } from '../composables/player/useGuestVideo.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
-import { useRoomSession } from '../composables/player/useRoomSession.js'
-import { useRoomRtc } from '../composables/player/useRoomRtc.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
-import { buildPlatformCoreConfig } from '../data/config.js'
+import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
+import { usePlayerRoomRuntime } from '../composables/player/usePlayerRoomRuntime.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
@@ -176,7 +173,6 @@ const props = defineProps({
 const router = useRouter()
 const route = useRoute()
 const { mapping } = useInputMapping()
-const roomHostInputConfigSnapshot = ref(null)
 const { isAuthed } = useAuth()
 
 const portalRef = ref(null)
@@ -207,54 +203,52 @@ const {
 
 const roomCode = (route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = !!roomCode
-let rtc = null
-let inviteRoomGuest = () => {}
-const invitedRoomPeers = new Set()
+const roomHostInputConfigSnapshot = ref(null)
 const keyboardTurboLoops = new Map()
 
 function openInputSettings() {
   openInputSettingsPanel({ blocked: isTouchLayout.value })
 }
 
-const {
-  remoteVideoRef,
-  remoteStreamActive,
-  isMuted,
-  attachRemoteStream,
-  onVideoPlaying,
-  clearRemoteStream,
-  unmuteRemote,
-} = useGuestVideo()
+let remotePlayerKeyMaps = { value: {} }
 
-const roomSession = useRoomSession({
+const roomRuntime = usePlayerRoomRuntime({
   roomCode,
   router,
-  inviteGuest: (peerId) => inviteRoomGuest(peerId),
-  closePeer: (peerId) => rtc?.closePeer(peerId),
-  clearRemoteStream,
+  portalRef,
+  isRoomMode,
+  booted,
+  remoteKeyMapForPlayer: (playerIndex) => remotePlayerKeyMaps.value[playerIndex],
+  setFatalError,
   showToast,
-  onRoomClosed: () => { try { rtc?.close() } catch {} },
 })
 
 const {
+  rtc,
+  roomSession,
   signalConnected,
   signalMe,
   signalPeers,
   signalChat,
   showRoom,
-  fatalRoomError,
   connectionStatus,
   roomAllowPlay,
   isHostMode,
   isGuestMode,
   currentRoomPeer,
-  setConnectionStatus,
   sendChat,
-} = roomSession
-
-watch(fatalRoomError, (message) => {
-  if (message) setFatalError(message)
-})
+  remoteVideoRef,
+  remoteStreamActive,
+  isMuted,
+  onVideoPlaying,
+  unmuteRemote,
+  canLocalControl,
+  roomGamepadPlayer,
+  inviteConnectedRoomPeers,
+  connect: connectRoomRuntime,
+  disconnect: disconnectRoomRuntime,
+  resetInvites,
+} = roomRuntime
 
 const {
   romMeta,
@@ -277,97 +271,43 @@ const {
   reportError: setFatalError,
 })
 
+const {
+  activeCore,
+  activeMaxPlayers,
+  retroarchCoreConfig,
+  overlayPlatformInfo,
+  overlayCoreName,
+  currentPlatformButtons,
+  player1RuntimeKeyboard,
+  remotePlayerKeyMaps: resolvedRemotePlayerKeyMaps,
+  retroarchConfig,
+} = usePlayerEmulatorConfig({
+  mapping,
+  romMeta,
+  roomInfo,
+  platformInfo,
+  roomSession,
+  signalMe,
+  isRoomMode,
+  isTouchLayout,
+  roomHostInputConfigSnapshot,
+})
+remotePlayerKeyMaps = resolvedRemotePlayerKeyMaps
+
 const roomAllowsPlay = computed(() => (isRoomMode ? roomAllowPlay.value : roomInfo.value?.allowPlay !== false))
 const canShowVersionSwitch = computed(() => !isRoomMode || isHostMode.value === true)
-const activeCore = computed(() => platformInfo.value.core)
-const activeMaxPlayers = computed(() => {
-  if (isRoomMode) return roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || platformInfo.value.maxPlayers || 1
-  return roomInfo.value?.effectiveMaxPlayers || romMeta.value?.effectiveMaxPlayers || platformInfo.value.maxPlayers || 1
-})
-const retroarchCoreConfig = computed(() => buildPlatformCoreConfig({
-  platform: romMeta.value?.platform,
-  core: activeCore.value,
-  players: activeMaxPlayers.value,
-}))
-const overlayPlatformInfo = computed(() => {
-  if (romMeta.value) return platformInfo.value
-  return {
-    label: isRoomMode ? 'ROOM' : 'GAME',
-    color: '#6e6e73',
-  }
-})
-const overlayCoreName = computed(() => romMeta.value ? platformInfo.value.core : '')
 const canSaveState = computed(() => {
   if (!isAuthed.value) return false
   if (!isRoomMode) return true
   return signalMe.value?.isHost === true
 })
 
-const currentPlatformButtons = computed(() => romMeta.value?.platform ? getPlatform(romMeta.value.platform).buttons : null)
-const player1RuntimeKeyboard = computed(() => {
-  const platform = romMeta.value?.platform || null
-  const defaults = effectiveKeyboardForPlayer(null, 1, platform)
-  const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
-  const out = {}
-  for (const { key } of RETROPAD_BUTTON_DEFS) {
-    if (allowed && !allowed.has(key)) continue
-    out[key] = defaults[key] || 'nul'
-  }
-  return out
-})
-const remotePlayerKeyMaps = computed(() => {
-  const reservedKeys = Object.entries(mapping.value.keyboard || {})
-    .filter(([btn, key]) => !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
-    .map(([, key]) => key)
-  const maxPlayers = activeMaxPlayers.value
-  return buildRemotePlayerKeyMaps(maxPlayers, reservedKeys, currentPlatformButtons.value)
-})
-
-const roomRtc = useRoomRtc({
-  getSignal: () => roomSession.signal(),
-  portalRef,
-  isHostMode,
-  playerIndexForPeer: (peerId) => signalPeers[peerId]?.playerIndex,
-  canControlPeer: (peerId) => signalPeers[peerId]?.canControl === true,
-  remoteKeyMapForPlayer: (playerIndex) => remotePlayerKeyMaps.value[playerIndex],
-  attachRemoteStream,
-  setConnectionStatus,
-})
-rtc = roomRtc.rtc
-inviteRoomGuest = roomRtc.inviteGuest
-
-const canLocalControl = computed(() => {
-  if (!isRoomMode || !signalMe.value || signalMe.value.isHost) return false
-  return currentRoomPeer.value?.canControl === true
-})
 const shouldShowVirtualGamepad = computed(() => {
   if (isTouchLayout.value) return !!rom.value && (!isRoomMode || signalMe.value?.isHost || canLocalControl.value)
   if (!isRoomMode) return !!rom.value
   if (!signalMe.value) return false
   if (signalMe.value.isHost) return !!rom.value
   return canLocalControl.value
-})
-const retroarchConfig = computed(() => {
-  const platformButtons = currentPlatformButtons.value
-  const runtimeKeyboard = player1RuntimeKeyboard.value
-  const base = buildPlayerRetroarchConfig(mapping.value, platformButtons, { runtimeKeyboard, includeNativeGamepad: false })
-  if (!isRoomMode) {
-    return {
-      ...base,
-      ...buildLocalMultiplayerRetroarchConfig(isTouchLayout.value ? 1 : activeMaxPlayers.value, platformButtons),
-    }
-  }
-  if (isRoomMode && signalMe.value?.isHost) {
-    if (!roomHostInputConfigSnapshot.value) roomHostInputConfigSnapshot.value = { ...base }
-    const maxPlayers = activeMaxPlayers.value
-    const reservedKeys = Object.values(roomHostInputConfigSnapshot.value)
-      .filter((value) => typeof value === 'string' && value !== 'nul')
-    return {
-      ...roomHostInputConfigSnapshot.value,
-      ...buildRemotePlayersRetroarchConfig(maxPlayers, reservedKeys, platformButtons),
-    }
-  }
-  return base
 })
 const displayName = computed(() =>
   romMeta.value?.title || roomInfo.value?.romTitle || (isGuestMode.value ? '连接中…' : '加载中…'))
@@ -426,16 +366,9 @@ const gamepadButtonInterceptor = (action, button, player = 1) => {
   if (isRoomMode && isHostMode.value) return hostButtonInterceptor(action, button)
   return false
 }
-const roomGamepadPlayer = computed(() => {
-  if (!isRoomMode) return null
-  if (isHostMode.value) return 1
-  if (!canLocalControl.value) return null
-  const playerIndex = Number(currentRoomPeer.value?.playerIndex || signalMe.value?.playerIndex)
-  return Number.isInteger(playerIndex) && playerIndex >= 2 && playerIndex <= 4 ? playerIndex : null
-})
 const resolveGamepadPlayer = (slot) => {
   if (!isRoomMode) return slot <= Math.min(2, activeMaxPlayers.value) ? slot : null
-  return roomGamepadPlayer.value
+  return roomGamepadPlayer()
 }
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
@@ -449,24 +382,10 @@ useGamepads({
   platformButtons: currentPlatformButtons,
 })
 
-function inviteConnectedRoomPeers() {
-  if (!isRoomMode || !isHostMode.value || !booted.value) return
-  for (const peer of Object.values(signalPeers)) {
-    if (!peer || peer.isHost || peer.id === signalMe.value?.peerId) continue
-    if (invitedRoomPeers.has(peer.id)) continue
-    invitedRoomPeers.add(peer.id)
-    setConnectionStatus('正在连接玩家画面…')
-    inviteRoomGuest(peer.id)
-    setTimeout(() => {
-      if (invitedRoomPeers.has(peer.id)) inviteRoomGuest(peer.id)
-    }, 2000)
-  }
-}
-
 function onBooted() {
   booted.value = true
   markBooted()
-  inviteConnectedRoomPeers()
+  inviteConnectedRoomPeers({ booted: booted.value })
 }
 function onInputConfigReloaded() {
   booted.value = true
@@ -696,16 +615,12 @@ function switchVersion(v) {
   router.push(`/play/${v.id}${suffix}`)
 }
 
-watch(() => Object.keys(signalPeers).join('|'), () => {
-  inviteConnectedRoomPeers()
-})
-
 watch(() => props.id, (now, prev) => {
   if (!prev || now === prev) return
   resetForRouteChange()
   booted.value = false
   roomHostInputConfigSnapshot.value = null
-  invitedRoomPeers.clear()
+  resetInvites()
   loadMeta()
 })
 
@@ -717,14 +632,12 @@ onMounted(() => {
   loadMeta()
   startSlowLoadingTimer({ isBooted: () => booted.value })
   if (isRoomMode) {
-    const signal = roomSession.connect()
-    if (signal) {
-      signal.on('offer', async (msg) => { await rtc.handleOffer(msg.from, msg.sdp) })
-      signal.on('answer', async (msg) => { await rtc.handleAnswer(msg.from, msg.sdp) })
-      signal.on('ice', async (msg) => { await rtc.handleIce(msg.from, msg.candidate) })
-    }
-    document.addEventListener('keydown', guestKeyHandler, true)
-    document.addEventListener('keyup', guestKeyHandler, true)
+    connectRoomRuntime({
+      onOffer: async (msg) => { await rtc.handleOffer(msg.from, msg.sdp) },
+      onAnswer: async (msg) => { await rtc.handleAnswer(msg.from, msg.sdp) },
+      onIce: async (msg) => { await rtc.handleIce(msg.from, msg.candidate) },
+      guestKeyHandler,
+    })
   }
 })
 
@@ -732,11 +645,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('keyup', onKeyUp, true)
   stopViewport()
-  document.removeEventListener('keydown', guestKeyHandler, true)
-  document.removeEventListener('keyup', guestKeyHandler, true)
-  stopKeyboardTurboLoops()
-  try { rtc?.close() } catch {}
-  roomSession.close()
+  disconnectRoomRuntime({ guestKeyHandler })
 })
 </script>
 
