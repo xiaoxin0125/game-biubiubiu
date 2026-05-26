@@ -22,6 +22,8 @@ export function useEmulator() {
   let currentCanvas = null
   let wakeLock = null
   let wakeLockListenersAttached = false
+  let audioCapture = null
+  let bootGeneration = 0
 
   async function acquireWakeLock() {
     if (!navigator.wakeLock || document.visibilityState !== 'visible') return
@@ -62,9 +64,38 @@ export function useEmulator() {
     window.removeEventListener('blur', syncWakeLock)
   }
 
+  function disconnectAudioCapture() {
+    const capture = audioCapture
+    audioCapture = null
+    if (!capture) return
+    try { capture.source?.disconnect?.(capture.dest) } catch {}
+    try {
+      for (const track of capture.stream?.getTracks?.() || []) track.stop()
+    } catch {}
+  }
+
+  function audioContextFor(emuModule) {
+    return emuModule?.audioContext || emuModule?.AL?.currentCtx?.audioCtx || null
+  }
+
+  function audioSourceFor(emuModule) {
+    return emuModule?.SDL2?.audio?.scriptProcessorNode || emuModule?.AL?.alcDevice?.script || null
+  }
+
+  function silenceEmulatorAudio(inst) {
+    const emuModule = inst?.getEmscripten?.()?.Module
+    const source = audioSourceFor(emuModule)
+    const ctx = audioContextFor(emuModule)
+    try { source?.disconnect?.() } catch {}
+    try {
+      if (ctx?.state === 'running') void ctx.suspend?.()
+    } catch {}
+  }
+
   async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader }) {
     if (!wrapperRef.value) throw new Error('wrapper not mounted')
     if (instance.value) return instance.value
+    const generation = ++bootGeneration
     booting.value = true
     error.value = null
     try {
@@ -78,7 +109,8 @@ export function useEmulator() {
       // Re-check mount: prepareEmulator is async (seconds), the component may
       // have been torn down while we waited (e.g. guest role arrived and the
       // v-if flipped). Bail cleanly instead of crashing on a null wrapper.
-      if (!wrapperRef.value) {
+      if (generation !== bootGeneration || !wrapperRef.value) {
+        silenceEmulatorAudio(emu)
         try { await emu.exit() } catch {}
         return null
       }
@@ -94,6 +126,12 @@ export function useEmulator() {
       try { await emu.start() }
       finally { try { globalThis.navigator.mediaDevices.getUserMedia = originalGetUserMedia } catch {} }
 
+      if (generation !== bootGeneration || !wrapperRef.value) {
+        silenceEmulatorAudio(emu)
+        try { await emu.exit() } catch {}
+        return null
+      }
+
       canvas.focus({ preventScroll: true })
 
       attachWakeLockListeners()
@@ -104,7 +142,7 @@ export function useEmulator() {
       error.value = err
       throw err
     } finally {
-      booting.value = false
+      if (generation === bootGeneration) booting.value = false
     }
   }
 
@@ -130,25 +168,28 @@ export function useEmulator() {
   function canvas() { return currentCanvas }
 
   // Tap into Nostalgist's internal AudioContext via MediaStreamDestination so
-  // the host-mode WebRTC path can forward audio to the guest. Returns null
-  // when we can't wire it up (caller falls back to video-only).
+  // the host-mode WebRTC path can forward audio to the guest. The capture node
+  // is shared across invitations to avoid stacking duplicate WebAudio outputs.
   function captureAudioStream() {
+    if (audioCapture?.stream) return audioCapture.stream
+
     const inst = instance.value
     if (!inst) return null
     const emuModule = inst?.getEmscripten?.()?.Module
-    const ctx = emuModule?.audioContext || emuModule?.AL?.currentCtx?.audioCtx
+    const ctx = audioContextFor(emuModule)
     if (!ctx || typeof ctx.createMediaStreamDestination !== 'function') return null
+
+    let dest = null
+    let source = null
     try {
-      const dest = ctx.createMediaStreamDestination()
-      if (emuModule?.SDL2?.audio?.scriptProcessorNode) {
-        emuModule.SDL2.audio.scriptProcessorNode.connect(dest)
-      } else if (emuModule?.AL?.alcDevice?.script) {
-        emuModule.AL.alcDevice.script.connect(dest)
-      } else {
-        return null
-      }
-      return dest.stream
+      dest = ctx.createMediaStreamDestination()
+      source = audioSourceFor(emuModule)
+      if (!source) return null
+      source.connect(dest)
+      audioCapture = { source, dest, stream: dest.stream }
+      return audioCapture.stream
     } catch {
+      try { source?.disconnect?.(dest) } catch {}
       return null
     }
   }
@@ -164,9 +205,15 @@ export function useEmulator() {
   }
 
   async function destroy() {
+    ++bootGeneration
     const inst = instance.value
+    const oldCanvas = currentCanvas
     instance.value = null
     currentCanvas = null
+    booting.value = false
+    try { oldCanvas?.remove?.() } catch {}
+    disconnectAudioCapture()
+    silenceEmulatorAudio(inst)
     detachWakeLockListeners()
     await releaseWakeLock()
     if (!inst) return

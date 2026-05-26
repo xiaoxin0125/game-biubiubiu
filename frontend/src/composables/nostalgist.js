@@ -6,8 +6,7 @@ import { Nostalgist } from 'nostalgist'
 import { cachedFetch } from './useBlobCache.js'
 
 // Sensible defaults cribbed from retroassembly's emulator-portal. Rewind stays
-// enabled, while run-ahead is disabled for heavy cores where one extra frame of
-// emulation can cost more than it saves on mobile devices.
+// enabled, while run-ahead is disabled for heavy or audio-sensitive cores.
 const DEFAULT_RETROARCH_CONFIG = {
   fastforward_ratio: 10,
   input_max_users: 4,
@@ -25,7 +24,14 @@ const DEFAULT_RETROARCH_CONFIG = {
   run_ahead_enabled: true,
   run_ahead_frames: 1,
 }
-const RUN_AHEAD_DISABLED_CORES = new Set(['fbneo', 'mame2003_plus', 'pcsx_rearmed'])
+const RUN_AHEAD_DISABLED_CORES = new Set([
+  'fbneo',
+  'mame2003_plus',
+  'pcsx_rearmed',
+  'nestopia',
+  'fceumm',
+  'quicknes',
+])
 
 function localCoreFile(core, ext) {
   return {

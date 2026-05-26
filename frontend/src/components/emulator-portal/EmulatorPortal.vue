@@ -88,6 +88,7 @@ defineExpose({
   releaseButton,
   toggleFullscreen,
   captureAudioStream,
+  destroy,
   get canvas() { return canvas() },
 })
 </script>

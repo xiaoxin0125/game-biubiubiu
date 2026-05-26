@@ -608,9 +608,10 @@ function goBack() {
     router.push('/')
   }
 }
-function switchVersion(v) {
+async function switchVersion(v) {
   versionMenuOpen.value = false
   if (!v || v.id === romMeta.value?.id) return
+  await portalRef.value?.destroy?.()
   const suffix = roomCode ? `?room=${roomCode}` : ''
   router.push(`/play/${v.id}${suffix}`)
 }
