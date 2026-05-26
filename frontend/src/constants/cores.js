@@ -7,6 +7,7 @@ export const cores = {
   genesis_plus_gx: { displayName: 'Genesis Plus GX' },
   mame2003_plus:   { displayName: 'MAME 2003-Plus' },
   mgba:            { displayName: 'mGBA' },
+  mgba2:           { displayName: 'mGBA2 Link' },
   nestopia:        { displayName: 'Nestopia' },
   pcsx_rearmed:    { displayName: 'PCSX ReARMed' },
   picodrive:       { displayName: 'PicoDrive' },

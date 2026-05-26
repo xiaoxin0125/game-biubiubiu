@@ -36,6 +36,7 @@ export function ensureRoom(code, row) {
       code,
       hostUserId: row.hostUserId,
       allowPlay: row.allowPlay !== false,
+      allowGuestControl: row.allowGuestControl === true,
       maxPlayers: row.maxPlayers ?? null,
       effectiveMaxPlayers,
       peers: new Map(),
@@ -45,6 +46,7 @@ export function ensureRoom(code, row) {
   } else {
     r.hostUserId = row.hostUserId
     r.allowPlay = row.allowPlay !== false
+    r.allowGuestControl = row.allowGuestControl === true
     r.maxPlayers = row.maxPlayers ?? r.maxPlayers ?? null
     r.effectiveMaxPlayers = effectiveMaxPlayers
   }
@@ -165,8 +167,9 @@ export function updateRoomPermissions(code, { allowPlay } = {}) {
   broadcastPeersUpdated(room)
 }
 
-export function updateGuestPlayPermissions() {
+export function updateGuestPlayPermissions(allowGuestControl = false) {
   for (const room of rooms.values()) {
+    room.allowGuestControl = allowGuestControl === true
     recalculateControlSeats(room)
     broadcastPeersUpdated(room)
   }
@@ -239,7 +242,7 @@ function recalculateControlSeats(room) {
   for (const peer of room.peers.values()) {
     if (peer.isHost) continue
 
-    const controlEligible = !peer.isGuest && room.allowPlay && nextSeat <= max
+    const controlEligible = room.allowPlay && nextSeat <= max && (room.allowGuestControl || !peer.isGuest)
     if (controlEligible) {
       peer.canControl = true
       peer.playerIndex = nextSeat++

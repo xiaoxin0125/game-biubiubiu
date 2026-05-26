@@ -15,8 +15,18 @@ export function inferMaxPlayers(rom = {}) {
   const text = `${rom.title || ''} ${rom.fileName || ''}`.toLowerCase()
   const match = text.match(/(?:^|[^0-9])([1-4])\s*(?:p|players?|人|玩家)(?:[^0-9]|$)/i)
   if (match) return clampMaxPlayers(Number(match[1]))
-  return defaultMaxPlayersForPlatform(rom?.platform)
+  return defaultMaxPlayersForPlatformCore(rom?.platform, rom?.defaultCore)
 }
+
+const PLATFORM_DEFAULT_CORES = Object.freeze({
+  gba: 'mgba',
+})
+
+const PLATFORM_CORE_DEFAULT_MAX_PLAYERS = Object.freeze({
+  gba: {
+    mgba2: 4,
+  },
+})
 
 const PLATFORM_DEFAULT_MAX_PLAYERS = Object.freeze({
   arcade: 4,
@@ -37,6 +47,12 @@ const PLATFORM_DEFAULT_MAX_PLAYERS = Object.freeze({
 
 export function defaultMaxPlayersForPlatform(platform) {
   return PLATFORM_DEFAULT_MAX_PLAYERS[platform] || 1
+}
+
+export function defaultMaxPlayersForPlatformCore(platform, core = null) {
+  const selectedCore = core || PLATFORM_DEFAULT_CORES[platform]
+  return PLATFORM_CORE_DEFAULT_MAX_PLAYERS[platform]?.[selectedCore]
+    || defaultMaxPlayersForPlatform(platform)
 }
 
 export function resolveMaxPlayersInfo(rom = {}, parent = null) {

@@ -37,7 +37,7 @@ const PLATFORM_CORES = Object.freeze({
   snes: ['snes9x'],
   gb: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
   gbc: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
-  gba: ['mgba', 'vba_next'],
+  gba: ['mgba', 'mgba2', 'vba_next'],
   megadrive: ['genesis_plus_gx', 'picodrive'],
   genesis: ['genesis_plus_gx', 'picodrive'],
   sms: ['genesis_plus_gx', 'picodrive', 'gearsystem'],

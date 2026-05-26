@@ -122,7 +122,7 @@ export const platforms = {
     libretroName: 'Nintendo - Game Boy Advance',
     color: '#34c759',
     fileExtensions: ['.gba', '.zip'],
-    cores: ['mgba', 'vba_next'],
+    cores: ['mgba', 'mgba2', 'vba_next'],
   },
 
   // Sega

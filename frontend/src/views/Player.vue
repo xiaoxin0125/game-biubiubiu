@@ -161,6 +161,7 @@ import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { usePlayerRoomRuntime } from '../composables/player/usePlayerRoomRuntime.js'
+import { dispatchArcadeNetplayInput, isArcadeNetplayInputEnabled, arcadeNetplayGuestKeyboardPlayer } from '../composables/player/arcadeNetplayInput.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
@@ -219,6 +220,10 @@ const roomRuntime = usePlayerRoomRuntime({
   isRoomMode,
   booted,
   remoteKeyMapForPlayer: (playerIndex) => remotePlayerKeyMaps.value[playerIndex],
+  dispatchRemoteInput: ({ playerIndex, action, button, keyMap, controls }) => {
+    if (!isArcadeNetplayInputEnabled({ isRoomMode, platform: romMeta.value?.platform })) return false
+    return dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls })
+  },
   setFatalError,
   showToast,
 })
@@ -303,7 +308,12 @@ const canSaveState = computed(() => {
 })
 
 const shouldShowVirtualGamepad = computed(() => {
-  if (isTouchLayout.value) return !!rom.value && (!isRoomMode || signalMe.value?.isHost || canLocalControl.value)
+  if (isTouchLayout.value) {
+    if (!isRoomMode) return !!rom.value
+    if (!signalMe.value) return false
+    if (signalMe.value.isHost) return !!rom.value
+    return canLocalControl.value
+  }
   if (!isRoomMode) return !!rom.value
   if (!signalMe.value) return false
   if (signalMe.value.isHost) return !!rom.value
@@ -330,6 +340,11 @@ const { guestKeyHandler, guestButtonInterceptor } = useGuestInputForwarding({
   localPeer: signalMe,
   isGuestMode,
   canLocalControl,
+  keyboardPlayer: () => arcadeNetplayGuestKeyboardPlayer({
+    isRoomMode,
+    platform: romMeta.value?.platform,
+    playerIndex: currentRoomPeer.value?.playerIndex || signalMe.value?.playerIndex,
+  }),
 })
 const hostButtonInterceptor = (action, button) => {
   if (!isRoomMode || !isHostMode.value) return false

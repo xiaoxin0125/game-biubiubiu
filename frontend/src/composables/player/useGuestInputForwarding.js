@@ -55,9 +55,10 @@ function dispatchPlayerTurboButton(playerIndex, action, button, targetButton, ke
   release()
 }
 
-export function useGuestInputForwarding({ mapping, platform, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl }) {
+export function useGuestInputForwarding({ mapping, platform, platformButtons, roomRtc, isRoomMode, localPeer, isGuestMode, canLocalControl, keyboardPlayer = null }) {
   const reverseKeyMap = computed(() => {
-    const cfg = effectiveKeyboardForPlayer(mapping.value, 1, platform?.value || null)
+    const player = Number(typeof keyboardPlayer === 'function' ? keyboardPlayer() : keyboardPlayer) || 1
+    const cfg = effectiveKeyboardForPlayer(mapping.value, player, platform?.value || null)
     const allowed = platformButtons?.value ? new Set(platformButtons.value) : null
     const out = {}
     for (const [btn, key] of Object.entries(cfg)) {

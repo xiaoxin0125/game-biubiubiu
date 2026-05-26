@@ -9,8 +9,19 @@ export function getPlatformInfo(platformId, { core } = {}) {
     displayName: p.displayName,
     color: p.color,
     manufacturer: p.manufacturer,
-    maxPlayers: p.maxPlayers || 1,
+    maxPlayers: maxPlayersForPlatformCore(platformId, selectedCore),
   }
+}
+
+const PLATFORM_CORE_MAX_PLAYERS = {
+  gba: {
+    mgba2: 4,
+  },
+}
+
+function maxPlayersForPlatformCore(platformId, core) {
+  const p = getPlatform(platformId)
+  return PLATFORM_CORE_MAX_PLAYERS[platformId]?.[core] || p.maxPlayers || 1
 }
 
 export function buildPlatformCoreConfig({ platform, core, players = 1 } = {}) {

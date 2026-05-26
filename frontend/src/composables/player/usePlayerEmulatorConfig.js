@@ -8,6 +8,11 @@ import {
   RETROPAD_BUTTON_DEFS,
   TURBO_BUTTON_TARGETS,
 } from '../useInputMapping.js'
+import {
+  buildArcadeNetplayRemoteKeyMaps,
+  buildArcadeNetplayRetroarchConfig,
+  isArcadeNetplayInputEnabled,
+} from './arcadeNetplayInput.js'
 import { getPlatform } from '../../constants/platforms.js'
 import { buildPlatformCoreConfig } from '../../data/config.js'
 
@@ -41,6 +46,9 @@ export function usePlayerEmulatorConfig({
   })
   const overlayCoreName = computed(() => romMeta.value ? platformInfo.value.core : '')
   const currentPlatformButtons = computed(() => romMeta.value?.platform ? getPlatform(romMeta.value.platform).buttons : null)
+  const usesArcadeNetplayInputConfig = computed(() =>
+    isArcadeNetplayInputEnabled({ isRoomMode, platform: romMeta.value?.platform }) && signalMe.value?.isHost === true
+  )
   const player1RuntimeKeyboard = computed(() => {
     const platform = romMeta.value?.platform || null
     const defaults = effectiveKeyboardForPlayer(null, 1, platform)
@@ -53,10 +61,22 @@ export function usePlayerEmulatorConfig({
     return out
   })
   const remotePlayerKeyMaps = computed(() => {
+    const platformButtons = currentPlatformButtons.value
+    if (usesArcadeNetplayInputConfig.value) {
+      const base = roomHostInputConfigSnapshot.value || buildPlayerRetroarchConfig(mapping.value, platformButtons, {
+        runtimeKeyboard: player1RuntimeKeyboard.value,
+        includeNativeGamepad: false,
+      })
+      return buildArcadeNetplayRemoteKeyMaps({
+        maxPlayers: activeMaxPlayers.value,
+        hostConfig: base,
+        platformButtons,
+      })
+    }
     const reservedKeys = Object.entries(mapping.value.keyboard || {})
       .filter(([btn, key]) => !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
       .map(([, key]) => key)
-    return buildRemotePlayerKeyMaps(activeMaxPlayers.value, reservedKeys, currentPlatformButtons.value)
+    return buildRemotePlayerKeyMaps(activeMaxPlayers.value, reservedKeys, platformButtons)
   })
   const retroarchConfig = computed(() => {
     const platformButtons = currentPlatformButtons.value
@@ -72,6 +92,16 @@ export function usePlayerEmulatorConfig({
       if (!roomHostInputConfigSnapshot.value) roomHostInputConfigSnapshot.value = { ...base }
       const reservedKeys = Object.values(roomHostInputConfigSnapshot.value)
         .filter((value) => typeof value === 'string' && value !== 'nul')
+      if (usesArcadeNetplayInputConfig.value) {
+        return {
+          ...roomHostInputConfigSnapshot.value,
+          ...buildArcadeNetplayRetroarchConfig({
+            maxPlayers: activeMaxPlayers.value,
+            keyMaps: remotePlayerKeyMaps.value,
+            platformButtons,
+          }),
+        }
+      }
       return {
         ...roomHostInputConfigSnapshot.value,
         ...buildRemotePlayersRetroarchConfig(activeMaxPlayers.value, reservedKeys, platformButtons),

@@ -62,6 +62,7 @@ roomRoutes.get('/', async (c) => {
     romTitle: roms.title,
     romPlatform: roms.platform,
     romMaxPlayers: roms.maxPlayers,
+    romDefaultCore: roms.defaultCore,
   })
     .from(rooms)
     .innerJoin(users, eq(users.id, rooms.hostUserId))
@@ -70,11 +71,11 @@ roomRoutes.get('/', async (c) => {
     .orderBy(desc(rooms.createdAt))
 
   return c.json({
-    rooms: rows.map(({ r, hostUsername, romTitle, romPlatform, romMaxPlayers }) =>
+    rooms: rows.map(({ r, hostUsername, romTitle, romPlatform, romMaxPlayers, romDefaultCore }) =>
       serializeRoom(r, {
         hostUsername, romTitle, romPlatform,
         maxPlayers: romMaxPlayers ?? null,
-        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform }),
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform, defaultCore: romDefaultCore }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -89,17 +90,18 @@ roomRoutes.get('/mine', requireAuth, async (c) => {
     romTitle: roms.title,
     romPlatform: roms.platform,
     romMaxPlayers: roms.maxPlayers,
+    romDefaultCore: roms.defaultCore,
   })
     .from(rooms)
     .innerJoin(roms, eq(roms.id, rooms.romId))
     .where(liveRoom(eq(rooms.hostUserId, me.id)))
     .orderBy(desc(rooms.createdAt))
   return c.json({
-    rooms: rows.map(({ r, romTitle, romPlatform, romMaxPlayers }) =>
+    rooms: rows.map(({ r, romTitle, romPlatform, romMaxPlayers, romDefaultCore }) =>
       serializeRoom(r, {
         hostUsername: me.username, romTitle, romPlatform,
         maxPlayers: romMaxPlayers ?? null,
-        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform }),
+        effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...r, maxPlayers: romMaxPlayers, title: romTitle, fileName: '', platform: romPlatform, defaultCore: romDefaultCore }),
         hostOnline: isHostOnline(r.code),
       }),
     ),
@@ -162,6 +164,7 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
     romTitle: roms.title,
     romPlatform: roms.platform,
     romMaxPlayers: roms.maxPlayers,
+    romDefaultCore: roms.defaultCore,
   })
     .from(rooms)
     .innerJoin(users, eq(users.id, rooms.hostUserId))
@@ -187,7 +190,7 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
     romTitle: row.romTitle,
     romPlatform: row.romPlatform,
     maxPlayers: row.romMaxPlayers ?? null,
-    effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, fileName: '', platform: row.romPlatform }),
+    effectiveMaxPlayers: effectiveMaxPlayersForRom({ ...row.r, maxPlayers: row.romMaxPlayers, title: row.romTitle, fileName: '', platform: row.romPlatform, defaultCore: row.romDefaultCore }),
     hostOnline: isHostOnline(code),
   })
   return c.json({

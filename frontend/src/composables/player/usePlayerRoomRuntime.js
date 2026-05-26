@@ -10,6 +10,7 @@ export function usePlayerRoomRuntime({
   isRoomMode,
   booted,
   remoteKeyMapForPlayer,
+  dispatchRemoteInput,
   setFatalError,
   showToast,
 }) {
@@ -64,6 +65,7 @@ export function usePlayerRoomRuntime({
     playerIndexForPeer: (peerId) => signalPeers[peerId]?.playerIndex,
     canControlPeer: (peerId) => signalPeers[peerId]?.canControl === true,
     remoteKeyMapForPlayer,
+    dispatchRemoteInput,
     attachRemoteStream,
     setConnectionStatus,
   })

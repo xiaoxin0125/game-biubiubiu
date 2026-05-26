@@ -5,7 +5,7 @@ import { dispatchPlayerButton } from './useGuestInputForwarding.js'
 // Owns host-side WebRTC invitation and guest-side stream handling. Signaling is
 // supplied lazily by useRoomSession so PeerConnection can be created before the
 // WebSocket is open.
-export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPeer, canControlPeer, remoteKeyMapForPlayer, attachRemoteStream, setConnectionStatus }) {
+export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPeer, canControlPeer, remoteKeyMapForPlayer, dispatchRemoteInput, attachRemoteStream, setConnectionStatus }) {
   const signalProxy = {
     sendOffer: (...args) => getSignal()?.sendOffer(...args),
     sendAnswer: (...args) => getSignal()?.sendAnswer(...args),
@@ -21,10 +21,12 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPee
         const playerIndex = Number(playerIndexForPeer?.(peerId))
         if (!Number.isInteger(playerIndex) || playerIndex < 2 || playerIndex > 4) return
         const keyMap = remoteKeyMapForPlayer?.(playerIndex)
-        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap, {
+        const controls = {
           pressButton: (button, player) => portalRef.value?.pressButton?.(button, player),
           releaseButton: (button, player) => portalRef.value?.releaseButton?.(button, player),
-        })
+        }
+        if (dispatchRemoteInput?.({ playerIndex, action: data.action, button: data.button, keyMap, controls }) === true) return
+        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap, controls)
       }
     },
     onStateChange: (state) => {

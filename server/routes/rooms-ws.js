@@ -43,6 +43,7 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
       const connectLimit = consumeRateLimit(`ws-connect:${ip}:${code}`, { windowMs: 60_000, max: 20 })
       if (!connectLimit.ok) rejectReason = 'rate-limited'
       const netplayEnabled = await getSetting('netplayEnabled', '1')
+      const guestPlayEnabled = await getSetting('guestPlayEnabled', '0')
       // Private rooms require a short-lived ticket from /join unless the caller
       // is the host or an admin. Room passwords never travel on the WS URL.
       const isHostOrAdmin = !!user && (user.id === roomRow?.hostUserId || user.role === 'admin')
@@ -64,6 +65,7 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
             ...roomRow,
             maxPlayers: romRow?.maxPlayers ?? null,
             effectiveMaxPlayers: effectiveMaxPlayersForRom(romRow),
+            allowGuestControl: guestPlayEnabled === '1',
           })
           peer = hub.addPeer(code, { user, ws, clientId })
         },

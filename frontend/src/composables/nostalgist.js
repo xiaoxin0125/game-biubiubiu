@@ -31,6 +31,10 @@ const RUN_AHEAD_DISABLED_CORES = new Set([
   'nestopia',
   'fceumm',
   'quicknes',
+  'mgba2',
+])
+const SYNC_SENSITIVE_CORES = new Set([
+  'mgba2',
 ])
 
 function localCoreFile(core, ext) {
@@ -41,12 +45,20 @@ function localCoreFile(core, ext) {
 }
 
 function defaultRetroarchConfigForCore(core) {
-  if (!RUN_AHEAD_DISABLED_CORES.has(core)) return DEFAULT_RETROARCH_CONFIG
-  return {
-    ...DEFAULT_RETROARCH_CONFIG,
-    run_ahead_enabled: false,
-    run_ahead_frames: 0,
+  const config = RUN_AHEAD_DISABLED_CORES.has(core)
+    ? {
+        ...DEFAULT_RETROARCH_CONFIG,
+        run_ahead_enabled: false,
+        run_ahead_frames: 0,
+      }
+    : { ...DEFAULT_RETROARCH_CONFIG }
+
+  if (SYNC_SENSITIVE_CORES.has(core)) {
+    config.rewind_enable = false
+    config.rewind_granularity = 0
   }
+
+  return config
 }
 
 /**
