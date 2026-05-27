@@ -24,7 +24,6 @@ export function usePlayerEmulatorConfig({
   roomSession,
   signalMe,
   isRoomMode,
-  isTouchLayout,
   roomHostInputConfigSnapshot,
 }) {
   const activeCore = computed(() => platformInfo.value.core)
@@ -85,7 +84,7 @@ export function usePlayerEmulatorConfig({
     if (!isRoomMode) {
       return {
         ...base,
-        ...buildLocalMultiplayerRetroarchConfig(isTouchLayout.value ? 1 : activeMaxPlayers.value, platformButtons),
+        ...buildLocalMultiplayerRetroarchConfig(activeMaxPlayers.value, platformButtons),
       }
     }
     if (isRoomMode && signalMe.value?.isHost) {

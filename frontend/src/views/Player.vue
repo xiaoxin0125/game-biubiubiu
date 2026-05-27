@@ -83,14 +83,17 @@
     <VirtualGamepad
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
-      :press-button="pressLocalButton"
-      :release-button="releaseLocalButton"
+      :press-button="pressSoloGamepadButton"
+      :release-button="releaseSoloGamepadButton"
     />
 
     <InputSettings
       v-if="showInput && !isTouchLayout"
       :platform="romMeta?.platform"
       :local-players="Math.min(2, activeMaxPlayers)"
+      :gamepad-players="1"
+      gamepad-binding-note="当前只使用本机唯一手柄，默认控制 P2；其他手柄不会参与控制。"
+      room-mode
       @close="closeInputSettings"
     />
   </div>
@@ -211,15 +214,18 @@ function openInputSettings() {
 }
 
 const gamepadButtonInterceptor = () => false
-const resolveGamepadPlayer = (slot) => slot <= Math.min(2, activeMaxPlayers.value) ? slot : null
+const soloGamepadPlayer = computed(() => activeMaxPlayers.value >= 2 ? 2 : 1)
+const resolveGamepadPlayer = (slot) => slot === 1 ? soloGamepadPlayer.value : null
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
+const pressSoloGamepadButton = (button) => pressLocalButton(button, soloGamepadPlayer.value)
+const releaseSoloGamepadButton = (button) => releaseLocalButton(button, soloGamepadPlayer.value)
 useGamepads({
   mapping,
   onButton: gamepadButtonInterceptor,
   pressButton: (button, player = 1) => pressLocalButton(button, player),
   releaseButton: (button, player = 1) => releaseLocalButton(button, player),
-  maxLocalPlayers: computed(() => Math.min(2, activeMaxPlayers.value)),
+  maxLocalPlayers: computed(() => 1),
   playerResolver: resolveGamepadPlayer,
   platformButtons: currentPlatformButtons,
 })
@@ -412,7 +418,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  background: #000;
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 32vw),
+    linear-gradient(180deg, #FFF7ED 0%, #FFFBF5 46%, #FFF7ED 100%);
   position: relative;
   overflow: hidden;
   -webkit-user-select: none;
@@ -541,13 +549,14 @@ onBeforeUnmount(() => {
 .error-card {
   text-align: center;
   padding: 28px 36px;
-  border-radius: 16px;
-  background: #141416;
-  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 7px;
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
   max-width: 320px;
-  color: #fff;
+  color: #111;
+  box-shadow: 6px 6px 0 var(--border-color, #111);
 }
-.error-card p { color: rgba(255,255,255,0.75); font-size: 14px; margin: 0 0 16px; line-height: 1.5; }
+.error-card p { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px; line-height: 1.5; font-weight: 700; }
 
 .spinner {
   position: relative;
@@ -561,64 +570,126 @@ onBeforeUnmount(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.player-page :deep(.player-bar) {
+  --b-bg: rgba(255, 251, 245, 0.96);
+  --b-border: var(--border-color, #111);
+  --b-btn-bg: rgba(255, 255, 255, 0.72);
+  --b-btn-hover: #111;
+  --b-text: #111;
+  --b-muted: var(--text-secondary);
+  --b-tertiary: var(--text-tertiary);
+  gap: 8px;
+  background: var(--b-bg);
+  color: #111;
+  border-bottom: 2px solid var(--border-color, #111);
+  box-shadow: none;
+}
+.player-page :deep(.bar-title) {
+  color: #111;
+  font-weight: 900;
+}
+.player-page :deep(.bar-core) {
+  color: var(--text-secondary);
+  font-weight: 900;
+}
+.player-page :deep(.bar-btn) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #111;
+  font-weight: 900;
+}
+.player-page :deep(.bar-btn:hover) {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
+.player-page :deep(.bar-btn:active) {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+.player-page :deep(.bar-btn-accent) {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+.player-page :deep(.bar-badge) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  color: #111;
+  font-weight: 900;
+  box-shadow: none;
+}
+.player-page :deep(.playing-led) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--success) 20%, #fff);
+  color: #047857;
+  font-weight: 900;
+}
+
 .ver-switch { position: relative; }
 .ver-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
+  height: 34px;
   padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06);
-  color: #fff;
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  background: rgba(255, 251, 245, 0.92);
+  color: #111;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 900;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.14s ease;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
 }
-.ver-btn:hover { background: rgba(255,255,255,0.14); }
-.ver-cur { color: rgba(255,255,255,0.9); }
+.ver-btn:hover { background: #fff; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--border-color, #111); }
+.ver-cur { color: #111; }
 .ver-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   min-width: 140px;
   padding: 6px;
-  background: rgba(22, 22, 24, 0.96);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
+  background: rgba(255, 251, 245, 0.98);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   z-index: 40;
 }
 .ver-item {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 10px;
   background: transparent;
   border: 0;
-  border-radius: 6px;
-  color: rgba(255,255,255,0.85);
+  border-radius: 7px;
+  color: #111;
   font-size: 12px;
+  font-weight: 900;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
-.ver-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.ver-item.active { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #fff; }
+.ver-item:hover { background: rgba(17, 17, 17, 0.06); color: #111; }
+.ver-item.active { background: #111; color: #fff; }
 
 .rotate-hint, .toast {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 16px;
-  border-radius: 999px;
-  color: #fff;
+  border-radius: 7px;
+  color: #111;
   font-size: 13px;
-  font-weight: 500;
-  background: rgba(20, 20, 22, 0.85);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.08);
+  font-weight: 900;
+  background: rgba(255, 251, 245, 0.94);
+  backdrop-filter: blur(12px);
+  border: 2px solid var(--border-color, #111);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
   z-index: 100;
 }
 .rotate-hint { bottom: 90px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -642,10 +713,10 @@ onBeforeUnmount(() => {
     max-width: 1100px;
     max-height: calc(100vh - 32px);
     margin: 0 auto;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+    border-radius: 7px;
+    border: 2px solid var(--border-color, #111);
     overflow: hidden;
+    background: #000;
   }
 }
 </style>

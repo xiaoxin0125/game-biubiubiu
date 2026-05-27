@@ -90,6 +90,7 @@ const props = defineProps({
   localPlayers: { type: Number, default: 1 },
   gamepadPlayers: { type: Number, default: 2 },
   gamepadProfileKeys: { type: Array, default: () => [] },
+  gamepadBindingNote: { type: String, default: '' },
   roomMode: { type: Boolean, default: false },
 })
 defineEmits(['close'])
@@ -149,11 +150,14 @@ const activeGamepadProfile = computed({
 })
 const activeGamepadProfileLabel = computed(() => visibleGamepadProfiles.value.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
 const activeGamepad = computed(() => gamepadMappingFor(mapping.value, activeSlot.value, activeGamepadProfile.value))
-const gamepadBindingNote = computed(() => props.roomMode
-  ? '当前配置只用于本机唯一手柄；其他手柄不会参与房间控制。'
-  : `当前配置只绑定手柄${activeSlot.value}；第 3 个及以后手柄不会参与控制。`)
+const gamepadBindingNote = computed(() => {
+  if (props.gamepadBindingNote) return props.gamepadBindingNote
+  return props.roomMode
+    ? '当前配置只用于本机唯一手柄；其他手柄不会参与房间控制。'
+    : `当前配置只绑定手柄${activeSlot.value}；第 3 个及以后手柄不会参与控制。`
+})
 const resetLabel = computed(() => {
-  if (tab.value === 'kb') return props.roomMode ? '键盘' : `P${activeSlot.value} 键盘`
+  if (tab.value === 'kb') return activeSlotCount.value > 1 ? `P${activeSlot.value} 键盘` : '键盘'
   return props.roomMode ? `手柄 · ${activeGamepadProfileLabel.value}` : `手柄${activeSlot.value} ${activeGamepadProfileLabel.value}`
 })
 
