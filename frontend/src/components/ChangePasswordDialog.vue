@@ -16,7 +16,7 @@
           </div>
           <div>
             <label class="label">新密码</label>
-            <input v-model="newPassword" class="input" type="password" autocomplete="new-password" placeholder="10-128 位密码" required />
+            <input v-model="newPassword" class="input" type="password" autocomplete="new-password" placeholder="至少 6 位密码" required />
           </div>
           <div>
             <label class="label">确认新密码</label>
@@ -53,13 +53,13 @@ const success = ref(false)
 const busy = ref(false)
 
 function validPassword(value) {
-  return value.length >= 10 && value.length <= 128
+  return value.length >= 6
 }
 
 async function submit() {
   error.value = ''
   success.value = false
-  if (!validPassword(newPassword.value)) { error.value = '新密码长度必须为 10-128 位'; return }
+  if (!validPassword(newPassword.value)) { error.value = '新密码至少 6 位'; return }
   if (newPassword.value !== confirmPassword.value) { error.value = '两次输入的新密码不一致'; return }
   busy.value = true
   try {

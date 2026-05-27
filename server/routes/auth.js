@@ -10,8 +10,7 @@ import { clientIp } from '../middleware/security.js'
 import { audit } from '../audit.js'
 
 const passwordSchema = z.string()
-  .min(10)
-  .max(128)
+  .min(6)
 
 const credentialsSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
@@ -20,7 +19,7 @@ const credentialsSchema = z.object({
 
 const loginSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
-  password: z.string().min(1).max(128),
+  password: z.string().min(1),
 })
 
 const authLimiter = rateLimit({ name: 'auth', windowMs: 60_000, max: 20 })
@@ -39,7 +38,7 @@ function rejectIfLimited(c, username, options) {
 }
 
 function passwordPolicyMessage() {
-  return '密码长度必须为 10-128 位'
+  return '密码至少 6 位'
 }
 
 export const authRoutes = new Hono()
@@ -116,7 +115,7 @@ authRoutes.post('/ws-ticket', async (c) => {
 })
 
 const passwordChangeSchema = z.object({
-  currentPassword: z.string().min(1).max(128),
+  currentPassword: z.string().min(1),
   newPassword: passwordSchema,
 })
 
