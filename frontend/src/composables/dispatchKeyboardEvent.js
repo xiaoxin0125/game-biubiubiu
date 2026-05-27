@@ -84,6 +84,7 @@ export function dispatchKeyboardEvent(type, key, options = {}) {
     const raw = String(value || '')
     const lowerRaw = raw.toLowerCase()
     if (SPECIAL_CODE[lowerRaw]) return SPECIAL_CODE[lowerRaw]
+    if (/^numpad[0-9]$/.test(lowerRaw)) return `Numpad${lowerRaw.slice(6)}`
     if (/^kp_[0-9]$/.test(lowerRaw)) return `Numpad${lowerRaw.slice(3)}`
     if (/^num[0-9]$/.test(lowerRaw)) return `Numpad${lowerRaw.slice(3)}`
     if (/^[a-z]$/.test(lowerRaw)) return `Key${lowerRaw.toUpperCase()}`
@@ -102,6 +103,7 @@ export function dispatchKeyboardEvent(type, key, options = {}) {
     const raw = String(value || '')
     const lowerRaw = raw.toLowerCase()
     if (SPECIAL_KEY[lowerRaw]) return SPECIAL_KEY[lowerRaw]
+    if (/^numpad[0-9]$/.test(lowerRaw)) return lowerRaw.slice(6)
     if (/^f([1-9]|1[0-9]|2[0-4])$/.test(lowerRaw)) return `F${lowerRaw.slice(1)}`
     if (/^kp_[0-9]$/.test(lowerRaw)) return lowerRaw.slice(3)
     if (/^num[0-9]$/.test(lowerRaw)) return lowerRaw.slice(3)
@@ -118,6 +120,7 @@ export function dispatchKeyboardEvent(type, key, options = {}) {
     const lowerRaw = String(value || '').toLowerCase()
     if (lowerRaw === 'rshift') return 2
     if (lowerRaw === 'rctrl') return 2
+    if (/^numpad[0-9]$/.test(lowerRaw)) return 3
     if (/^kp_[0-9]$/.test(lowerRaw)) return 3
     if (/^num[0-9]$/.test(lowerRaw) || lowerRaw.startsWith('num') || lowerRaw === 'decimal') return 3
     if (['add', 'subtract', 'divide', 'multiply', 'kp_enter', 'kp_period'].includes(lowerRaw)) return 3

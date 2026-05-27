@@ -82,7 +82,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useInputMapping, BUTTON_DEFS, effectiveKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, effectiveLocalKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile } from '../composables/useInputMapping.js'
 import { getPlatform } from '../constants/platforms.js'
 
 const props = defineProps({
@@ -124,7 +124,7 @@ const platformName = computed(() => props.platform ? getPlatform(props.platform)
 const localPlayers = computed(() => Math.max(1, Math.min(2, Number(props.localPlayers) || 1)))
 const activeSlotCount = computed(() => tab.value === 'gp' ? 2 : localPlayers.value)
 const activeSlot = computed(() => Math.max(1, Math.min(activeSlotCount.value, Number(playerTab.value) || 1)))
-const activeKeyboard = computed(() => effectiveKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
+const activeKeyboard = computed(() => effectiveLocalKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
 const activeGamepadProfile = computed({
   get: () => normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value]),
   set: (profile) => setGamepadProfile(activeSlot.value, profile),
@@ -164,13 +164,17 @@ function onKey(e) {
   else if (k === 'ArrowRight') k = 'right'
   else if (k === 'Enter') k = e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
   else if (k === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
+  else if (/^Numpad[0-9]$/.test(e.code)) k = `numpad${e.code.slice(6)}`
   else if (/^[0-9]$/.test(k)) k = k
   else if (k === ';') k = 'semicolon'
+  else if (k === '-' && e.code === 'NumpadSubtract') k = 'subtract'
   else if (k === '-') k = 'minus'
   else if (k === '=') k = 'equals'
+  else if (k === '/' && e.code === 'NumpadDivide') k = 'numdivide'
   else if (k === '/') k = 'slash'
-  else if (k === '*') k = 'multiply'
+  else if (k === '*') k = e.code === 'NumpadMultiply' ? 'nummultiply' : 'multiply'
   else if (k === '+') k = 'add'
+  else if (k === '.' && e.code === 'NumpadDecimal') k = 'numpaddecimal'
   else if (k === '.') k = 'period'
   else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(k)) k = k.toLowerCase()
   else if (k.length === 1) k = k.toLowerCase()

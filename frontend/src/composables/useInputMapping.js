@@ -48,15 +48,21 @@ export function normalizeRetroarchKey(key) {
     ']': 'rightbracket',
     '`': 'backquote',
     numenter: 'kp_enter',
+    numpadenter: 'kp_enter',
     decimal: 'kp_period',
+    numpaddecimal: 'kp_period',
     numdivide: 'divide',
+    numpaddivide: 'divide',
     nummultiply: 'multiply',
+    numpadmultiply: 'multiply',
     numsubtract: 'subtract',
+    numpadsubtract: 'subtract',
     numadd: 'add',
+    numpadadd: 'add',
   }
-  if (/^numpad[0-9]$/.test(value)) return value.slice(6)
-  if (/^num[0-9]$/.test(value)) return value.slice(3)
-  if (/^kp_[0-9]$/.test(value)) return value.slice(3)
+  if (/^numpad[0-9]$/.test(value)) return `numpad${value.slice(6)}`
+  if (/^num[0-9]$/.test(value)) return `numpad${value.slice(3)}`
+  if (/^kp_[0-9]$/.test(value)) return `numpad${value.slice(3)}`
   return aliases[value] || value
 }
 
@@ -176,6 +182,14 @@ function isSavedLocalPlayer2DefaultKeyboard(storedKeyboard = {}) {
       aa: null, bb: null, xx: null, yy: null,
       ll: null, rr: null, l2l2: null, r2r2: null,
     },
+    {
+      up: 'numpad8', down: 'numpad2', left: 'numpad4', right: 'numpad6',
+      a: 'numpad1', b: 'numpad3', x: 'numpad7', y: 'numpad9',
+      l: 'subtract', r: 'add', l2: null, r2: null,
+      l3: null, r3: null, start: 'kp_enter', select: 'numpad0',
+      aa: null, bb: null, xx: null, yy: null,
+      ll: null, rr: null, l2l2: null, r2r2: null,
+    },
   ]
   return legacyProfiles.some((profile) =>
     entries.every(([btn, key]) => normalizeRetroarchKey(key) === profile[btn]),
@@ -191,19 +205,38 @@ const EMPTY_KEYBOARD = {
   ll: null, rr: null, l2l2: null, r2r2: null,
 }
 
+const LOCAL_PLAYER2_DEFAULT_KEYBOARD = {
+  up: 'numpad8', down: 'numpad2', left: 'numpad4', right: 'numpad6',
+  a: 'numpad1', b: 'numpad3', x: 'numpad7', y: 'numpad9',
+  l: 'subtract', r: 'add', l2: null, r2: null,
+  l3: null, r3: null, start: 'kp_enter', select: 'numpad0',
+  aa: null, bb: null, xx: null, yy: null,
+  ll: null, rr: null, l2l2: null, r2r2: null,
+}
+
+const LOCAL_PLAYER2_RUNTIME_KEYBOARD = {
+  up: 'i', down: 'k', left: 'j', right: 'l',
+  a: 'u', b: 'o', x: 'y', y: 't',
+  l: 'q', r: 'w', l2: 'e', r2: 'r',
+  l3: 'p', r3: 'semicolon', start: 'space', select: 'tab',
+  aa: null, bb: null, xx: null, yy: null,
+  ll: null, rr: null, l2l2: null, r2r2: null,
+}
+
 const DEFAULT_LOCAL_PLAYER_KEYBOARDS = {
   2: { ...EMPTY_KEYBOARD },
 }
 
 const LOCAL_PLAYER_RUNTIME_KEYBOARDS = {
-  2: {
-    up: 'i', down: 'k', left: 'j', right: 'l',
-    a: 'u', b: 'o', x: 'y', y: 't',
-    l: 'q', r: 'w', l2: 'e', r2: 'r',
-    l3: 'p', r3: 'semicolon', start: 'space', select: 'tab',
-    aa: null, bb: null, xx: null, yy: null,
-    ll: null, rr: null, l2l2: null, r2r2: null,
-  },
+  2: { ...LOCAL_PLAYER2_RUNTIME_KEYBOARD },
+}
+
+function defaultLocalKeyboardForPlayer(player = 1, platform = null) {
+  return Number(player) === 2 ? LOCAL_PLAYER2_DEFAULT_KEYBOARD : defaultPlayer1KeyboardForPlatform(platform)
+}
+
+export function localPlayer2RuntimeKeyboard() {
+  return { ...LOCAL_PLAYER2_RUNTIME_KEYBOARD }
 }
 
 function keyboardStorageKeyForPlayer(player = 1) {
@@ -231,6 +264,15 @@ export function effectiveKeyboardForPlayer(inputMapping = null, player = 1, plat
   return normalizeKeyboardMapping(stored, defaults)
 }
 
+export function effectiveLocalKeyboardForPlayer(inputMapping = null, player = 1, platform = null) {
+  const defaults = defaultLocalKeyboardForPlayer(player, platform)
+  const stored = inputMapping?.[keyboardStorageKeyForPlayer(player)]
+  if (Number(player) === 1 && platform && keyboardMatchesProfile(stored, DEFAULT_KEYBOARD)) {
+    return { ...defaults }
+  }
+  return normalizeKeyboardMapping(stored, defaults)
+}
+
 function localPlayerKeys(player, platformButtons = null, inputMapping = null) {
   const preferred = effectiveKeyboardForPlayer(inputMapping, player)
   const allowed = platformButtons ? new Set(platformButtons) : null
@@ -247,7 +289,7 @@ export function buildLocalPlayerKeyboardMap(player = 2, platformButtons = null) 
   return localPlayerKeys(player, platformButtons, { [keyboardStorageKeyForPlayer(player)]: LOCAL_PLAYER_RUNTIME_KEYBOARDS[player] })
 }
 
-export function buildLocalMultiplayerRetroarchConfig(maxPlayers = 2, platformButtons = null, inputMapping = null) {
+export function buildLocalMultiplayerRetroarchConfig(maxPlayers = 2, platformButtons = null) {
   const limit = Math.max(1, Math.min(2, Number(maxPlayers) || 1))
   const cfg = { input_max_users: limit }
   const allowed = platformButtons ? new Set(platformButtons) : null
@@ -603,11 +645,11 @@ export function useInputMapping() {
 
   function setKeyboard(btn, key, player = 1, platform = null) {
     const playerKey = keyboardStorageKeyForPlayer(player)
-    const defaults = defaultKeyboardForPlayer(player, platform)
-    const current = effectiveKeyboardForPlayer(mapping.value, player, platform)
+    const defaults = defaultLocalKeyboardForPlayer(player, platform)
+    const current = effectiveLocalKeyboardForPlayer(mapping.value, player, platform)
     const normalized = isValidKeyboardBinding(key) ? normalizeRetroarchKey(key) : defaults[btn]
     if (Number(player) === 2) {
-      const player1Keyboard = effectiveKeyboardForPlayer(mapping.value, 1, platform)
+      const player1Keyboard = effectiveLocalKeyboardForPlayer(mapping.value, 1, platform)
       const p1Reserved = new Set(Object.values(player1Keyboard).filter(isValidKeyboardBinding).map((value) => normalizeRetroarchKey(value)))
       if (p1Reserved.has(normalized)) return false
     }
@@ -655,7 +697,7 @@ export function useInputMapping() {
   }
   function resetKeyboard(player = 1, platform = null) {
     const playerKey = keyboardStorageKeyForPlayer(player)
-    mapping.value = { ...mapping.value, [playerKey]: { ...defaultKeyboardForPlayer(player, platform) } }
+    mapping.value = { ...mapping.value, [playerKey]: { ...defaultLocalKeyboardForPlayer(player, platform) } }
     saveMapping(user.value?.id, mapping.value)
   }
   function resetGamepad(player = 1, profile = null) {

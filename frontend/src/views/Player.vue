@@ -150,7 +150,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
@@ -480,7 +480,7 @@ function handleLocalPlayer2Keyboard(e) {
 
   const key = normalizeDomKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
-  const p2UserKeyboard = mapping.value.keyboardP2 || {}
+  const p2UserKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, 2, romMeta.value?.platform || null)
   const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed, { includeTurbo: true })
   if (!button) return false
 
@@ -606,13 +606,16 @@ function normalizeDomKey(e) {
   if (raw === 'Enter') return e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
   if (raw === 'Shift') return e.location === 2 ? 'rshift' : 'shift'
   if (raw === ' ') return 'space'
+  if (/^Numpad[0-9]$/.test(e.code)) return `numpad${e.code.slice(6)}`
   if (/^[0-9]$/.test(raw)) return raw
   if (raw === ';') return 'semicolon'
+  if (raw === '-' && e.code === 'NumpadSubtract') return 'subtract'
   if (raw === '-') return 'minus'
   if (raw === '=') return 'equals'
-  if (raw === '/') return 'slash'
-  if (raw === '*') return 'multiply'
+  if (raw === '/') return e.code === 'NumpadDivide' ? 'numdivide' : 'slash'
+  if (raw === '*') return e.code === 'NumpadMultiply' ? 'nummultiply' : 'multiply'
   if (raw === '+') return 'add'
+  if (raw === '.' && e.code === 'NumpadDecimal') return 'numpaddecimal'
   if (raw === '.') return 'period'
   return normalizeRetroarchKey(raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase())
 }
