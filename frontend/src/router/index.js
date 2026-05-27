@@ -31,11 +31,23 @@ const routes = [
     meta: { requiresAdmin: true },
   },
   {
+    path: '/rooms/:code/play/:id',
+    name: 'RoomPlayer',
+    component: () => import('../views/RoomPlayer.vue'),
+    props: true,
+    meta: { fullscreen: true },
+  },
+  {
     path: '/play/:id',
     name: 'Player',
     component: () => import('../views/Player.vue'),
     props: true,
     meta: { fullscreen: true },
+    beforeEnter: (to) => {
+      const code = to.query.room?.toString().toUpperCase()
+      if (!code) return true
+      return { path: `/rooms/${code}/play/${to.params.id}` }
+    },
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

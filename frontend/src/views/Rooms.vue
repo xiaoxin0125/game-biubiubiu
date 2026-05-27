@@ -138,9 +138,9 @@ onMounted(load)
 
 function pickRoom(r) {
   if (r.hasPassword) pendingRoom.value = r
-  else router.push(`/play/${r.romId}?room=${r.code}`)
+  else router.push(`/rooms/${r.code}/play/${r.romId}`)
 }
-function resume(r) { router.push(`/play/${r.romId}?room=${r.code}`) }
+function resume(r) { router.push(`/rooms/${r.code}/play/${r.romId}`) }
 async function closeRoom(r) {
   if (!confirm(`关闭房间 "${r.name}"？已连接的玩家会被踢出。`)) return
   try {
@@ -153,12 +153,12 @@ function onCreated(room) {
   showCreate.value = false
   myRooms.value = [room, ...myRooms.value]
   if (room.isPublic) publicRooms.value = [room, ...publicRooms.value]
-  router.push(`/play/${room.romId}?room=${room.code}`)
+  router.push(`/rooms/${room.code}/play/${room.romId}`)
 }
 function onJoined(room) {
   showJoin.value = false
   pendingRoom.value = null
-  router.push(`/play/${room.romId}?room=${room.code}`)
+  router.push(`/rooms/${room.code}/play/${room.romId}`)
 }
 function onEdited(room) {
   editRoom.value = null

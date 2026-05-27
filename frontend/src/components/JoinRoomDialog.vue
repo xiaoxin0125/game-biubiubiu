@@ -69,7 +69,7 @@ async function submit() {
     const joined = await api.roomJoin(roomCode, password.value)
     if (joined.roomTicket) api.roomStoreTicket(joined.code, joined.roomTicket)
     emit('joined', joined)
-    router.push(`/play/${joined.romId}?room=${joined.code}`)
+    router.push(`/rooms/${joined.code}/play/${joined.romId}`)
   } catch (err) {
     if (err?.data?.needsPassword) {
       needsPassword.value = true

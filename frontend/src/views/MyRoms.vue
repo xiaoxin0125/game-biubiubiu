@@ -132,31 +132,25 @@
         <h3>回收站是空的</h3>
         <p>删除的 ROM 会出现在这里，可以随时恢复</p>
       </div>
-      <div v-else class="panel-card rom-table">
-        <div class="trow trow-head trow-trash">
-          <span class="col-check"></span>
-          <span>游戏</span>
-          <span>平台</span>
-          <span>大小</span>
-          <span>删除时间</span>
-          <span class="col-actions">操作</span>
-        </div>
-        <div v-for="rom in trashRoms" :key="rom.id" class="trow trow-trash">
-          <span class="col-check"><span class="pdot" :style="{ background: platformColor(rom.platform) }"></span></span>
-          <div class="col-title">
-            <div class="rt"><span class="rt-text">{{ rom.title }}</span></div>
-            <div class="rf">{{ rom.fileName }}</div>
+      <div v-else class="rom-card-table trash-card-table">
+        <article v-for="rom in trashRoms" :key="rom.id" class="rom-entry trash-entry">
+          <div class="rom-entry-main">
+            <span class="pdot" :style="{ background: platformColor(rom.platform) }"></span>
+            <div class="rom-entry-title-wrap">
+              <div class="trash-title">{{ rom.title }}</div>
+              <div class="rf">{{ rom.fileName }}</div>
+            </div>
           </div>
-          <div>
+          <div class="rom-entry-meta">
             <span class="plat-badge" :style="{ '--pc': platformColor(rom.platform) }">{{ platformLabel(rom.platform) }}</span>
+            <span class="meta-chip">{{ fmtSize(rom.fileSize) }}</span>
+            <span class="meta-chip">删除 {{ fmtTime(rom.updatedAt) }}</span>
+            <div class="col-actions">
+              <button class="btn btn-sm btn-primary" @click="restore(rom)">恢复</button>
+              <button class="btn btn-sm btn-danger" @click="purge(rom)">永久删除</button>
+            </div>
           </div>
-          <div class="muted">{{ fmtSize(rom.fileSize) }}</div>
-          <div class="muted">{{ fmtTime(rom.updatedAt) }}</div>
-          <div class="col-actions">
-            <button class="btn btn-sm btn-primary" @click="restore(rom)">恢复</button>
-            <button class="btn btn-sm btn-danger" @click="purge(rom)">永久删除</button>
-          </div>
-        </div>
+        </article>
       </div>
     </section>
 
@@ -475,7 +469,7 @@ function fmtTime(v) {
   padding: 16px;
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.72);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 .rom-entry:hover {
@@ -503,6 +497,13 @@ function fmtTime(v) {
   font-weight: 900;
   text-align: left;
   cursor: text;
+}
+.trash-title {
+  color: #111;
+  font-size: 16px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .rom-title-button span {
   overflow-wrap: anywhere;
@@ -557,7 +558,7 @@ function fmtTime(v) {
   color: var(--pc);
 }
 
-.col-actions { display: flex; gap: 6px; margin-left: auto; }
+.col-actions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
 
 .switch { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
