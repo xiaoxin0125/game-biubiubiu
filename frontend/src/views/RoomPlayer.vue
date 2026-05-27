@@ -142,6 +142,9 @@
       v-if="showInput && !isTouchLayout"
       :platform="romMeta?.platform"
       :local-players="1"
+      :gamepad-players="1"
+      :gamepad-profile-keys="roomGamepadProfileKeys"
+      room-mode
       @close="closeInputSettings"
     />
   </div>
@@ -205,6 +208,7 @@ const {
 
 const roomCode = (props.code || route.params.code || route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = true
+const roomGamepadProfileKeys = ['ps4', 'xbox', 'generic']
 const roomHostInputConfigSnapshot = ref(null)
 const keyboardTurboLoops = new Map()
 
@@ -371,7 +375,7 @@ const gamepadButtonInterceptor = (action, button, player = 1) => {
   if (isRoomMode && isHostMode.value) return hostButtonInterceptor(action, button)
   return false
 }
-const resolveGamepadPlayer = () => roomGamepadPlayer()
+const resolveGamepadPlayer = (slot = 1) => slot === 1 ? roomGamepadPlayer() : null
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
 useGamepads({
@@ -379,7 +383,7 @@ useGamepads({
   onButton: gamepadButtonInterceptor,
   pressButton: (button, player = 1) => pressLocalButton(button, player),
   releaseButton: (button, player = 1) => releaseLocalButton(button, player),
-  maxLocalPlayers: computed(() => 2),
+  maxLocalPlayers: computed(() => 1),
   playerResolver: resolveGamepadPlayer,
   platformButtons: currentPlatformButtons,
 })
@@ -654,7 +658,9 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  background: #000;
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 32vw),
+    linear-gradient(180deg, #FFF7ED 0%, #FFFBF5 46%, #FFF7ED 100%);
   position: relative;
   overflow: hidden;
   /* Kill iOS / WeChat long-press menus (复制/搜一搜/翻译 等) that steal
@@ -708,12 +714,16 @@ onBeforeUnmount(() => {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 12px;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  backdrop-filter: blur(6px);
+  background: rgba(255, 251, 245, 0.88);
+  color: #111;
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  margin: 16px;
+  box-shadow: 6px 6px 0 var(--border-color, #111);
 }
-.guest-waiting p { margin: 0; font-size: 14px; }
-.guest-waiting .muted { font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; }
+.guest-waiting p { margin: 0; font-size: 14px; font-weight: 900; }
+.guest-waiting .muted { font-size: 11px; color: var(--text-secondary); letter-spacing: 0.08em; }
 
 /* Tap-to-unmute chip for guests — floats in bottom-right of video area */
 .unmute-chip {
@@ -724,20 +734,20 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: var(--r-sm);
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
-  background: rgba(8, 8, 12, 0.85);
-  color: var(--accent);
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  background: rgba(255, 251, 245, 0.94);
+  color: #111;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 900;
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: 5;
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
-.unmute-chip:hover { color: #fff; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.unmute-chip:hover { color: #fff; background: #111; transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--border-color, #111); }
 
 .emu-error, .emu-loading {
   position: absolute; inset: 0;
@@ -842,13 +852,14 @@ onBeforeUnmount(() => {
 .error-card {
   text-align: center;
   padding: 28px 36px;
-  border-radius: 16px;
-  background: #141416;
-  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 7px;
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
   max-width: 320px;
-  color: #fff;
+  color: #111;
+  box-shadow: 6px 6px 0 var(--border-color, #111);
 }
-.error-card p { color: rgba(255,255,255,0.75); font-size: 14px; margin: 0 0 16px; line-height: 1.5; }
+.error-card p { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px; line-height: 1.5; font-weight: 700; }
 
 .spinner {
   position: relative;
@@ -866,17 +877,78 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 36px;
+  height: 34px;
   padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(255,255,255,0.06);
-  color: #fff;
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  background: rgba(255, 251, 245, 0.92);
+  color: #111;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 900;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.14s ease, color 0.14s ease;
+  box-shadow: none;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.player-page :deep(.player-bar) {
+  --b-bg: rgba(255, 251, 245, 0.96);
+  --b-border: var(--border-color, #111);
+  --b-btn-bg: rgba(255, 255, 255, 0.72);
+  --b-btn-hover: #111;
+  --b-text: #111;
+  --b-muted: var(--text-secondary);
+  --b-tertiary: var(--text-tertiary);
+  gap: 8px;
+  background: var(--b-bg);
+  color: #111;
+  border-bottom: 2px solid var(--border-color, #111);
+  box-shadow: none;
+}
+.player-page :deep(.bar-title) {
+  color: #111;
+  font-weight: 900;
+}
+.player-page :deep(.bar-core) {
+  color: var(--text-secondary);
+  font-weight: 900;
+}
+.player-page :deep(.bar-btn) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #111;
+  font-weight: 900;
+}
+.player-page :deep(.bar-btn:hover) {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+}
+.player-page :deep(.bar-btn:active) {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+.player-page :deep(.bar-btn-accent) {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+.player-page :deep(.bar-badge) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  color: #111;
+  font-weight: 900;
+  box-shadow: none;
+}
+.player-page :deep(.playing-led) {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--success) 20%, #fff);
+  color: #047857;
+  font-weight: 900;
 }
 
 .ver-switch { position: relative; }
@@ -884,55 +956,64 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 30px;
+  height: 34px;
   padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.06);
-  color: #fff;
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  background: rgba(255, 251, 245, 0.92);
+  color: #111;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 900;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.14s ease;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
 }
-.ver-btn:hover { background: rgba(255,255,255,0.14); }
-.ver-cur { color: rgba(255,255,255,0.9); }
+.ver-btn:hover { background: #fff; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--border-color, #111); }
+.ver-cur { color: #111; }
 .ver-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   min-width: 140px;
   padding: 6px;
-  background: rgba(22, 22, 24, 0.96);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  background: rgba(255, 251, 245, 0.98);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
   z-index: 40;
 }
 .ver-item {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 10px;
   background: transparent;
   border: 0;
-  border-radius: 6px;
-  color: rgba(255,255,255,0.85);
+  border-radius: 7px;
+  color: #111;
   font-size: 12px;
+  font-weight: 900;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
 }
-.ver-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.ver-item.active { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #fff; }
-.room-chip:hover { background: rgba(255,255,255,0.12); }
-.room-chip.active { background: color-mix(in srgb, var(--accent) 30%, transparent); color: #fff; border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.ver-item:hover { background: rgba(17, 17, 17, 0.06); color: #111; }
+.ver-item.active { background: #111; color: #fff; }
+.room-chip:hover { background: #fff; transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--border-color, #111); }
+.room-chip.active { background: #111; color: #fff; border-color: #111; }
 .chip-count {
-  background: rgba(0,0,0,0.3);
-  padding: 1px 6px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 7px;
+  border: 2px solid currentColor;
+  background: transparent;
+  color: currentColor;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: none;
 }
 
 .rotate-hint, .toast {
@@ -940,13 +1021,14 @@ onBeforeUnmount(() => {
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 16px;
-  border-radius: 999px;
-  color: #fff;
+  border-radius: 7px;
+  color: #111;
   font-size: 13px;
-  font-weight: 500;
-  background: rgba(20, 20, 22, 0.85);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.08);
+  font-weight: 900;
+  background: rgba(255, 251, 245, 0.94);
+  backdrop-filter: blur(12px);
+  border: 2px solid var(--border-color, #111);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
   z-index: 100;
 }
 .rotate-hint { bottom: 90px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -970,10 +1052,10 @@ onBeforeUnmount(() => {
     max-width: 1100px;
     max-height: calc(100vh - 32px);
     margin: 0 auto;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+    border-radius: 7px;
+    border: 2px solid var(--border-color, #111);
     overflow: hidden;
+    background: #000;
   }
 }
 </style>

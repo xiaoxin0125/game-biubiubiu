@@ -238,7 +238,6 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   padding: 6px;
-  box-shadow: 4px 4px 0 var(--border-color, #111);
   z-index: 60;
 }
 .menu-head { padding: 8px 10px 10px; }

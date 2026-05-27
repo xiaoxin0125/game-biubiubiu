@@ -589,7 +589,6 @@ onBeforeUnmount(() => {
   background: rgba(22, 22, 24, 0.96);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   z-index: 40;
 }
 .ver-item {

@@ -656,16 +656,9 @@ function fmtTime(v) {
 }
 .rom-search input::placeholder { color: var(--text-quaternary); }
 .filter-select {
-  height: 40px;
-  padding: 0 10px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #111;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 900;
-  outline: none;
+  --select-height: 40px;
+  --select-min-height: 40px;
+  --select-font-size: 13px;
 }
 .admin-rom-list { display: flex; flex-direction: column; gap: 14px; }
 .admin-rom-entry {
@@ -791,21 +784,18 @@ function fmtTime(v) {
   white-space: nowrap;
 }
 .admin-select {
-  height: 100%;
   flex: 1;
   min-width: 0;
-  padding: 0 26px 0 8px;
-  border: 0;
-  background: #fff;
-  color: #111;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 900;
-  outline: none;
-  cursor: pointer;
+  --select-height: 100%;
+  --select-min-height: 0;
+  --select-padding: 0 26px 0 8px;
+  --select-border: 0;
+  --select-font-size: 12px;
+  --select-hover-transform: none;
+  --select-hover-shadow: none;
+  --select-focus-shadow: none;
 }
 .admin-select:disabled {
-  opacity: 0.55;
   cursor: wait;
 }
 .pill-tag {

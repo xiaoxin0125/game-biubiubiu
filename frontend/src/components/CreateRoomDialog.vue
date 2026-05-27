@@ -160,7 +160,6 @@ async function submit() {
   background: rgba(255, 251, 245, 0.96);
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
-  box-shadow: 6px 6px 0 var(--border-color, #111);
   animation: popIn 0.2s var(--ease-spring);
 }
 @keyframes popIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

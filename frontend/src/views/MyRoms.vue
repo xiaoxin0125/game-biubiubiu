@@ -450,16 +450,9 @@ function fmtTime(v) {
 }
 .rom-search input::placeholder { color: var(--text-quaternary); }
 .filter-select {
-  height: 40px;
-  padding: 0 10px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #111;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 900;
-  outline: none;
+  --select-height: 40px;
+  --select-min-height: 40px;
+  --select-font-size: 13px;
 }
 .rom-card-table { display: flex; flex-direction: column; gap: 14px; }
 .rom-entry {

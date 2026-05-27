@@ -303,7 +303,6 @@ async function submit() {
   padding: 28px;
   background: rgba(255, 251, 245, 0.96);
   border: 2px solid var(--border-color, #111);
-  box-shadow: 6px 6px 0 var(--border-color, #111);
   animation: popIn 0.2s var(--ease-spring);
 }
 @keyframes popIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -369,15 +368,9 @@ async function submit() {
 .field { margin-top: 18px; }
 .select {
   width: 100%;
-  height: 42px;
-  padding: 0 12px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
-  color: #111;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 900;
+  --select-height: 42px;
+  --select-min-height: 42px;
+  --select-font-size: 13px;
 }
 .hint-text {
   margin-top: 6px;

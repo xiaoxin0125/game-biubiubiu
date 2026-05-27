@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
   <div class="is-overlay" @click.self="$emit('close')">
-    <div class="is-panel">
+    <div class="is-panel" :class="{ 'room-mode': props.roomMode }">
       <header class="is-head">
         <h2>按键设置<span v-if="platformName" class="is-plat">· {{ platformName }}</span></h2>
         <button class="is-close" @click="$emit('close')" aria-label="关闭">×</button>
@@ -26,13 +26,13 @@
           <label class="is-select-field">
             <span>手柄类型</span>
             <select v-model="activeGamepadProfile">
-              <option v-for="profile in GAMEPAD_PROFILE_DEFS" :key="profile.key" :value="profile.key">
+              <option v-for="profile in visibleGamepadProfiles" :key="profile.key" :value="profile.key">
                 {{ profile.label }}
               </option>
             </select>
           </label>
           <p class="is-gp-note">
-            当前配置只绑定手柄{{ activeSlot }}；第 3 个及以后手柄不会参与控制。
+            {{ gamepadBindingNote }}
           </p>
         </div>
       </template>
@@ -71,7 +71,7 @@
 
       <footer class="is-foot">
         <button class="is-reset" @click="tab === 'kb' ? resetKeyboard(activeSlot, props.platform) : resetGamepad(activeSlot, activeGamepadProfile)">
-          重置{{ tab === 'kb' ? `P${activeSlot} 键盘` : `手柄${activeSlot} ${activeGamepadProfileLabel}` }}
+          重置{{ resetLabel }}
         </button>
         <button class="is-done" @click="$emit('close')">完成</button>
       </footer>
@@ -88,6 +88,9 @@ import { getPlatform } from '../constants/platforms.js'
 const props = defineProps({
   platform: { type: String, default: null },
   localPlayers: { type: Number, default: 1 },
+  gamepadPlayers: { type: Number, default: 2 },
+  gamepadProfileKeys: { type: Array, default: () => [] },
+  roomMode: { type: Boolean, default: false },
 })
 defineEmits(['close'])
 
@@ -122,15 +125,37 @@ const relevantButtons = computed(() => {
 })
 const platformName = computed(() => props.platform ? getPlatform(props.platform).displayName : null)
 const localPlayers = computed(() => Math.max(1, Math.min(2, Number(props.localPlayers) || 1)))
-const activeSlotCount = computed(() => tab.value === 'gp' ? 2 : localPlayers.value)
+const gamepadPlayers = computed(() => Math.max(1, Math.min(2, Number(props.gamepadPlayers) || 2)))
+const activeSlotCount = computed(() => tab.value === 'gp' ? gamepadPlayers.value : localPlayers.value)
 const activeSlot = computed(() => Math.max(1, Math.min(activeSlotCount.value, Number(playerTab.value) || 1)))
+const visibleGamepadProfiles = computed(() => {
+  const requested = Array.isArray(props.gamepadProfileKeys) ? props.gamepadProfileKeys : []
+  if (!requested.length) return GAMEPAD_PROFILE_DEFS
+  const byKey = new Map(GAMEPAD_PROFILE_DEFS.map((profile) => [profile.key, profile]))
+  const profiles = requested
+    .map((key) => byKey.get(String(key).toLowerCase()))
+    .filter(Boolean)
+  return profiles.length ? profiles : GAMEPAD_PROFILE_DEFS
+})
 const activeKeyboard = computed(() => effectiveLocalKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
 const activeGamepadProfile = computed({
-  get: () => normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value]),
+  get: () => {
+    const storedProfile = normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value])
+    return visibleGamepadProfiles.value.some((profile) => profile.key === storedProfile)
+      ? storedProfile
+      : visibleGamepadProfiles.value[0]?.key || storedProfile
+  },
   set: (profile) => setGamepadProfile(activeSlot.value, profile),
 })
-const activeGamepadProfileLabel = computed(() => GAMEPAD_PROFILE_DEFS.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
+const activeGamepadProfileLabel = computed(() => visibleGamepadProfiles.value.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
 const activeGamepad = computed(() => gamepadMappingFor(mapping.value, activeSlot.value, activeGamepadProfile.value))
+const gamepadBindingNote = computed(() => props.roomMode
+  ? '当前配置只用于本机唯一手柄；其他手柄不会参与房间控制。'
+  : `当前配置只绑定手柄${activeSlot.value}；第 3 个及以后手柄不会参与控制。`)
+const resetLabel = computed(() => {
+  if (tab.value === 'kb') return props.roomMode ? '键盘' : `P${activeSlot.value} 键盘`
+  return props.roomMode ? `手柄 · ${activeGamepadProfileLabel.value}` : `手柄${activeSlot.value} ${activeGamepadProfileLabel.value}`
+})
 
 const activeConflicts = computed(() => {
   const source = tab.value === 'kb' ? activeKeyboard.value : activeGamepad.value
@@ -188,7 +213,7 @@ const prevPressed = Object.create(null)
 function pollGp() {
   if (gpListening.value) {
     const pads = (navigator.getGamepads?.() || []).filter(Boolean)
-    const padSlot = Math.max(1, Math.min(2, Number(activeSlot.value) || 1))
+    const padSlot = Math.max(1, Math.min(gamepadPlayers.value, Number(activeSlot.value) || 1))
     const pad = pads[padSlot - 1]
     if (pad) {
       for (let i = 0; i < pad.buttons.length; i++) {
@@ -281,14 +306,10 @@ onBeforeUnmount(() => {
 }
 .is-select-field select {
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.06);
-  color: #fff;
-  outline: none;
+  --select-height: 36px;
+  --select-min-height: 36px;
+  --select-font-size: 12px;
 }
-.is-select-field option { color: #111; }
 .is-gp-note {
   margin: 0;
   color: rgba(255,255,255,0.45);
@@ -364,5 +385,121 @@ onBeforeUnmount(() => {
 .is-reset { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
 .is-reset:hover { background: rgba(255,255,255,0.14); }
 .is-done  { background: rgba(10,132,255,0.3); color: #fff; }
-.is-done:hover { background: rgba(10,132,255,0.45); }
+.is-panel.room-mode {
+  background: rgba(255, 251, 245, 0.96);
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  color: #111;
+  box-shadow: 6px 6px 0 var(--border-color, #111);
+}
+.room-mode .is-head {
+  border-bottom: 2px solid var(--border-color, #111);
+  background: rgba(255, 255, 255, 0.5);
+}
+.room-mode .is-head h2 { color: #111; font-weight: 900; }
+.room-mode .is-plat { color: var(--text-secondary); font-weight: 900; }
+.room-mode .is-close {
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  color: #111;
+  font-weight: 900;
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.room-mode .is-close:hover,
+.room-mode .is-close:focus-visible {
+  background: #111;
+  color: #fff;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+  outline: none;
+}
+.room-mode .is-tabs,
+.room-mode .is-player-tabs,
+.room-mode .is-gp-controls,
+.room-mode .is-foot { border-color: var(--border-color, #111); }
+.room-mode .is-tabs button,
+.room-mode .is-player-tabs button {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  color: #111;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.62);
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.room-mode .is-tabs button:hover,
+.room-mode .is-player-tabs button:hover,
+.room-mode .is-tabs button:focus-visible,
+.room-mode .is-player-tabs button:focus-visible {
+  background: #fff;
+  color: #111;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+  outline: none;
+}
+.room-mode .is-tabs .active,
+.room-mode .is-player-tabs .active { background: #111; border-color: #111; color: #fff; }
+.room-mode .is-tabs .active:hover,
+.room-mode .is-player-tabs .active:hover,
+.room-mode .is-tabs .active:focus-visible,
+.room-mode .is-player-tabs .active:focus-visible { background: #111; color: #fff; }
+.room-mode .is-select-field { color: #111; font-weight: 900; }
+.room-mode .is-gp-note { color: var(--text-secondary); font-weight: 700; }
+.room-mode .is-warning {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn) 18%, #fff);
+  color: #9A3412;
+  font-weight: 900;
+}
+.room-mode .is-btn {
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  color: #111;
+  font-weight: 900;
+}
+.room-mode .is-slot {
+  border: 2px solid var(--border-color, #111);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #111;
+  font-weight: 900;
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+.room-mode .is-slot:hover,
+.room-mode .is-slot:focus-visible {
+  background: #fff;
+  color: #111;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+  outline: none;
+}
+.room-mode .is-slot.listening { background: #111; border-color: #111; color: #fff; }
+.room-mode .is-slot.listening:hover,
+.room-mode .is-slot.listening:focus-visible { background: #111; color: #fff; }
+.room-mode .is-slot.conflict { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
+.room-mode .is-reset,
+.room-mode .is-done {
+  border-radius: 7px;
+  border: 2px solid var(--border-color, #111);
+  font-weight: 900;
+  transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.room-mode .is-reset { background: rgba(255, 255, 255, 0.62); color: #111; }
+.room-mode .is-reset:hover,
+.room-mode .is-reset:focus-visible {
+  background: #fff;
+  color: #111;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+  outline: none;
+}
+.room-mode .is-done { background: #111; color: #fff; }
+.room-mode .is-done:hover,
+.room-mode .is-done:focus-visible {
+  background: #111;
+  color: #fff;
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--border-color, #111);
+  outline: none;
+}
 </style>
