@@ -65,6 +65,7 @@ export function installRoomsWebSocket(app, upgradeWebSocket) {
             ...roomRow,
             maxPlayers: romRow?.maxPlayers ?? null,
             effectiveMaxPlayers: effectiveMaxPlayersForRom(romRow),
+            platform: romRow?.platform || null,
             allowGuestControl: guestPlayEnabled === '1',
           })
           peer = hub.addPeer(code, { user, ws, clientId })

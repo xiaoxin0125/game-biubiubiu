@@ -37,6 +37,7 @@ export function ensureRoom(code, row) {
       hostUserId: row.hostUserId,
       allowPlay: row.allowPlay !== false,
       allowGuestControl: row.allowGuestControl === true,
+      platform: row.platform || row.romPlatform || null,
       maxPlayers: row.maxPlayers ?? null,
       effectiveMaxPlayers,
       peers: new Map(),
@@ -47,6 +48,7 @@ export function ensureRoom(code, row) {
     r.hostUserId = row.hostUserId
     r.allowPlay = row.allowPlay !== false
     r.allowGuestControl = row.allowGuestControl === true
+    r.platform = row.platform || row.romPlatform || r.platform || null
     r.maxPlayers = row.maxPlayers ?? r.maxPlayers ?? null
     r.effectiveMaxPlayers = effectiveMaxPlayers
   }
@@ -86,7 +88,8 @@ export function addPeer(code, { user, ws, clientId = null }) {
   const peerId = nanoid(8)
   const userId = user?.id ?? null
   const username = user?.username ?? `访客-${peerId.slice(0, 4)}`
-  const isHost = userId != null && userId === room.hostUserId
+  const hasActiveHost = room.platform === 'arcade' && [...room.peers.values()].some((p) => p.isHost)
+  const isHost = userId != null && userId === room.hostUserId && !hasActiveHost
   const isGuest = !userId
   const peer = { id: peerId, userId, username, isHost, isGuest, clientId, playerIndex: null, canControl: false, ws }
   room.peers.set(peerId, peer)
@@ -230,6 +233,8 @@ function getPlayerIndex(room, isHost) {
 }
 
 function recalculateControlSeats(room) {
+  normalizeArcadeHostSeat(room)
+
   const max = clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers)
   for (const peer of room.peers.values()) {
     if (peer.isHost) {
@@ -251,6 +256,19 @@ function recalculateControlSeats(room) {
       peer.playerIndex = null
     }
   }
+}
+
+function normalizeArcadeHostSeat(room) {
+  if (room.platform !== 'arcade') return
+
+  const hosts = [...room.peers.values()].filter((peer) => peer.isHost)
+  if (hosts.length > 1) {
+    for (const peer of hosts.slice(1)) peer.isHost = false
+  }
+  if (hosts.length) return
+
+  const fallbackHost = [...room.peers.values()].find((peer) => peer.userId != null && peer.userId === room.hostUserId)
+  if (fallbackHost) fallbackHost.isHost = true
 }
 
 function broadcastPeersUpdated(room) {

@@ -19,9 +19,9 @@ function reservedKeysFromHostConfig(hostConfig = {}) {
     .filter((value) => typeof value === 'string' && value !== 'nul')
 }
 
-export function arcadeNetplayGuestKeyboardPlayer({ isRoomMode, platform, playerIndex } = {}) {
+export function arcadeNetplayGuestKeyboardPlayer({ isRoomMode, platform } = {}) {
   if (!isArcadeNetplayInputEnabled({ isRoomMode, platform })) return 1
-  return Number(playerIndex) === 2 ? 2 : 1
+  return 1
 }
 
 export function buildArcadeNetplayRemoteKeyMaps({ maxPlayers = 4, hostConfig = {}, platformButtons = null } = {}) {
@@ -56,6 +56,11 @@ export function buildArcadeNetplayRetroarchConfig({ maxPlayers = 4, keyMaps = {}
   return cfg
 }
 
+function dispatchArcadeKey(action, key) {
+  if (!key || key === 'nul') return false
+  return dispatchKeyboardEvent(action === 'down' ? 'keydown' : 'keyup', key, { internal: true })
+}
+
 export function dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls } = {}) {
   const player = Number(playerIndex)
   if (!Number.isInteger(player) || player < 2 || player > 4) return false
@@ -63,33 +68,27 @@ export function dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap
   const turboTarget = TURBO_BUTTON_TARGETS[button]
   if (turboTarget) return dispatchArcadeNetplayTurbo({ playerIndex: player, action, button, targetButton: turboTarget, keyMap, controls })
 
-  let handled = false
+  const mappedKey = keyMap?.[button]
+  const handledByKeyboard = dispatchArcadeKey(action, mappedKey)
   if (controls?.pressButton && controls?.releaseButton) {
     if (action === 'down') controls.pressButton(button, player)
     else controls.releaseButton(button, player)
-    handled = true
   }
-
-  const mappedKey = keyMap?.[button]
-  if (mappedKey && mappedKey !== 'nul') {
-    dispatchKeyboardEvent(action === 'down' ? 'keydown' : 'keyup', mappedKey, { internal: true })
-    handled = true
-  }
-  return handled
+  return handledByKeyboard
 }
 
 function dispatchArcadeNetplayTurbo({ playerIndex, action, button, targetButton, keyMap, controls }) {
   const mappedKey = keyMap?.[targetButton]
   const hasDirectControl = controls?.pressButton && controls?.releaseButton
-  if (!mappedKey && !hasDirectControl) return false
+  if ((!mappedKey || mappedKey === 'nul') && !hasDirectControl) return false
 
   const press = () => {
+    dispatchArcadeKey('down', mappedKey)
     if (hasDirectControl) controls.pressButton(targetButton, playerIndex)
-    if (mappedKey && mappedKey !== 'nul') dispatchKeyboardEvent('keydown', mappedKey, { internal: true })
   }
   const release = () => {
+    dispatchArcadeKey('up', mappedKey)
     if (hasDirectControl) controls.releaseButton(targetButton, playerIndex)
-    if (mappedKey && mappedKey !== 'nul') dispatchKeyboardEvent('keyup', mappedKey, { internal: true })
   }
 
   const loopKey = `${playerIndex}:${button}`
