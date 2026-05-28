@@ -218,8 +218,8 @@ const soloGamepadPlayer = computed(() => activeMaxPlayers.value >= 2 ? 2 : 1)
 const resolveGamepadPlayer = (slot) => slot === 1 ? soloGamepadPlayer.value : null
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
-const pressSoloGamepadButton = (button) => pressLocalButton(button, soloGamepadPlayer.value)
-const releaseSoloGamepadButton = (button) => releaseLocalButton(button, soloGamepadPlayer.value)
+const pressSoloGamepadButton = (button) => pressLocalButton(button, 1)
+const releaseSoloGamepadButton = (button) => releaseLocalButton(button, 1)
 useGamepads({
   mapping,
   onButton: gamepadButtonInterceptor,

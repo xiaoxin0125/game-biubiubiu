@@ -178,9 +178,8 @@ const FACE_LAYOUTS = {
                       l: '#FFCC00', x: '#FF9500', r: '#AF52DE' } },
   // Master System / Game Gear — 2 buttons: 1 蓝 2 红
   sms:    { keys: ['b', 'a'],             colors: { b: '#0A84FF', a: '#FF3B30' } },
-  // Neo Geo arcade — 4 buttons 2×2, 经典 A B C D 配色. Street Fighter /
-  // CPS-style 6-button cabinets exist but most CN 街机 (KOF, PGM, ...) are
-  // 4-button. Users needing L/R (Capcom 6-button) can bind them on PC.
+  // Arcade face buttons use A/B/C/D; retropad L/R are exposed below as E/F
+  // for 6-button cabinets.
   arcade: { keys: ['b', 'a', 'y', 'x'],   colors: { b: '#FF3B30', a: '#FFCC00', y: '#34C759', x: '#007AFF' } },
 }
 
@@ -196,11 +195,11 @@ function pickLayout(platform) {
 
 const layoutType = computed(() => pickLayout(props.platform))
 
-// Only layouts with real shoulder hardware show shoulders. PS1 exposes both
-// L1/R1 and L2/R2; other mobile layouts keep a compact L/R row.
+// Shoulder row is also used by arcade to expose retropad L/R as E/F;
+// several 6-button cabinets need those inputs on mobile.
 const showShoulders = computed(() => {
   const t = layoutType.value
-  return t === 'snes' || t === 'ps' || t === 'gba'
+  return t === 'snes' || t === 'ps' || t === 'gba' || t === 'arcade'
 })
 
 const shoulderBtns = computed(() => {
