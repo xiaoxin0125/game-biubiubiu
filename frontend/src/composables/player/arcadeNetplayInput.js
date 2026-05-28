@@ -44,9 +44,8 @@ export function buildArcadeNetplayRetroarchConfig({ maxPlayers = 4, keyMaps = {}
     const playerIndex = Number(player)
     if (!Number.isInteger(playerIndex) || playerIndex < 2 || playerIndex > limit) continue
     for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
-      if (allowed && !allowed.has(btn)) continue
-      const key = normalizeRetroarchKey(keyMap?.[btn])
-      if (key) cfg[`input_player${playerIndex}_${btn}`] = key
+      const key = allowed && !allowed.has(btn) ? 'nul' : normalizeRetroarchKey(keyMap?.[btn])
+      cfg[`input_player${playerIndex}_${btn}`] = key || 'nul'
     }
   }
 

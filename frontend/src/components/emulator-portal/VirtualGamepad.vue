@@ -204,7 +204,7 @@ const showShoulders = computed(() => {
 
 const shoulderBtns = computed(() => {
   if (!showShoulders.value) return []
-  const keys = layoutType.value === 'ps' ? ['l', 'r', 'l2', 'r2'] : ['l', 'r']
+  const keys = ['l', 'r', 'l2', 'r2']
   return keys
     .filter((k) => has(k))
     .map((k) => ({ key: k, label: labelOf(k, k.toUpperCase()) }))
@@ -685,14 +685,14 @@ function onDpadEnd(e) {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   grid-template-areas:
-    "ab bb"
-    "yb xb";
+    "arcA arcB"
+    "arcC arcD";
   gap: 10px;
 }
-.face-arcade .fbtn-b { grid-area: ab; }   /* label "A" */
-.face-arcade .fbtn-a { grid-area: bb; }   /* label "B" */
-.face-arcade .fbtn-y { grid-area: yb; }   /* label "C" */
-.face-arcade .fbtn-x { grid-area: xb; }   /* label "D" */
+.face-arcade .fbtn-b { grid-area: arcA; }   /* label "A" */
+.face-arcade .fbtn-a { grid-area: arcB; }   /* label "B" */
+.face-arcade .fbtn-y { grid-area: arcC; }   /* label "C" */
+.face-arcade .fbtn-x { grid-area: arcD; }   /* label "D" */
 
 /* Mega Drive 6-button cabinet — top row A B C, bottom row X Y Z.
    retropad→label mapping: b='A' a='B' y='C' l='X' x='Y' r='Z'. */
@@ -719,10 +719,10 @@ function onDpadEnd(e) {
   width: 140px;
   height: 70px;
   grid-template-columns: 1fr 1fr;
-  grid-template-areas: "ab bb";
+  grid-template-areas: "smsOne smsTwo";
 }
-.face-sms .fbtn-b { grid-area: ab; }
-.face-sms .fbtn-a { grid-area: bb; }
+.face-sms .fbtn-b { grid-area: smsOne; }
+.face-sms .fbtn-a { grid-area: smsTwo; }
 
 /* ===== Shoulders ===== */
 .shoulders { display: flex; gap: 10px; margin-right: 4px; }

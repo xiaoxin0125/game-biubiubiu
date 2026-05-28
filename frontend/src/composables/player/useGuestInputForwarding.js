@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, effectiveKeyboardForPlayer } from '../useInputMapping.js'
+import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, effectiveKeyboardForPlayer, normalizeKeyboardEventKey } from '../useInputMapping.js'
 import { dispatchKeyboardEvent } from '../dispatchKeyboardEvent.js'
 
 const remoteTurboLoops = new Map()
@@ -75,26 +75,7 @@ export function useGuestInputForwarding({ mapping, platform, platformButtons, ro
       if (isGuestMode.value) e.preventDefault()
       return
     }
-    const raw = e.key
-    let k
-    if (raw === 'ArrowUp') k = 'up'
-    else if (raw === 'ArrowDown') k = 'down'
-    else if (raw === 'ArrowLeft') k = 'left'
-    else if (raw === 'ArrowRight') k = 'right'
-    else if (raw === 'Enter') k = e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
-    else if (raw === 'Shift') k = e.location === 2 ? 'rshift' : 'shift'
-    else if (raw === ' ') k = 'space'
-    else if (/^[0-9]$/.test(raw)) k = raw
-    else if (raw === ';') k = 'semicolon'
-    else if (raw === '-') k = 'minus'
-    else if (raw === '=') k = 'equals'
-    else if (raw === '/') k = 'slash'
-    else if (raw === '*') k = 'multiply'
-    else if (raw === '+') k = 'add'
-    else if (raw === '.') k = 'period'
-    else k = raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase()
-
-    const button = reverseKeyMap.value[k]
+    const button = reverseKeyMap.value[normalizeKeyboardEventKey(e)]
     if (!button) return
     e.preventDefault()
     rtc.sendData({ type: 'input', action: e.type === 'keydown' ? 'down' : 'up', button })

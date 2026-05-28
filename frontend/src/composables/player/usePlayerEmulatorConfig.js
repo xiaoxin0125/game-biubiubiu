@@ -24,11 +24,13 @@ export function usePlayerEmulatorConfig({
   roomSession,
   signalMe,
   isRoomMode,
+  isTouchLayout = null,
   roomHostInputConfigSnapshot,
 }) {
   const activeCore = computed(() => platformInfo.value.core)
   const activeMaxPlayers = computed(() => {
     if (isRoomMode) return roomSession.roomMaxPlayers?.value || roomInfo.value?.effectiveMaxPlayers || platformInfo.value.maxPlayers || 1
+    if (isTouchLayout?.value) return 1
     return roomInfo.value?.effectiveMaxPlayers || romMeta.value?.effectiveMaxPlayers || platformInfo.value.maxPlayers || 1
   })
   const retroarchCoreConfig = computed(() => buildPlatformCoreConfig({

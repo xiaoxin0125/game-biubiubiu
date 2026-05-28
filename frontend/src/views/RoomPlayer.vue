@@ -153,7 +153,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
+import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
@@ -440,7 +440,7 @@ function handleHostKeyboardRemap(e) {
   const snapshotKeyboard = snapshotKeyboardMapping()
   if (!snapshotKeyboard) return false
 
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   const currentKeyboard = effectiveKeyboardForPlayer(mapping.value, 1, romMeta.value?.platform || null)
   const currentButton = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includeTurbo: true })
@@ -469,7 +469,7 @@ function handleLocalPlayer2Keyboard(e) {
   if (e.__internalInputDispatch || showInput.value || isTouchLayout.value || isRoomMode || isGuestMode.value) return false
   if (activeMaxPlayers.value < 2 || isTouchLayout.value) return false
 
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   const p2UserKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, 2, romMeta.value?.platform || null)
   const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed, { includeTurbo: true })
@@ -496,7 +496,7 @@ function handleLocalKeyboardButton(e) {
   if (e.__internalInputDispatch || showInput.value || isGuestMode.value) return false
   if (isRoomMode && !isHostMode.value) return false
 
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   const currentKeyboard = effectiveKeyboardForPlayer(mapping.value, 1, romMeta.value?.platform || null)
   const button = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includeTurbo: true })
@@ -522,7 +522,7 @@ function handleTurboKeyboard(e) {
   if (showInput.value || isGuestMode.value) return
   const snapshotKeyboard = snapshotKeyboardMapping()
   const source = snapshotKeyboard || mapping.value.keyboard || {}
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   for (const [turboButton, targetButton] of Object.entries(TURBO_BUTTON_TARGETS)) {
     if (allowed && !allowed.has(turboButton)) continue
@@ -587,28 +587,6 @@ function stopKeyboardTurboLoops() {
     if (active.direct) releaseLocalButton(active.targetButton, active.player || 1)
     else dispatchKeyboardEvent('keyup', active.targetKey, { internal: true })
   }
-}
-function normalizeDomKey(e) {
-  const raw = e.key
-  if (raw === 'ArrowUp') return 'up'
-  if (raw === 'ArrowDown') return 'down'
-  if (raw === 'ArrowLeft') return 'left'
-  if (raw === 'ArrowRight') return 'right'
-  if (raw === 'Enter') return e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
-  if (raw === 'Shift') return e.location === 2 ? 'rshift' : 'shift'
-  if (raw === ' ') return 'space'
-  if (/^Numpad[0-9]$/.test(e.code)) return `numpad${e.code.slice(6)}`
-  if (/^[0-9]$/.test(raw)) return raw
-  if (raw === ';') return 'semicolon'
-  if (raw === '-' && e.code === 'NumpadSubtract') return 'subtract'
-  if (raw === '-') return 'minus'
-  if (raw === '=') return 'equals'
-  if (raw === '/') return e.code === 'NumpadDivide' ? 'numdivide' : 'slash'
-  if (raw === '*') return e.code === 'NumpadMultiply' ? 'nummultiply' : 'multiply'
-  if (raw === '+') return 'add'
-  if (raw === '.' && e.code === 'NumpadDecimal') return 'numpaddecimal'
-  if (raw === '.') return 'period'
-  return normalizeRetroarchKey(raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase())
 }
 function goBack() { router.push('/rooms') }
 async function switchVersion(v) {

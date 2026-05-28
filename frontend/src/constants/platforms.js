@@ -13,19 +13,10 @@ const BTN_GB    = [...DPAD, 'a', 'b', 'start', 'select']
 const BTN_GBA   = [...DPAD, 'a', 'b', 'l', 'r', 'start', 'select']
 const BTN_SNES  = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
 const BTN_MD    = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
-const BTN_PSX   = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'l3', 'r3', 'start', 'select']
+const BTN_PSX   = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'start', 'select']
 const BTN_ARCADE = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
 const BTN_SIMPLE = [...DPAD, 'a', 'b', 'start']
-const BTN_TURBO_FACE = ['aa', 'bb', 'xx', 'yy']
-const BTN_TURBO_SHOULDER = ['ll', 'rr', 'l2l2', 'r2r2']
-const withTurbo = (buttons) => [
-  ...buttons,
-  ...BTN_TURBO_FACE.filter((key) => buttons.includes(key.slice(0, key.length / 2))),
-  ...BTN_TURBO_SHOULDER.filter((key) => {
-    const target = key === 'l2l2' ? 'l2' : key === 'r2r2' ? 'r2' : key[0]
-    return buttons.includes(target)
-  }),
-]
+const withTurbo = (buttons) => [...buttons]
 
 export const platforms = {
   arcade: {
@@ -241,19 +232,19 @@ const BUTTON_LABELS = {
   //   retropad x → game's D,  retropad y → game's C
   // Show labels that match what the game actually sees, so users binding keys
   // aren't surprised by "A" triggering B.
-  arcade:    { a: 'B', b: 'A', x: 'D', y: 'C', l: 'E', r: 'F', aa: 'BB', bb: 'AA', xx: 'DD', yy: 'CC', ll: 'EE', rr: 'FF' },
+  arcade:    { a: 'B', b: 'A', x: 'D', y: 'C', l: 'E', r: 'F' },
 
   // Sega Genesis / Mega Drive — genesis_plus_gx core maps retropad:
   //   b→A, a→B, y→C, x→Y, l→X, r→Z   (retropad_b is the "primary" action)
-  megadrive: { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z', aa: 'BB', bb: 'AA', xx: 'YY', yy: 'CC', ll: 'XX', rr: 'ZZ' },
-  genesis:   { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z', aa: 'BB', bb: 'AA', xx: 'YY', yy: 'CC', ll: 'XX', rr: 'ZZ' },
+  megadrive: { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z' },
+  genesis:   { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z' },
 
   // Sega Master System / Game Gear — retropad_b is Button 1 (primary)
-  sms:       { a: '2', b: '1', aa: '22', bb: '11' },
-  gamegear:  { a: '2', b: '1', aa: '22', bb: '11' },
+  sms:       { a: '2', b: '1' },
+  gamegear:  { a: '2', b: '1' },
 
   // PlayStation — retropad_a → ◯, retropad_b → ✕ (matches physical layout)
-  psx:       { a: '◯', b: '✕', x: '△', y: '□', l: 'L1', r: 'R1', l2: 'L2', r2: 'R2', l3: 'L3', r3: 'R3', aa: '◯◯', bb: '✕✕', xx: '△△', yy: '□□', ll: 'L1L1', rr: 'R1R1', l2l2: 'L2L2', r2r2: 'R2R2' },
+  psx:       { a: '◯', b: '✕', x: '△', y: '□', l: 'L1', r: 'R1', l2: 'L2', r2: 'R2' },
 
   // NES/SNES/GB/GBC/GBA/FC/SFC/FDS intentionally unlisted → they already ship
   // as A/B (+X/Y/L/R for SFC/SNES/GBA) which is the native hardware labeling.

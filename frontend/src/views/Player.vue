@@ -102,7 +102,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeRetroarchKey } from '../composables/useInputMapping.js'
+import { useInputMapping, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
@@ -128,7 +128,6 @@ const soloPeer = ref({ isHost: true })
 const roomHostInputConfigSnapshot = ref(null)
 const portalRef = ref(null)
 const booted = ref(false)
-const keyboardTurboLoops = new Map()
 
 const {
   showRotateHint,
@@ -214,17 +213,29 @@ function openInputSettings() {
 }
 
 const gamepadButtonInterceptor = () => false
-const soloGamepadPlayer = computed(() => activeMaxPlayers.value >= 2 ? 2 : 1)
+const soloGamepadPlayer = computed(() => (isTouchLayout.value || activeMaxPlayers.value < 2) ? 1 : 2)
 const resolveGamepadPlayer = (slot) => slot === 1 ? soloGamepadPlayer.value : null
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
+const p2RuntimeKeyboard = computed(() => buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value))
+const dispatchLocalButton = (type, button, player = 1) => {
+  if (player === 2) {
+    if (type === 'keydown') pressLocalButton(button, 2)
+    else releaseLocalButton(button, 2)
+    const key = p2RuntimeKeyboard.value?.[button]
+    if (key) dispatchKeyboardEvent(type, key, { internal: true })
+    return
+  }
+  if (type === 'keydown') pressLocalButton(button, player)
+  else releaseLocalButton(button, player)
+}
 const pressSoloGamepadButton = (button) => pressLocalButton(button, 1)
 const releaseSoloGamepadButton = (button) => releaseLocalButton(button, 1)
 useGamepads({
   mapping,
   onButton: gamepadButtonInterceptor,
-  pressButton: (button, player = 1) => pressLocalButton(button, player),
-  releaseButton: (button, player = 1) => releaseLocalButton(button, player),
+  pressButton: (button, player = 1) => dispatchLocalButton('keydown', button, player),
+  releaseButton: (button, player = 1) => dispatchLocalButton('keyup', button, player),
   maxLocalPlayers: computed(() => 1),
   playerResolver: resolveGamepadPlayer,
   platformButtons: currentPlatformButtons,
@@ -244,17 +255,14 @@ function onFullscreen() { portalRef.value?.toggleFullscreen() }
 function onKeyDown(e) {
   if (e.key === 'Escape' && !document.fullscreenElement) goBack()
   if (handleLocalPlayer2Keyboard(e)) return
-  if (handleLocalKeyboardButton(e)) return
-  handleTurboKeyboard(e)
+  handleLocalKeyboardButton(e)
 }
 function onKeyUp(e) {
   if (handleLocalPlayer2Keyboard(e)) return
-  if (handleLocalKeyboardButton(e)) return
-  handleTurboKeyboard(e)
+  handleLocalKeyboardButton(e)
 }
-function inputButtonFromConfigKey(config, key, allowed = null, { includeTurbo = false } = {}) {
-  const defs = includeTurbo ? BUTTON_DEFS : RETROPAD_BUTTON_DEFS
-  for (const { key: button } of defs) {
+function inputButtonFromConfigKey(config, key, allowed = null) {
+  for (const { key: button } of RETROPAD_BUTTON_DEFS) {
     if (allowed && !allowed.has(button)) continue
     if (config?.[button] === key) return button
   }
@@ -265,121 +273,48 @@ function handleLocalPlayer2Keyboard(e) {
   if (e.__internalInputDispatch || showInput.value || isTouchLayout.value) return false
   if (activeMaxPlayers.value < 2) return false
 
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   const p2UserKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, 2, romMeta.value?.platform || null)
-  const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed, { includeTurbo: true })
+  const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed)
   if (!button) return false
 
-  const p2RuntimeKeyboard = buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value)
-  const action = e.type === 'keydown' ? 'down' : 'up'
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
-  const targetButton = turboTarget || button
-  const runtimeKey = p2RuntimeKeyboard[targetButton]
+  const runtimeKey = p2RuntimeKeyboard.value?.[button]
   if (!runtimeKey || runtimeKey === 'nul') return false
+
+  if (key === runtimeKey) {
+    dispatchLocalButton(e.type, button, 2)
+    return false
+  }
 
   e.preventDefault()
   e.stopImmediatePropagation()
-  if (turboTarget) dispatchKeyboardTurbo(`p2:${button}`, targetButton, action, {
-    ...p2RuntimeKeyboard,
-    [button]: p2UserKeyboard[button],
-  })
-  else dispatchKeyboardEvent(e.type, runtimeKey, { internal: true })
+  dispatchLocalButton(e.type, button, 2)
   return true
 }
 
 function handleLocalKeyboardButton(e) {
   if (e.__internalInputDispatch || showInput.value) return false
 
-  const key = normalizeDomKey(e)
+  const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
+  if (!isTouchLayout.value && activeMaxPlayers.value >= 2) {
+    const p2UserKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, 2, romMeta.value?.platform || null)
+    if (inputButtonFromConfigKey(p2UserKeyboard, key, allowed)) return false
+  }
   const currentKeyboard = effectiveKeyboardForPlayer(mapping.value, 1, romMeta.value?.platform || null)
-  const button = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includeTurbo: true })
+  const button = inputButtonFromConfigKey(currentKeyboard, key, allowed)
   if (!button) return false
 
-  const action = e.type === 'keydown' ? 'down' : 'up'
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
-  const targetButton = turboTarget || button
-  const runtimeKeyboard = player1RuntimeKeyboard.value
+  const runtimeKey = player1RuntimeKeyboard.value?.[button]
+  if (!runtimeKey || runtimeKey === 'nul') return true
 
   e.preventDefault()
   e.stopImmediatePropagation()
-  if (turboTarget) dispatchKeyboardTurbo(button, targetButton, action, runtimeKeyboard)
-  else {
-    const runtimeKey = runtimeKeyboard?.[targetButton]
-    if (!runtimeKey || runtimeKey === 'nul') return true
-    dispatchKeyboardEvent(e.type, runtimeKey, { internal: true })
-  }
+  dispatchKeyboardEvent(e.type, runtimeKey, { internal: true })
   return true
 }
 
-function handleTurboKeyboard(e) {
-  if (showInput.value) return
-  const source = mapping.value.keyboard || {}
-  const key = normalizeDomKey(e)
-  const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
-  for (const [turboButton, targetButton] of Object.entries(TURBO_BUTTON_TARGETS)) {
-    if (allowed && !allowed.has(turboButton)) continue
-    if (source[turboButton] !== key) continue
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    dispatchKeyboardTurbo(turboButton, targetButton, e.type === 'keydown' ? 'down' : 'up', source)
-    return
-  }
-}
-function dispatchKeyboardTurbo(turboButton, targetButton, action, source) {
-  const targetKey = source?.[targetButton]
-  const sourceKey = source?.[turboButton]
-  if (!targetKey || targetKey === 'nul' || targetKey === sourceKey) return
-
-  if (action === 'down') {
-    if (keyboardTurboLoops.has(turboButton)) return
-    let down = true
-    dispatchKeyboardEvent('keydown', targetKey, { internal: true })
-    const loop = setInterval(() => {
-      down = !down
-      dispatchKeyboardEvent(down ? 'keydown' : 'keyup', targetKey, { internal: true })
-    }, TURBO_FIRE_MS)
-    keyboardTurboLoops.set(turboButton, { loop, targetKey })
-    return
-  }
-
-  const active = keyboardTurboLoops.get(turboButton)
-  if (active) {
-    clearInterval(active.loop)
-    keyboardTurboLoops.delete(turboButton)
-  }
-  dispatchKeyboardEvent('keyup', targetKey, { internal: true })
-}
-function stopKeyboardTurboLoops() {
-  for (const [button, active] of keyboardTurboLoops.entries()) {
-    clearInterval(active.loop)
-    keyboardTurboLoops.delete(button)
-    dispatchKeyboardEvent('keyup', active.targetKey, { internal: true })
-  }
-}
-function normalizeDomKey(e) {
-  const raw = e.key
-  if (raw === 'ArrowUp') return 'up'
-  if (raw === 'ArrowDown') return 'down'
-  if (raw === 'ArrowLeft') return 'left'
-  if (raw === 'ArrowRight') return 'right'
-  if (raw === 'Enter') return e.code === 'NumpadEnter' ? 'kp_enter' : 'enter'
-  if (raw === 'Shift') return e.location === 2 ? 'rshift' : 'shift'
-  if (raw === ' ') return 'space'
-  if (/^Numpad[0-9]$/.test(e.code)) return `numpad${e.code.slice(6)}`
-  if (/^[0-9]$/.test(raw)) return raw
-  if (raw === ';') return 'semicolon'
-  if (raw === '-' && e.code === 'NumpadSubtract') return 'subtract'
-  if (raw === '-') return 'minus'
-  if (raw === '=') return 'equals'
-  if (raw === '/') return e.code === 'NumpadDivide' ? 'numdivide' : 'slash'
-  if (raw === '*') return e.code === 'NumpadMultiply' ? 'nummultiply' : 'multiply'
-  if (raw === '+') return 'add'
-  if (raw === '.' && e.code === 'NumpadDecimal') return 'numpaddecimal'
-  if (raw === '.') return 'period'
-  return normalizeRetroarchKey(raw.length === 1 ? raw.toLowerCase() : raw.toLowerCase())
-}
 function goBack() { router.push('/') }
 async function switchVersion(v) {
   versionMenuOpen.value = false
@@ -407,7 +342,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('keyup', onKeyUp, true)
-  stopKeyboardTurboLoops()
   stopViewport()
 })
 </script>
