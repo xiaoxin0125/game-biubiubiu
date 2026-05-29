@@ -1,3 +1,6 @@
+import { PLATFORM_ROM_REGISTRY } from '../../../shared/registry/platform-roms.js'
+import { PLATFORM_DEFAULT_MAX_PLAYERS } from '../../../shared/registry/platform-players.js'
+
 // Platform registry. Trimmed to the platforms actually played in the CN market
 // (arcade / Nintendo family / Sega family / PS1). Obscure hardware like
 // Virtual Boy, 32X, SG-1000, Neo Geo Pocket, PC Engine, Atari, Channel F,
@@ -213,24 +216,14 @@ const BUTTON_PROFILES = {
   psx:        withTurbo(BTN_PSX),
 }
 
-export const platformDefaultMaxPlayers = {
-  arcade: 4,
-  nes: 2,
-  famicom: 2,
-  fds: 2,
-  sfc: 2,
-  snes: 2,
-  gb: 1,
-  gbc: 1,
-  gba: 1,
-  megadrive: 2,
-  genesis: 2,
-  sms: 1,
-  gamegear: 1,
-  psx: 2,
-}
+export const platformDefaultMaxPlayers = PLATFORM_DEFAULT_MAX_PLAYERS
 
 for (const [id, p] of Object.entries(platforms)) {
+  const romRegistry = PLATFORM_ROM_REGISTRY[id]
+  if (romRegistry) {
+    p.fileExtensions = [...romRegistry.fileExtensions]
+    p.cores = [...romRegistry.cores]
+  }
   p.buttons = BUTTON_PROFILES[id] || BTN_NES
   p.maxPlayers = platformDefaultMaxPlayers[id] || 1
 }

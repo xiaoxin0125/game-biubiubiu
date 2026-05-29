@@ -1,4 +1,9 @@
-const MAX_ROOM_PLAYERS = 4
+import {
+  MAX_ROOM_PLAYERS,
+  PLATFORM_CORE_DEFAULT_MAX_PLAYERS,
+  PLATFORM_DEFAULT_CORES,
+  PLATFORM_DEFAULT_MAX_PLAYERS,
+} from '../shared/registry/platform-players.js'
 
 export function normalizeMaxPlayers(value) {
   if (value === null || value === undefined || value === '') return null
@@ -17,33 +22,6 @@ export function inferMaxPlayers(rom = {}) {
   if (match) return clampMaxPlayers(Number(match[1]))
   return defaultMaxPlayersForPlatformCore(rom?.platform, rom?.defaultCore)
 }
-
-const PLATFORM_DEFAULT_CORES = Object.freeze({
-  gba: 'mgba',
-})
-
-const PLATFORM_CORE_DEFAULT_MAX_PLAYERS = Object.freeze({
-  gba: {
-    mgba2: 4,
-  },
-})
-
-const PLATFORM_DEFAULT_MAX_PLAYERS = Object.freeze({
-  arcade: 4,
-  nes: 2,
-  famicom: 2,
-  fds: 2,
-  sfc: 2,
-  snes: 2,
-  gb: 1,
-  gbc: 1,
-  gba: 1,
-  megadrive: 2,
-  genesis: 2,
-  sms: 1,
-  gamegear: 1,
-  psx: 2,
-})
 
 export function defaultMaxPlayersForPlatform(platform) {
   return PLATFORM_DEFAULT_MAX_PLAYERS[platform] || 1

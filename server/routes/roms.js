@@ -12,6 +12,7 @@ import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
+import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-roms.js'
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
 
@@ -22,28 +23,7 @@ const LEGACY_UPLOAD_ROOTS = [
 ].filter(Boolean).map((root) => resolve(root))
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
 const USER_UPLOAD_QUOTA_BYTES = Number(process.env.USER_UPLOAD_QUOTA_BYTES) || 2 * 1024 * 1024 * 1024
-const ALLOWED_PLATFORMS = new Set([
-  'arcade',
-  'nes', 'famicom', 'fds', 'sfc', 'snes', 'gb', 'gbc', 'gba',
-  'megadrive', 'genesis', 'sms', 'gamegear',
-  'psx',
-])
-const PLATFORM_CORES = Object.freeze({
-  arcade: ['fbneo', 'mame2003_plus'],
-  nes: ['nestopia', 'fceumm', 'quicknes'],
-  famicom: ['nestopia', 'fceumm', 'quicknes'],
-  fds: ['nestopia', 'fceumm'],
-  sfc: ['snes9x'],
-  snes: ['snes9x'],
-  gb: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
-  gbc: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
-  gba: ['mgba', 'mgba2', 'vba_next'],
-  megadrive: ['genesis_plus_gx', 'picodrive'],
-  genesis: ['genesis_plus_gx', 'picodrive'],
-  sms: ['genesis_plus_gx', 'picodrive', 'gearsystem'],
-  gamegear: ['genesis_plus_gx', 'gearsystem'],
-  psx: ['pcsx_rearmed'],
-})
+const ALLOWED_PLATFORMS = new Set(PLATFORM_IDS)
 function normalizeDefaultCore(platform, value) {
   const core = String(value || '').trim()
   if (!core) return null

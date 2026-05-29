@@ -1,8 +1,7 @@
 import { Hono } from 'hono'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-import { customAlphabet } from 'nanoid'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
 import { rooms, roms, users, STATUS } from '../db/schema.js'
 import { requireAuth, currentUser } from '../middleware/auth.js'
@@ -12,13 +11,7 @@ import { effectiveMaxPlayersForRom } from '../rom-players.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 import { clientIp } from '../middleware/security.js'
 import { createRoomTicket } from '../room-tickets.js'
-
-const liveRoom = (extra) =>
-  extra ? and(eq(rooms.status, STATUS.normal), isNull(rooms.closedAt), extra)
-        : and(eq(rooms.status, STATUS.normal), isNull(rooms.closedAt))
-
-// 6-char alphanumeric codes, unambiguous (no 0/O/1/I/L)
-const makeCode = customAlphabet('23456789ABCDEFGHJKMNPQRSTUVWXYZ', 6)
+import { liveRoom, makeRoomCode, serializeRoom } from '../rooms/room-repository.js'
 
 const createSchema = z.object({
   name: z.string().min(1).max(60),
@@ -36,23 +29,6 @@ const roomJoinLimiter = rateLimit({
   max: 30,
   key: (c) => `${clientIp(c)}:${c.req.param('code')?.toUpperCase() || ''}`,
 })
-
-function serializeRoom(row, extras = {}) {
-  return {
-    id: row.id,
-    code: row.code,
-    name: row.name,
-    isPublic: Boolean(row.isPublic),
-    allowPlay: row.allowPlay === undefined ? true : Boolean(row.allowPlay),
-    hasPassword: !!row.passwordHash,
-    hostUserId: row.hostUserId,
-    romId: row.romId,
-    maxPlayers: extras.maxPlayers ?? null,
-    effectiveMaxPlayers: extras.effectiveMaxPlayers ?? extras.maxPlayers ?? 4,
-    createdAt: row.createdAt,
-    ...extras,
-  }
-}
 
 // List open public rooms with basic info
 roomRoutes.get('/', async (c) => {
@@ -132,7 +108,7 @@ roomRoutes.post('/', requireAuth, async (c) => {
   // try a few times in case of a code collision
   let code, inserted
   for (let i = 0; i < 5; i++) {
-    code = makeCode()
+    code = makeRoomCode()
     try {
       inserted = await insertAndFetch(rooms, {
         code,

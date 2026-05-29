@@ -8,32 +8,13 @@ import { users, roms, rooms, STATUS } from '../db/schema.js'
 import { requireAdmin, invalidateUserSessions } from '../middleware/auth.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
+import { BIOS_BY_PLATFORM, BIOS_PLATFORM_LABELS } from '../../shared/registry/platform-bios.js'
 import { audit } from '../audit.js'
 
 export const adminRoutes = new Hono()
 
 const BIOS_DIR = resolve(process.env.BIOS_DIR || 'data/bios')
-const REQUIRED_BIOS_FILES = {
-  arcade: [
-    'neogeo.zip',
-    'pgm.zip',
-    'nmk004.zip',
-    'cchip.zip',
-    'decocass.zip',
-    'isgsm.zip',
-    'midssio.zip',
-    'bubsys.zip',
-    'ym2608.zip',
-    'skns.zip',
-  ],
-  psx: ['scph5500.bin', 'scph5501.bin', 'scph5502.bin', 'scph7001.bin', 'psxonpsp660.bin'],
-  fds: ['disksys.rom'],
-}
-const BIOS_PLATFORM_LABELS = {
-  arcade: '街机',
-  psx: 'PlayStation',
-  fds: 'Famicom Disk System',
-}
+const REQUIRED_BIOS_FILES = BIOS_BY_PLATFORM
 
 function readBiosFiles(platform) {
   const safePlatform = String(platform).replace(/[^a-z0-9_-]/gi, '')

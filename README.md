@@ -1,157 +1,21 @@
 # Games Online
 
-Games Online 是一个自托管浏览器游戏厅。项目由 Vue 3 前端、Hono Node.js 后端、MySQL/Drizzle 数据层组成，提供 ROM 管理、浏览器模拟器、云存档、房间大厅、WebSocket 信令和 WebRTC 观战/联机输入。
+Games Online 是一个自托管的浏览器游戏厅，提供 ROM 管理、浏览器模拟器、云存档、房间大厅、WebSocket 信令、WebRTC 画面传输和联机输入转发。
 
-项目不包含商业 ROM。请只上传和使用你有权使用的 ROM、BIOS 和模拟器核心文件。
+项目由 Vue 3 前端、Hono Node.js 后端、MySQL/Drizzle 数据层组成。模拟器核心、BIOS、ROM 和存档都使用本地文件系统管理，不依赖外部 CDN。
 
-## 当前源码结构
+> 本项目不包含商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心文件。
 
-```text
-/www/wwwroot/game
-├── frontend/                         # Vue 3 + Vite 前端
-│   ├── src/api/                       # 前端 API 封装
-│   ├── src/components/                # 通用弹窗、顶部栏、上传、房间创建/编辑
-│   ├── src/components/emulator-portal # 模拟器容器、覆盖层、房间面板、虚拟手柄
-│   ├── src/composables/               # 认证、设置、输入、模拟器、WebRTC 等状态逻辑
-│   ├── src/composables/player/        # Player 页面拆分后的 ROM、存档、房间、视频、输入逻辑
-│   ├── src/constants/                 # 平台、核心、按钮配置
-│   ├── src/data/                      # BIOS 与核心运行配置
-│   ├── src/router/                    # 页面路由和访问控制
-│   └── src/views/                     # Gallery、MyRoms、Rooms、Player、Admin、Auth
-├── server/                            # Hono API 与 WebSocket 服务
-│   ├── db/                            # Drizzle schema、迁移、MySQL 连接、初始化管理员
-│   ├── middleware/                    # 认证、权限、CSRF、安全头、限流、错误处理
-│   ├── routes/                        # auth/roms/rooms/saves/admin/settings/bios/cores
-│   ├── index.js                       # 服务入口，启动时迁移数据库并注册路由
-│   ├── room-hub.js                    # 房间在线态、席位、聊天、信令转发
-│   ├── room-tickets.js                # 私有房间短期票据
-│   ├── rom-players.js                 # ROM 最大人数推断与限制
-│   └── storage.js                     # 数据目录越界保护
-├── data/
-│   ├── bios/                          # BIOS 文件
-│   ├── cores/                         # libretro core 的 .js/.wasm
-│   ├── uploads/                       # ROM 上传目录，运行时生成
-│   └── saves/                         # 云存档目录，运行时生成
-├── package.json                       # 根脚本和后端依赖
-├── frontend/package.json              # 前端依赖
-├── drizzle.config.js                  # Drizzle 配置
-└── README.md
-```
-
-## 源码逻辑梳理
-
-### 1. 启动链路
-
-```text
-npm start
-  -> server/index.js
-  -> runMigrations()
-  -> 清理过期 session / ticket
-  -> 注册安全中间件、API 路由、WebSocket 路由
-  -> 如果存在 frontend/dist/index.html，则托管前端构建产物
-  -> 监听 0.0.0.0:PORT
-```
-
-后端启动时会自动执行 `server/db/migrations` 下的数据库迁移。数据库为空时会创建首个管理员账号。
-
-### 2. 前端页面关系
-
-```text
-App.vue
-  -> AppHeader.vue
-  -> router-view
-      /          Gallery     公开 ROM 列表、搜索、收藏、版本选择
-      /auth      Auth        登录注册
-      /my        MyRoms      我的 ROM、上传、回收站、公开状态
-      /rooms     Rooms       房间大厅、创建/加入/编辑/关闭房间
-      /admin     Admin       用户、ROM、BIOS、站点设置
-      /play/:id  Player      模拟器、云存档、虚拟手柄、房间联机
-```
-
-路由层会拦截需要登录或管理员权限的页面。`/play/:id` 是全屏页面，不展示普通顶部栏和页脚。
-
-### 3. ROM 数据流
-
-```text
-上传 ROM
-  -> frontend UploadDialog
-  -> POST /api/roms/upload
-  -> 校验平台、大小、配额、父子版本关系、默认核心
-  -> 写入 data/uploads
-  -> 写入 roms 表
-  -> 记录审计日志
-
-浏览 ROM
-  -> Gallery 调 /api/roms/public
-  -> MyRoms 调 /api/roms/mine 和 /api/roms/trash
-  -> 版本弹窗调 /api/roms/:id/versions
-
-播放 ROM
-  -> Player 读取 ROM 元数据
-  -> usePlayerRom 下载 ROM blob
-  -> 子版本会同时挂载父 ROM 文件
-  -> Nostalgist 按指定 libretro core 启动
-```
-
-ROM 支持软删除和永久删除。软删除保留文件用于恢复；永久删除会清理 ROM 文件、相关云存档和数据库关联记录。
-
-### 4. 模拟器和输入流
-
-```text
-Player.vue
-  -> usePlayerRom         获取 ROM、BIOS、版本族
-  -> EmulatorPortal       承载模拟器画布
-  -> useEmulator          管理 Nostalgist 生命周期
-  -> useInputMapping      管理键盘/手柄映射
-  -> useGamepads          轮询物理手柄
-  -> VirtualGamepad       移动端虚拟手柄
-  -> useSaveState         云存档读写
-```
-
-单人模式下，玩家直接在本地浏览器运行模拟器。移动端显示虚拟手柄；桌面端支持键盘和 Gamepad API。
-
-### 5. 房间和联机流
-
-```text
-创建/加入房间
-  -> /api/rooms
-  -> /api/rooms/:code/join
-  -> 私有房间通过短期 roomTicket 进入 WebSocket
-
-房间在线态
-  -> /api/rooms/:code/ws
-  -> room-hub.js 维护 peer、席位、聊天和信令转发
-
-媒体和输入
-  -> 房主浏览器运行模拟器
-  -> 房主 canvas.captureStream / AudioContext 产生媒体流
-  -> WebRTC 推送给访客
-  -> 访客输入通过 DataChannel 回传房主
-  -> 房主侧映射到 P2-P4
-```
-
-房主固定为 P1。认证玩家按加入顺序分配可操作席位；游客默认观战，是否允许游客游玩由后台开关控制。
-
-### 6. 权限和安全边界
-
-- 登录态使用 HttpOnly Cookie + 数据库存储 session。
-- WebSocket 使用短期 ticket，私有房间额外使用 roomTicket。
-- 写请求经过 CSRF Origin 校验。
-- 管理接口统一要求管理员权限。
-- 上传和存档写入会做大小限制和目录越界检查。
-- 认证和房间加入有内存限流。
-- 用户、设置、认证、ROM 关键操作会写入审计日志。
-
-## 功能概览
+## 功能范围
 
 - 公开 ROM 游戏库、个人 ROM、收藏、回收站。
-- ROM 版本族：父 ROM + 子版本，适合街机 clone/variant。
-- 平台默认核心和管理员最大人数设置。
-- 浏览器内启动 libretro core。
-- 本地 BIOS 和本地 core 文件，不依赖外部 CDN。
-- 键盘、手柄、移动端虚拟手柄映射。
-- 云存档上传和读取。
-- 公开/私有房间、房间密码、房间码、聊天室。
+- ROM 父子版本：适合街机 clone、修订版、汉化版、变体版本。
+- 浏览器内运行 libretro core。
+- 本地键盘、物理手柄、移动端虚拟手柄。
+- 按用户保存输入映射配置。
+- 云存档读取和写入。
+- 公开房间、私有房间、房间密码、房间码。
+- 房间聊天室、在线席位、host/guest 状态同步。
 - WebSocket 信令 + WebRTC 画面/音频 + DataChannel 输入。
 - 管理后台：用户、ROM、BIOS、站点设置、上传开关、联机开关、游客游玩开关。
 
@@ -165,18 +29,171 @@ Player.vue
 | 实时通信 | WebSocket、WebRTC、DataChannel |
 | 运行资产 | 本地 libretro core、BIOS、上传 ROM、云存档 |
 
+## 目录结构
+
+```text
+/www/wwwroot/game
+├── frontend/                         # Vue 3 + Vite 前端
+│   ├── src/api/                       # API 客户端封装
+│   ├── src/components/                # 通用组件、弹窗、模拟器覆盖层
+│   ├── src/composables/               # 前端可复用状态和运行逻辑
+│   │   ├── input/                     # 输入按钮、键盘、手柄、存储、RetroArch 配置
+│   │   └── player/
+│   │       ├── solo/                  # 单人播放器输入、动作、生命周期
+│   │       └── room/                  # 联机播放器输入、动作、生命周期、Turbo 目标
+│   ├── src/constants/                 # 平台与核心兼容出口
+│   ├── src/data/                      # BIOS 与核心运行配置
+│   ├── src/router/                    # 路由和访问控制
+│   └── src/views/                     # 页面入口
+├── server/                            # Hono API 与 WebSocket 服务
+│   ├── db/                            # Drizzle schema、迁移、MySQL 连接
+│   ├── middleware/                    # 认证、安全头、CSRF、限流、错误处理
+│   ├── routes/                        # HTTP API 与 WS 路由入口
+│   ├── rooms/                         # 房间仓储、WS 准入、在线 store、席位和 relay 策略
+│   ├── room-hub.js                    # 房间在线态兼容入口
+│   ├── room-tickets.js                # 私有房间短期票据
+│   ├── rom-players.js                 # ROM 最大人数推断兼容入口
+│   └── storage.js                     # 数据目录越界保护
+├── shared/registry/                   # 前后端共享静态 registry
+├── data/
+│   ├── bios/                          # BIOS 文件
+│   ├── cores/                         # libretro core 的 .js/.wasm
+│   ├── uploads/                       # ROM 上传目录，运行时生成
+│   └── saves/                         # 云存档目录，运行时生成
+├── package.json                       # 根脚本和后端依赖
+├── frontend/package.json              # 前端依赖
+├── drizzle.config.js                  # Drizzle 配置
+└── README.md
+```
+
+## 模块边界
+
+### 共享 registry
+
+`shared/registry/` 只放静态事实，不承载运行时副作用。
+
+| 文件 | 作用 |
+|---|---|
+| `platform-roms.js` | 平台、ROM 扩展名、核心顺序 |
+| `platform-players.js` | 默认人数、核心人数覆盖、最大房间人数 |
+| `platform-bios.js` | BIOS 平台和 BIOS 文件清单 |
+| `input-protocol.js` | 房间输入消息格式常量 |
+| `room-protocol.js` | 房间 WS 信令事件名 |
+
+### 前端播放器
+
+`Player.vue` 和 `RoomPlayer.vue` 是页面壳和兼容入口。具体逻辑拆到 composable：
+
+```text
+单人播放器
+  Player.vue
+    -> usePlayerRom
+    -> usePlayerEmulatorConfig
+    -> useSaveState
+    -> player/solo/useLocalPlayerInput
+    -> player/solo/useSoloPlayerActions
+    -> player/solo/useSoloPlayerLifecycle
+
+联机播放器
+  RoomPlayer.vue
+    -> usePlayerRoomRuntime
+    -> useRoomSession
+    -> useRoomRtc
+    -> useGuestInputForwarding
+    -> player/room/useRoomPlayerInput
+    -> player/room/useRoomPlayerActions
+    -> player/room/useRoomPlayerLifecycle
+```
+
+### 后端房间
+
+HTTP 路由、WS 准入、在线态、席位策略、信令 relay 已拆分：
+
+| 文件 | 作用 |
+|---|---|
+| `server/routes/rooms.js` | 房间 HTTP 路由入口 |
+| `server/routes/rooms-ws.js` | WebSocket 路由入口 |
+| `server/room-hub.js` | 兼容入口，保留原导出名 |
+| `server/rooms/room-repository.js` | 房间存活条件、房间码、序列化 |
+| `server/rooms/room-ws-gate.js` | WS 准入、票据、限流、消息解析 |
+| `server/rooms/live-room-store.js` | 内存房间和 peer 存储 |
+| `server/rooms/room-seat-policy.js` | host/guest 席位、`playerIndex`、`canControl` |
+| `server/rooms/room-signal-relay.js` | `offer`、`answer`、`ice`、`chat` 转发规则 |
+| `server/rooms/room-state.js` | 房间状态和 peer 摘要 |
+
+## 主要数据流
+
+### 启动链路
+
+```text
+npm start
+  -> server/index.js
+  -> runMigrations()
+  -> cleanupExpiredSessions()
+  -> 注册安全中间件、HTTP API、WebSocket 路由
+  -> 如果存在 frontend/dist/index.html，则托管前端构建产物
+  -> 监听 0.0.0.0:PORT
+```
+
+### ROM 上传和播放
+
+```text
+上传 ROM
+  -> UploadDialog
+  -> POST /api/roms/upload
+  -> 校验平台、大小、配额、父子版本、默认核心
+  -> 写入 data/uploads
+  -> 写入 roms 表
+  -> 写入审计日志
+
+播放 ROM
+  -> Player.vue / RoomPlayer.vue
+  -> usePlayerRom 获取元数据、ROM blob、BIOS
+  -> EmulatorPortal 承载模拟器
+  -> Nostalgist 按平台核心启动
+```
+
+子版本播放时仍保持原数据形态：单 ROM 是对象，父子版本可组合为数组。
+
+### 联机房间
+
+```text
+创建/加入房间
+  -> /api/rooms
+  -> /api/rooms/:code/join
+  -> 私有房间返回短期 roomTicket
+
+进入 WebSocket
+  -> /api/rooms/:code/ws
+  -> room-ws-gate 校验 session、ws ticket、roomTicket、netplay 开关、限流
+  -> room-hub 加入在线 peer
+
+联机运行
+  -> host 浏览器运行模拟器
+  -> host 通过 WebRTC 推送画面和音频
+  -> guest 通过 DataChannel 发送输入
+  -> host 将远端输入映射到 P2-P4
+```
+
+房主固定为 P1。认证玩家按席位策略获得 P2-P4 控制权。游客默认观战，是否可控制由后台开关决定。
+
 ## 支持平台
 
-| 平台 | ROM 扩展名 | 默认/可选核心 |
-|---|---|---|
-| 街机 | `.zip` | `fbneo`、`mame2003_plus` |
-| NES / FC / FDS | `.nes`、`.unif`、`.unf`、`.fds`、`.zip` | `nestopia`、`fceumm`、`quicknes` |
-| SFC / SNES | `.smc`、`.sfc`、`.zip` | `snes9x` |
-| GB / GBC | `.gb`、`.gbc`、`.cgb`、`.sgb`、`.zip` | `mgba`、`gambatte`、`gearboy`、`tgbdual` |
-| GBA | `.gba`、`.zip` | `mgba`、`vba_next` |
-| Mega Drive / Genesis | `.md`、`.gen`、`.smd`、`.bin`、`.zip` | `genesis_plus_gx`、`picodrive` |
-| Master System / Game Gear | `.sms`、`.gg`、`.zip` | `genesis_plus_gx`、`picodrive`、`gearsystem` |
-| PlayStation | `.chd`、`.cue`、`.bin`、`.iso`、`.pbp`、`.m3u` | `pcsx_rearmed` |
+| 平台 | ROM 扩展名 | 核心顺序 | 默认人数 |
+|---|---|---|---|
+| `arcade` | `.zip` | `fbneo`、`mame2003_plus` | 4P |
+| `nes` / `famicom` | `.nes`、`.unif`、`.unf`、`.zip` | `nestopia`、`fceumm`、`quicknes` | 2P |
+| `fds` | `.fds`、`.zip` | `nestopia`、`fceumm` | 2P |
+| `sfc` / `snes` | `.smc`、`.sfc`、`.zip` | `snes9x` | 2P |
+| `gb` | `.gb`、`.zip` | `mgba`、`gambatte`、`gearboy`、`tgbdual` | 1P |
+| `gbc` | `.gb`、`.gbc`、`.cgb`、`.sgb`、`.zip` | `mgba`、`gambatte`、`gearboy`、`tgbdual` | 1P |
+| `gba` | `.gba`、`.zip` | `mgba`、`mgba2`、`vba_next` | 1P，`mgba2` 为 4P 特例 |
+| `megadrive` / `genesis` | `.md`、`.gen`、`.smd`、`.bin`、`.zip` | `genesis_plus_gx`、`picodrive` | 2P |
+| `sms` | `.sms`、`.zip` | `genesis_plus_gx`、`picodrive`、`gearsystem` | 1P |
+| `gamegear` | `.gg`、`.zip` | `genesis_plus_gx`、`gearsystem` | 1P |
+| `psx` | `.chd`、`.cue`、`.bin`、`.iso`、`.pbp`、`.m3u` | `pcsx_rearmed` | 2P，3/4P 联机启用 multitap 配置 |
+
+FDS 需要 `disksys.rom`。PSX 常用 BIOS 包括 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`。
 
 ## 环境变量
 
@@ -200,15 +217,15 @@ Player.vue
 | `BIOS_DIR` | `data/bios` | BIOS 目录 |
 | `SAVES_DIR` | `data/saves` | 云存档目录 |
 | `CORES_DIR` | `data/cores` | libretro core 目录 |
-| `VITE_API_TARGET` | `http://127.0.0.1:3000` | Vite 开发代理目标 |
+| `VITE_API_TARGET` | `http://localhost:3000` | Vite 开发代理目标 |
 
 ## 本地开发
 
 ### 1. 准备环境
 
 - Node.js `>= 20.11`，推荐 Node.js 22 LTS。
-- MySQL 8.x 或兼容版本。
 - npm 10+。
+- MySQL 8.x 或兼容版本。
 
 ### 2. 创建数据库
 
@@ -260,12 +277,12 @@ export ADMIN_PASSWORD='change-this-password'
 npm run dev
 ```
 
-开发模式会启动：
+开发地址：
 
 - API：`http://127.0.0.1:3000`
 - Web：`http://127.0.0.1:5173`
 
-## 生产部署要点
+## 生产部署
 
 ### 1. 构建
 
@@ -350,11 +367,11 @@ server {
 }
 ```
 
-房间 WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Connection`。
+WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Connection`。
 
-生产环境建议启用 HTTPS，否则部分浏览器的 WebRTC 和移动端策略可能受限。
+生产环境建议启用 HTTPS，否则部分浏览器的 WebRTC、音频和移动端策略可能受限。
 
-## 开发脚本
+## 常用命令
 
 | 命令 | 作用 |
 |---|---|
@@ -367,10 +384,31 @@ server {
 | `npm run db:import:sqlite` | 旧 SQLite 数据导入 MySQL 的辅助脚本 |
 | `npm run security:matrix` | 权限矩阵检查脚本 |
 
-## 运维检查
+## 验证命令
+
+```bash
+npm --workspace frontend run build
+
+node --check server/routes/rooms.js
+node --check server/routes/rooms-ws.js
+node --check server/room-hub.js
+node --check server/rooms/room-ws-gate.js
+node --check server/rooms/room-seat-policy.js
+node --check server/rooms/room-signal-relay.js
+node --check shared/registry/platform-roms.js
+node --check shared/registry/platform-players.js
+node --check shared/registry/platform-bios.js
+```
+
+运行健康检查：
 
 ```bash
 curl http://127.0.0.1:3000/api/health
+```
+
+## 运维检查
+
+```bash
 systemctl status games-online
 journalctl -u games-online -n 100 --no-pager
 nginx -t
@@ -398,48 +436,27 @@ sudo tar -czf games_data_$(date +%F).tar.gz -C /www/wwwroot/game data
 
 ### 首次管理员密码忘记了怎么办？
 
-`ADMIN_PASSWORD` 只在数据库为空时生效。数据库已经初始化后，修改环境变量不会覆盖已有管理员。需要通过已有管理员改密，或备份后直接处理数据库用户记录。
+项目只在数据库为空时创建首个管理员。忘记密码后，需要通过数据库修改管理员密码哈希，或在确认没有重要数据后重建数据库并重新初始化。
 
-### 上传大 ROM 失败
+### 上传 ROM 后不能运行怎么办？
 
-同时检查：
+按顺序检查：
 
-- `MAX_UPLOAD_BYTES`
-- Nginx `client_max_body_size`
-- 面板或 CDN 上传限制
-- `data/uploads` 写权限
+1. 平台是否选对。
+2. 对应 core 的 `.js` 和 `.wasm` 是否都在 `data/cores`。
+3. BIOS 平台是否缺文件，例如 FDS、PSX、部分街机 BIOS。
+4. 浏览器控制台是否有 core 下载、CORS、音频或 WebAssembly 错误。
 
-### 房间能进但没有画面
+### 房间能进入但没有画面怎么办？
 
-重点检查：
+按顺序检查：
 
-- Nginx 是否透传 WebSocket。
-- 是否使用 HTTPS。
-- 房主是否真正进入游戏并完成模拟器启动。
-- 双方网络是否能 WebRTC 打洞。
+1. 生产站点是否使用 HTTPS。
+2. Nginx 是否正确透传 WebSocket Upgrade。
+3. 后台是否开启联机功能。
+4. 房主是否已经成功启动模拟器。
+5. 浏览器是否阻止了自动播放音频，访客可手动取消静音。
 
-当前源码内置公共 STUN：`stun.l.google.com:19302`、`stun.cloudflare.com:3478`。没有外置 TURN 配置项，复杂 NAT 环境下连接成功率会受影响。
+### 游客为什么不能控制？
 
-### 某个平台无法启动
-
-检查对应平台的：
-
-- ROM 扩展名。
-- `data/cores` 中 core `.js` / `.wasm` 是否存在。
-- `data/bios` 中 BIOS 是否存在。
-- 浏览器控制台和后端日志。
-
-## 源码维护评价
-
-当前代码已经完成了从页面、接口、数据表到实时房间的完整闭环。主要优点是模块边界清楚、运行资产本地化、权限控制覆盖较完整、房间链路拆分合理。主要短板是 Player 页面仍然偏重，WebRTC/TURN 配置还不够工程化，自动化测试覆盖不足。
-
-源码评分：`82 / 100`。
-
-| 维度 | 评分 | 说明 |
-|---|---:|---|
-| 架构清晰度 | 84 | 前后端边界清楚，Player 已拆出多个组合逻辑，但页面仍偏大 |
-| 功能完整度 | 88 | ROM、存档、后台、房间、输入链路完整 |
-| 安全性 | 82 | Cookie、CSRF、权限、限流、目录保护都有覆盖，仍缺少更系统的安全测试 |
-| 可维护性 | 78 | 常用逻辑已模块化，仍有部分大文件和复杂状态链路 |
-| 部署友好度 | 84 | 自动迁移、构建托管、环境变量清晰，但 TURN/观测能力还有提升空间 |
-| 测试保障 | 60 | 当前更依赖人工验证，自动化测试不足 |
+游客默认观战。需要管理员在后台开启游客游玩开关，且房间允许游玩，游客才会被分配可控制席位。

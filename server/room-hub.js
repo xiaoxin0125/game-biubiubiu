@@ -10,26 +10,13 @@
 
 import { nanoid } from 'nanoid'
 import { clampMaxPlayers } from './rom-players.js'
-
-const MAX_PEERS_PER_ROOM = 8
-
-// roomCode → { code, hostUserId, peers: Map<peerId, Peer>, chatHistory: [...] }
-const rooms = new Map()
-
-function send(ws, msg) {
-  try { ws.send(JSON.stringify(msg)) } catch {}
-}
-
-function roomState(room) {
-  return {
-    allowPlay: room.allowPlay,
-    maxPlayers: room.maxPlayers ?? null,
-    effectiveMaxPlayers: clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers),
-  }
-}
+import { deleteLiveRoom, getLiveRoom, liveRoomCodes, liveRooms, MAX_PEERS_PER_ROOM, send, setLiveRoom } from './rooms/live-room-store.js'
+import { roomState, summary } from './rooms/room-state.js'
+import { recalculateControlSeats } from './rooms/room-seat-policy.js'
+import { applyChatMessage, buildSignalForward } from './rooms/room-signal-relay.js'
 
 export function ensureRoom(code, row) {
-  let r = rooms.get(code)
+  let r = getLiveRoom(code)
   const effectiveMaxPlayers = clampMaxPlayers(row.effectiveMaxPlayers ?? row.maxPlayers)
   if (!r) {
     r = {
@@ -43,7 +30,7 @@ export function ensureRoom(code, row) {
       peers: new Map(),
       chatHistory: [],
     }
-    rooms.set(code, r)
+    setLiveRoom(code, r)
   } else {
     r.hostUserId = row.hostUserId
     r.allowPlay = row.allowPlay !== false
@@ -57,14 +44,14 @@ export function ensureRoom(code, row) {
 }
 
 export function isHostOnline(code) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return false
   for (const p of room.peers.values()) if (p.isHost) return true
   return false
 }
 
 export function addPeer(code, { user, ws, clientId = null }) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return null
 
   // Authed users: dedupe only the same browser tab/session instance. This keeps
@@ -119,7 +106,7 @@ export function addPeer(code, { user, ws, clientId = null }) {
 }
 
 export function removePeer(code, peerId, { keepRoom = false } = {}) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return
   const gone = room.peers.get(peerId)
   if (!gone) return
@@ -145,25 +132,25 @@ export function removePeer(code, peerId, { keepRoom = false } = {}) {
   // Drop the in-memory entry once everyone is gone. The DB record is kept
   // alive — host or admin must explicitly close the room from the UI. During
   // refresh dedupe, keep the transient shell so the replacement peer can join.
-  if (!keepRoom && room.peers.size === 0) rooms.delete(code)
+  if (!keepRoom && room.peers.size === 0) deleteLiveRoom(code)
 }
 
 export function activeRoomCodes() {
-  return [...rooms.keys()]
+  return liveRoomCodes()
 }
 
 export function broadcastRoomClosed(code, { reason = 'room-closed' } = {}) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return
   for (const peer of room.peers.values()) {
     send(peer.ws, { type: 'room-closed', reason })
     try { peer.ws.close(4001, reason) } catch {}
   }
-  rooms.delete(code)
+  deleteLiveRoom(code)
 }
 
 export function updateRoomPermissions(code, { allowPlay } = {}) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return
   if (typeof allowPlay === 'boolean') room.allowPlay = allowPlay
   recalculateControlSeats(room)
@@ -171,7 +158,7 @@ export function updateRoomPermissions(code, { allowPlay } = {}) {
 }
 
 export function updateGuestPlayPermissions(allowGuestControl = false) {
-  for (const room of rooms.values()) {
+  for (const room of liveRooms()) {
     room.allowGuestControl = allowGuestControl === true
     recalculateControlSeats(room)
     broadcastPeersUpdated(room)
@@ -181,18 +168,15 @@ export function updateGuestPlayPermissions(allowGuestControl = false) {
 // Dispatch any inbound message from `fromPeerId`. Recognizes a small signaling
 // vocabulary (offer/answer/ice directed to a specific peer, chat broadcast).
 export function relay(code, fromPeerId, msg) {
-  const room = rooms.get(code)
+  const room = getLiveRoom(code)
   if (!room) return
   const from = room.peers.get(fromPeerId)
   if (!from) return
 
   switch (msg.type) {
     case 'chat': {
-      const text = String(msg.text || '').slice(0, 500)
-      if (!text) return
-      const entry = { from: from.id, fromName: from.username, text, at: Date.now() }
-      room.chatHistory.push(entry)
-      if (room.chatHistory.length > 200) room.chatHistory.shift()
+      const entry = applyChatMessage(room, from, msg)
+      if (!entry) return
       for (const peer of room.peers.values()) {
         send(peer.ws, { type: 'chat', ...entry })
       }
@@ -201,14 +185,9 @@ export function relay(code, fromPeerId, msg) {
     case 'offer':
     case 'answer':
     case 'ice': {
-      const target = room.peers.get(msg.to)
-      if (!target) return
-      if (msg.type === 'offer' && (!from.isHost || target.isHost)) return
-      if (msg.type === 'answer' && (from.isHost || !target.isHost)) return
-      if (msg.type === 'ice' && !from.isHost && !target.isHost) return
-      const fwd = { ...msg, from: from.id }
-      delete fwd.to
-      send(target.ws, fwd)
+      const fwd = buildSignalForward(room, from, msg)
+      if (!fwd) return
+      send(fwd.target.ws, fwd.message)
       return
     }
     default:
@@ -216,76 +195,9 @@ export function relay(code, fromPeerId, msg) {
   }
 }
 
-function getPlayerIndex(room, isHost) {
-  if (isHost) return 1
-  const max = clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers)
-  for (let seat = 2; seat <= max; seat++) {
-    let taken = false
-    for (const peer of room.peers.values()) {
-      if (!peer.isHost && peer.playerIndex === seat) {
-        taken = true
-        break
-      }
-    }
-    if (!taken) return seat
-  }
-  return null
-}
-
-function recalculateControlSeats(room) {
-  normalizeArcadeHostSeat(room)
-
-  const max = clampMaxPlayers(room.effectiveMaxPlayers ?? room.maxPlayers)
-  for (const peer of room.peers.values()) {
-    if (peer.isHost) {
-      peer.canControl = true
-      peer.playerIndex = 1
-    }
-  }
-
-  let nextSeat = 2
-  for (const peer of room.peers.values()) {
-    if (peer.isHost) continue
-
-    const controlEligible = room.allowPlay && nextSeat <= max && (room.allowGuestControl || !peer.isGuest)
-    if (controlEligible) {
-      peer.canControl = true
-      peer.playerIndex = nextSeat++
-    } else {
-      peer.canControl = false
-      peer.playerIndex = null
-    }
-  }
-}
-
-function normalizeArcadeHostSeat(room) {
-  if (room.platform !== 'arcade') return
-
-  const hosts = [...room.peers.values()].filter((peer) => peer.isHost)
-  if (hosts.length > 1) {
-    for (const peer of hosts.slice(1)) peer.isHost = false
-  }
-  if (hosts.length) return
-
-  const fallbackHost = [...room.peers.values()].find((peer) => peer.userId != null && peer.userId === room.hostUserId)
-  if (fallbackHost) fallbackHost.isHost = true
-}
-
 function broadcastPeersUpdated(room) {
   const peers = [...room.peers.values()].map(summary)
   for (const peer of room.peers.values()) {
     send(peer.ws, { type: 'peers-updated', peers, room: roomState(room) })
-  }
-}
-
-function summary(peer) {
-  return {
-    id: peer.id,
-    userId: peer.userId,
-    username: peer.username,
-    isHost: peer.isHost,
-    isGuest: !!peer.isGuest,
-    playerIndex: peer.playerIndex,
-    canControl: !!peer.canControl,
   }
 }
