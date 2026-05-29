@@ -7,11 +7,64 @@
 //        exposing the incoming stream via onRemoteStream and DC msgs via
 //        onDataMessage.
 
+const DEFAULT_STUN_URLS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun.cloudflare.com:3478',
+]
+
+function splitIceUrls(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function sanitizeIceServer(server) {
+  const urls = Array.isArray(server?.urls)
+    ? server.urls.map((item) => String(item || '').trim()).filter(Boolean)
+    : String(server?.urls || '').trim()
+  if (!urls || (Array.isArray(urls) && urls.length === 0)) return null
+  const out = { urls }
+  if (server.username) out.username = String(server.username)
+  if (server.credential) out.credential = String(server.credential)
+  if (server.credentialType) out.credentialType = String(server.credentialType)
+  return out
+}
+
+function parseCustomIceServers(value) {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map(sanitizeIceServer).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function buildIceServers() {
+  const customServers = parseCustomIceServers(import.meta.env.VITE_WEBRTC_ICE_SERVERS)
+  if (customServers.length) return customServers
+
+  const stunUrls = splitIceUrls(import.meta.env.VITE_WEBRTC_STUN_URLS)
+  const turnUrls = splitIceUrls(import.meta.env.VITE_WEBRTC_TURN_URLS)
+  const servers = [{ urls: stunUrls.length ? stunUrls : DEFAULT_STUN_URLS }]
+
+  if (turnUrls.length) {
+    const turnServer = { urls: turnUrls }
+    const username = String(import.meta.env.VITE_WEBRTC_TURN_USERNAME || '').trim()
+    const credential = String(import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL || '').trim()
+    if (username) turnServer.username = username
+    if (credential) turnServer.credential = credential
+    servers.push(turnServer)
+  }
+
+  return servers
+}
+
 const ICE_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  ],
+  iceServers: buildIceServers(),
+  iceTransportPolicy: import.meta.env.VITE_WEBRTC_FORCE_RELAY === '1' ? 'relay' : 'all',
 }
 
 export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange }) {

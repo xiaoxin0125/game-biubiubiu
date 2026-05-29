@@ -217,6 +217,12 @@ FDS 需要 `disksys.rom`。PSX 常用 BIOS 包括 `scph5500.bin`、`scph5501.bin
 | `BIOS_DIR` | `data/bios` | BIOS 目录 |
 | `SAVES_DIR` | `data/saves` | 云存档目录 |
 | `CORES_DIR` | `data/cores` | libretro core 目录 |
+| `VITE_WEBRTC_STUN_URLS` | `stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478` | 前端构建时写入的 WebRTC STUN 地址，逗号分隔 |
+| `VITE_WEBRTC_TURN_URLS` | 空 | 前端构建时写入的 WebRTC TURN 地址，逗号分隔；跨网络稳定联机需要配置 |
+| `VITE_WEBRTC_TURN_USERNAME` | 空 | TURN 用户名 |
+| `VITE_WEBRTC_TURN_CREDENTIAL` | 空 | TURN 密码或凭据 |
+| `VITE_WEBRTC_FORCE_RELAY` | `0` | 设为 `1` 时只走 TURN relay，适合验证中继是否生效 |
+| `VITE_WEBRTC_ICE_SERVERS` | 空 | ICE servers JSON 数组；设置后覆盖上面的 STUN/TURN 拆分变量 |
 | `VITE_API_TARGET` | `http://localhost:3000` | Vite 开发代理目标 |
 
 ## 本地开发
@@ -371,6 +377,69 @@ WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Co
 
 生产环境建议启用 HTTPS，否则部分浏览器的 WebRTC、音频和移动端策略可能受限。
 
+### 4. WebRTC TURN / NAT 端口
+
+跨网络联机依赖 WebRTC ICE。只有 STUN 时，同网通常可用，但跨运营商 NAT、对称 NAT 或严格防火墙时可能一直停在“握手中”。生产环境建议同时部署 TURN。
+
+前端构建时需要写入 TURN 地址：
+
+```bash
+# frontend/.env.production
+VITE_WEBRTC_TURN_URLS=turn:公网IP:14276?transport=udp,turn:公网IP:14276?transport=tcp
+VITE_WEBRTC_TURN_USERNAME=你的TURN用户名
+VITE_WEBRTC_TURN_CREDENTIAL=你的TURN密码
+```
+
+coturn 受限 NAT 五端口示例，适合只能开放 `14275-14279` 的机器：
+
+```text
+listening-port=14276
+listening-ip=内网IP
+relay-ip=内网IP
+external-ip=公网IP/内网IP
+realm=games-biubiubiu
+server-name=games-biubiubiu
+fingerprint
+lt-cred-mech
+user=你的TURN用户名:你的TURN密码
+min-port=14277
+max-port=14279
+no-multicast-peers
+no-loopback-peers
+stale-nonce=600
+no-cli
+no-tls
+no-dtls
+log-file=stdout
+simple-log
+```
+
+NAT 或上级防火墙需要转发：
+
+```text
+外部 14276/tcp -> 内网IP:14276/tcp
+外部 14276/udp -> 内网IP:14276/udp
+外部 14277-14279/tcp -> 内网IP:14277-14279/tcp
+外部 14277-14279/udp -> 内网IP:14277-14279/udp
+```
+
+端口分工：
+
+| 用途 | 端口 |
+|---|---|
+| TURN 入口 | `14276/tcp`、`14276/udp` |
+| TURN relay | `14277-14279/tcp`、`14277-14279/udp` |
+
+如果 `14275/tcp` 被宝塔面板或其他管理服务占用，不要把它分配给 TURN。TURN 仍可只使用 `14276-14279`，但 relay 端口只有 3 个，并发中继能力有限；多人、多房间跨网时可能端口耗尽。
+
+修改 coturn 配置或前端 `.env.production` 后，需要重新构建前端并重启服务：
+
+```bash
+cd /www/wwwroot/game
+npm run build
+sudo systemctl restart games-biubiubiu
+```
+
 ## 常用命令
 
 | 命令 | 作用 |
@@ -456,6 +525,18 @@ sudo tar -czf games_data_$(date +%F).tar.gz -C /www/wwwroot/game data
 3. 后台是否开启联机功能。
 4. 房主是否已经成功启动模拟器。
 5. 浏览器是否阻止了自动播放音频，访客可手动取消静音。
+
+### 不同网络加入房间一直显示“握手中”怎么办？
+
+通常是 WebRTC 只配置了 STUN，跨运营商 NAT、对称 NAT 或严格防火墙无法打洞。处理顺序：
+
+1. 部署 coturn，并在前端构建环境写入 `VITE_WEBRTC_TURN_URLS`、`VITE_WEBRTC_TURN_USERNAME`、`VITE_WEBRTC_TURN_CREDENTIAL`。
+2. NAT 或上级防火墙转发 TURN 入口端口和 relay 端口。
+3. 修改前端 `.env.production` 后重新构建前端。
+4. 重启服务后，用跨网络手机热点实际加入房间验证。
+5. 临时设置 `VITE_WEBRTC_FORCE_RELAY=1` 可强制只走 TURN，用于验证中继链路是否真的可用。
+
+只开放少量 relay 端口时，能解决跨 NAT 连接问题，但并发能力会明显受限。
 
 ### 游客为什么不能控制？
 

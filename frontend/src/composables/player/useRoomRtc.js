@@ -31,9 +31,11 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPee
       }
     },
     onStateChange: (state) => {
-      if (state === 'connected' || state === 'dc:open') setConnectionStatus('已连接')
-      else if (state === 'connecting' || state === 'new') setConnectionStatus('握手中…')
-      else if (state === 'failed' || state === 'closed') setConnectionStatus('连接断开')
+      if (state === 'connected' || state === 'dc:open' || state === 'ice:connected' || state === 'ice:completed') setConnectionStatus('已连接')
+      else if (state === 'connecting' || state === 'new' || state === 'ice:checking' || state === 'ice:new') setConnectionStatus('握手中…')
+      else if (state === 'failed' || state === 'ice:failed') setConnectionStatus('连接失败：跨网络需要 TURN 中继')
+      else if (state === 'disconnected' || state === 'ice:disconnected') setConnectionStatus('连接中断，正在重试…')
+      else if (state === 'closed' || state === 'ice:closed' || state === 'dc:close') setConnectionStatus('连接断开')
     },
   })
 
