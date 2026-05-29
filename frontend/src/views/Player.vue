@@ -91,9 +91,8 @@
       v-if="showInput && !isTouchLayout"
       :platform="romMeta?.platform"
       :local-players="Math.min(2, activeMaxPlayers)"
-      :gamepad-players="1"
-      gamepad-binding-note="当前只使用本机唯一手柄，默认控制 P2；其他手柄不会参与控制。"
-      room-mode
+      :gamepad-players="Math.min(2, activeMaxPlayers)"
+      gamepad-binding-note="连接两个手柄时分别控制 P1/P2；只有一个手柄时，单人游戏控制 P1，双人游戏默认控制 P2。左摇杆和十字键都可控制方向。"
       @close="closeInputSettings"
     />
   </div>

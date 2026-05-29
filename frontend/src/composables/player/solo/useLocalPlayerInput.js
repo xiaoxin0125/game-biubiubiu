@@ -24,7 +24,10 @@ export function useLocalPlayerInput({
   const currentTurboTargets = computed(() => isTouchLayout.value ? {} : turboButtonsForPlatform(romMeta.value?.platform))
   const keyboardTurboLoops = new Map()
   const soloGamepadPlayer = computed(() => (isTouchLayout.value || activeMaxPlayers.value < 2) ? 1 : 2)
-  const resolveGamepadPlayer = (slot) => slot === 1 ? soloGamepadPlayer.value : null
+  const resolveGamepadPlayer = (slot, _pad, physicalPadCount = 0) => {
+    if (physicalPadCount >= 2) return slot <= Math.min(2, activeMaxPlayers.value || 1) ? slot : null
+    return slot === 1 ? soloGamepadPlayer.value : null
+  }
   const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
   const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
   const p2RuntimeKeyboard = computed(() => buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value))

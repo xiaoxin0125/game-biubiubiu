@@ -81,7 +81,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useInputMapping, BUTTON_DEFS, effectiveLocalKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
 import { pcButtonsForPlatform, turboButtonsForPlatform, getPlatform } from '../constants/platforms.js'
 
@@ -153,6 +153,11 @@ const activeGamepadProfile = computed({
   },
   set: (profile) => setGamepadProfile(activeSlot.value, profile),
 })
+
+watch([activeSlot, activeGamepadProfile], ([, profile]) => {
+  const storedProfile = normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value])
+  if (profile && profile !== storedProfile) setGamepadProfile(activeSlot.value, profile)
+}, { immediate: true })
 const activeGamepadProfileLabel = computed(() => visibleGamepadProfiles.value.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
 const activeGamepad = computed(() => gamepadMappingFor(mapping.value, activeSlot.value, activeGamepadProfile.value))
 const gamepadBindingNote = computed(() => {
