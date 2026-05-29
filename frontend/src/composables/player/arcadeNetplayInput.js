@@ -61,11 +61,11 @@ function dispatchArcadeKey(action, key) {
   return dispatchKeyboardEvent(action === 'down' ? 'keydown' : 'keyup', key, { internal: true })
 }
 
-export function dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls } = {}) {
+export function dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls, turboTargets = null } = {}) {
   const player = Number(playerIndex)
   if (!Number.isInteger(player) || player < 2 || player > 4) return false
 
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
+  const turboTarget = turboTargets?.[button] || TURBO_BUTTON_TARGETS[button]
   if (turboTarget) return dispatchArcadeNetplayTurbo({ playerIndex: player, action, button, targetButton: turboTarget, keyMap, controls })
 
   const mappedKey = keyMap?.[button]

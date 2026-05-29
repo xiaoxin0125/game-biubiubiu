@@ -1,11 +1,12 @@
 import { computed } from 'vue'
 import { REMOTE_PLAYER_KEY_MAPS, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, effectiveKeyboardForPlayer, normalizeKeyboardEventKey } from '../useInputMapping.js'
+import { turboButtonsForPlatform } from '../../constants/platforms.js'
 import { dispatchKeyboardEvent } from '../dispatchKeyboardEvent.js'
 
 const remoteTurboLoops = new Map()
 
-export function dispatchPlayerButton(playerIndex, action, button, keyMap = null, controls = null) {
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
+export function dispatchPlayerButton(playerIndex, action, button, keyMap = null, controls = null, options = {}) {
+  const turboTarget = options?.turboTargets?.[button] || TURBO_BUTTON_TARGETS[button]
   if (turboTarget) {
     dispatchPlayerTurboButton(playerIndex, action, button, turboTarget, keyMap, controls)
     return
@@ -60,10 +61,11 @@ export function useGuestInputForwarding({ mapping, platform, platformButtons, ro
     const player = Number(typeof keyboardPlayer === 'function' ? keyboardPlayer() : keyboardPlayer) || 1
     const cfg = effectiveKeyboardForPlayer(mapping.value, player, platform?.value || null)
     const allowed = platformButtons?.value ? new Set(platformButtons.value) : null
+    const turboTargets = turboButtonsForPlatform(platform?.value || null)
     const out = {}
     for (const [btn, key] of Object.entries(cfg)) {
       if (allowed && !allowed.has(btn)) continue
-      out[key] = btn
+      if (turboTargets[btn] || !TURBO_BUTTON_TARGETS[btn]) out[key] = btn
     }
     return out
   })

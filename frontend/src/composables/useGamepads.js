@@ -1,5 +1,6 @@
 import { ref, onBeforeUnmount, watch } from 'vue'
 import { effectiveKeyboardForPlayer, gamepadMappingFor, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from './useInputMapping.js'
+import { turboButtonsForPlatform } from '../constants/platforms.js'
 import { dispatchKeyboardEvent } from './dispatchKeyboardEvent.js'
 
 // Polls navigator.getGamepads() each animation frame. Local play uses physical
@@ -14,6 +15,7 @@ export function useGamepads({
   maxLocalPlayers = 1,
   playerResolver = null,
   platformButtons = null,
+  platform = null,
 } = {}) {
   const connected = ref(false)
   const padCount = ref(0)
@@ -113,8 +115,13 @@ export function useGamepads({
     return out
   }
 
+  function turboTargetForButton(btn) {
+    const platformId = platform?.value ?? platform
+    return turboButtonsForPlatform(platformId)?.[btn] || TURBO_BUTTON_TARGETS[btn]
+  }
+
   function dispatchMappedButton(type, btn, player = 1) {
-    const turboTarget = TURBO_BUTTON_TARGETS[btn]
+    const turboTarget = turboTargetForButton(btn)
     if (turboTarget) {
       if (type === 'keydown') startTurbo(btn, turboTarget, player)
       else stopTurbo(btn, turboTarget, player)

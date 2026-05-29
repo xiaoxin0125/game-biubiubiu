@@ -13,7 +13,7 @@ import {
   buildArcadeNetplayRetroarchConfig,
   isArcadeNetplayInputEnabled,
 } from './arcadeNetplayInput.js'
-import { getPlatform } from '../../constants/platforms.js'
+import { getPlatform, pcButtonsForPlatform, turboButtonsForPlatform } from '../../constants/platforms.js'
 import { buildPlatformCoreConfig } from '../../data/config.js'
 
 export function usePlayerEmulatorConfig({
@@ -46,7 +46,16 @@ export function usePlayerEmulatorConfig({
     }
   })
   const overlayCoreName = computed(() => romMeta.value ? platformInfo.value.core : '')
-  const currentPlatformButtons = computed(() => romMeta.value?.platform ? getPlatform(romMeta.value.platform).buttons : null)
+  const currentPlatformButtons = computed(() => {
+    const platform = romMeta.value?.platform
+    if (!platform) return null
+    return isTouchLayout?.value ? getPlatform(platform).buttons : pcButtonsForPlatform(platform)
+  })
+  const currentTurboTargets = computed(() => {
+    const platform = romMeta.value?.platform
+    if (!platform || isTouchLayout?.value) return {}
+    return turboButtonsForPlatform(platform)
+  })
   const usesArcadeNetplayInputConfig = computed(() =>
     isArcadeNetplayInputEnabled({ isRoomMode, platform: romMeta.value?.platform }) && signalMe.value?.isHost === true
   )
@@ -75,7 +84,7 @@ export function usePlayerEmulatorConfig({
       })
     }
     const reservedKeys = Object.entries(mapping.value.keyboard || {})
-      .filter(([btn, key]) => !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
+      .filter(([btn, key]) => !currentTurboTargets.value[btn] && !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
       .map(([, key]) => key)
     return buildRemotePlayerKeyMaps(activeMaxPlayers.value, reservedKeys, platformButtons)
   })

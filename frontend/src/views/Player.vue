@@ -102,7 +102,8 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useInputMapping, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
+import { useInputMapping, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, normalizeKeyboardEventKey, TURBO_FIRE_MS } from '../composables/useInputMapping.js'
+import { turboButtonsForPlatform } from '../constants/platforms.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
@@ -213,12 +214,56 @@ function openInputSettings() {
 }
 
 const gamepadButtonInterceptor = () => false
+const currentTurboTargets = computed(() => isTouchLayout.value ? {} : turboButtonsForPlatform(romMeta.value?.platform))
+const keyboardTurboLoops = new Map()
 const soloGamepadPlayer = computed(() => (isTouchLayout.value || activeMaxPlayers.value < 2) ? 1 : 2)
 const resolveGamepadPlayer = (slot) => slot === 1 ? soloGamepadPlayer.value : null
 const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
 const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
 const p2RuntimeKeyboard = computed(() => buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value))
+const turboTargetForButton = (button) => currentTurboTargets.value?.[button] || null
+const dispatchLocalButtonTurbo = (loopKey, targetButton, action, player = 1) => {
+  const targetKey = player === 2 ? p2RuntimeKeyboard.value?.[targetButton] : null
+  const emit = (down) => {
+    if (down) pressLocalButton(targetButton, player)
+    else releaseLocalButton(targetButton, player)
+    if (targetKey) dispatchKeyboardEvent(down ? 'keydown' : 'keyup', targetKey, { internal: true })
+  }
+
+  if (action === 'down') {
+    if (keyboardTurboLoops.has(loopKey)) return
+    let down = true
+    emit(true)
+    const loop = setInterval(() => {
+      down = !down
+      emit(down)
+    }, TURBO_FIRE_MS)
+    keyboardTurboLoops.set(loopKey, { loop, targetButton, player, targetKey })
+    return
+  }
+
+  const active = keyboardTurboLoops.get(loopKey)
+  if (active) {
+    clearInterval(active.loop)
+    keyboardTurboLoops.delete(loopKey)
+  }
+  releaseLocalButton(targetButton, player)
+  if (targetKey) dispatchKeyboardEvent('keyup', targetKey, { internal: true })
+}
+function stopKeyboardTurboLoops() {
+  for (const [loopKey, active] of keyboardTurboLoops.entries()) {
+    clearInterval(active.loop)
+    keyboardTurboLoops.delete(loopKey)
+    releaseLocalButton(active.targetButton, active.player || 1)
+    if (active.targetKey) dispatchKeyboardEvent('keyup', active.targetKey, { internal: true })
+  }
+}
 const dispatchLocalButton = (type, button, player = 1) => {
+  const turboTarget = turboTargetForButton(button)
+  if (turboTarget) {
+    dispatchLocalButtonTurbo(`${player}:${button}`, turboTarget, type === 'keydown' ? 'down' : 'up', player)
+    return
+  }
   if (player === 2) {
     if (type === 'keydown') pressLocalButton(button, 2)
     else releaseLocalButton(button, 2)
@@ -239,6 +284,7 @@ useGamepads({
   maxLocalPlayers: computed(() => 1),
   playerResolver: resolveGamepadPlayer,
   platformButtons: currentPlatformButtons,
+  platform: computed(() => romMeta.value?.platform || null),
 })
 
 function onBooted() {
@@ -261,9 +307,10 @@ function onKeyUp(e) {
   if (handleLocalPlayer2Keyboard(e)) return
   handleLocalKeyboardButton(e)
 }
-function inputButtonFromConfigKey(config, key, allowed = null) {
+function inputButtonFromConfigKey(config, key, allowed = null, { includePcTurbo = false } = {}) {
   for (const { key: button } of RETROPAD_BUTTON_DEFS) {
     if (allowed && !allowed.has(button)) continue
+    if (!includePcTurbo && turboTargetForButton(button)) continue
     if (config?.[button] === key) return button
   }
   return null
@@ -276,10 +323,11 @@ function handleLocalPlayer2Keyboard(e) {
   const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
   const p2UserKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, 2, romMeta.value?.platform || null)
-  const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed)
+  const button = inputButtonFromConfigKey(p2UserKeyboard, key, allowed, { includePcTurbo: true })
   if (!button) return false
 
-  const runtimeKey = p2RuntimeKeyboard.value?.[button]
+  const targetButton = turboTargetForButton(button) || button
+  const runtimeKey = p2RuntimeKeyboard.value?.[targetButton]
   if (!runtimeKey || runtimeKey === 'nul') return false
 
   if (key === runtimeKey) {
@@ -303,15 +351,17 @@ function handleLocalKeyboardButton(e) {
     if (inputButtonFromConfigKey(p2UserKeyboard, key, allowed)) return false
   }
   const currentKeyboard = effectiveKeyboardForPlayer(mapping.value, 1, romMeta.value?.platform || null)
-  const button = inputButtonFromConfigKey(currentKeyboard, key, allowed)
+  const button = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includePcTurbo: true })
   if (!button) return false
 
-  const runtimeKey = player1RuntimeKeyboard.value?.[button]
+  const targetButton = turboTargetForButton(button) || button
+  const runtimeKey = player1RuntimeKeyboard.value?.[targetButton]
   if (!runtimeKey || runtimeKey === 'nul') return true
 
   e.preventDefault()
   e.stopImmediatePropagation()
-  dispatchKeyboardEvent(e.type, runtimeKey, { internal: true })
+  if (targetButton !== button) dispatchLocalButton(e.type, button, 1)
+  else dispatchKeyboardEvent(e.type, runtimeKey, { internal: true })
   return true
 }
 
@@ -343,6 +393,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('keyup', onKeyUp, true)
   stopViewport()
+  stopKeyboardTurboLoops()
 })
 </script>
 

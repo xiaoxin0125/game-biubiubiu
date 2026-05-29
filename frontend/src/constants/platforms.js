@@ -9,6 +9,7 @@
 
 const DPAD = ['up', 'down', 'left', 'right']
 const BTN_NES   = [...DPAD, 'a', 'b', 'start', 'select']
+const BTN_NES_PC = [...DPAD, 'a', 'b', 'x', 'y', 'start', 'select']
 const BTN_GB    = [...DPAD, 'a', 'b', 'start', 'select']
 const BTN_GBA   = [...DPAD, 'a', 'b', 'l', 'r', 'start', 'select']
 const BTN_SNES  = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
@@ -17,6 +18,20 @@ const BTN_PSX   = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'start', '
 const BTN_ARCADE = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
 const BTN_SIMPLE = [...DPAD, 'a', 'b', 'start']
 const withTurbo = (buttons) => [...buttons]
+const NES_PC_TURBO_BUTTONS = Object.freeze({ x: 'a', y: 'b' })
+const NES_PLATFORM_IDS = new Set(['nes', 'famicom', 'fds'])
+
+export function pcButtonsForPlatform(id) {
+  return NES_PLATFORM_IDS.has(id) ? withTurbo(BTN_NES_PC) : getPlatform(id).buttons
+}
+
+export function turboButtonsForPlatform(id) {
+  return NES_PLATFORM_IDS.has(id) ? NES_PC_TURBO_BUTTONS : {}
+}
+
+export function turboTargetForPlatform(button, platform) {
+  return turboButtonsForPlatform(platform)?.[button]
+}
 
 export const platforms = {
   arcade: {

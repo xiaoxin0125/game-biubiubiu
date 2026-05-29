@@ -83,7 +83,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useInputMapping, BUTTON_DEFS, effectiveLocalKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
-import { getPlatform } from '../constants/platforms.js'
+import { pcButtonsForPlatform, turboButtonsForPlatform, getPlatform } from '../constants/platforms.js'
 
 const props = defineProps({
   platform: { type: String, default: null },
@@ -104,11 +104,16 @@ const gpListening = ref(null)   // gamepad mode: button being re-bound
 const relevantButtons = computed(() => {
   if (!props.platform) return BUTTON_DEFS
   const p = getPlatform(props.platform)
-  const allowed = new Set(p?.buttons || BUTTON_DEFS.map((b) => b.key))
+  const allowed = new Set(pcButtonsForPlatform(props.platform) || BUTTON_DEFS.map((b) => b.key))
   const labels = p?.buttonLabels || {}
+  const turboTargets = turboButtonsForPlatform(props.platform)
   const rows = BUTTON_DEFS
     .filter((b) => allowed.has(b.key))
-    .map((b) => ({ ...b, label: labels[b.key] || b.label }))
+    .map((b) => ({
+      ...b,
+      label: labels[b.key] || b.label,
+      turboTarget: turboTargets[b.key] || null,
+    }))
 
   // Group order: dpad → face → shoulder → system. Inside each group (except
   // dpad which stays up/down/left/right), sort by the VISIBLE label so users

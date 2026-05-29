@@ -154,6 +154,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useInputMapping, BUTTON_DEFS, RETROPAD_BUTTON_DEFS, buildLocalPlayerKeyboardMap, effectiveKeyboardForPlayer, effectiveLocalKeyboardForPlayer, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
+import { turboButtonsForPlatform } from '../constants/platforms.js'
 import { dispatchKeyboardEvent } from '../composables/dispatchKeyboardEvent.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useGamepads } from '../composables/useGamepads.js'
@@ -211,6 +212,8 @@ const isRoomMode = true
 const roomGamepadProfileKeys = ['ps4', 'xbox', 'generic']
 const roomHostInputConfigSnapshot = ref(null)
 const keyboardTurboLoops = new Map()
+const currentTurboTargets = computed(() => isTouchLayout.value ? {} : turboButtonsForPlatform(romMeta.value?.platform))
+const turboTargetForButton = (button) => currentTurboTargets.value?.[button] || TURBO_BUTTON_TARGETS[button]
 
 function openInputSettings() {
   openInputSettingsPanel({ blocked: isTouchLayout.value })
@@ -225,9 +228,10 @@ const roomRuntime = usePlayerRoomRuntime({
   isRoomMode,
   booted,
   remoteKeyMapForPlayer: (playerIndex) => remotePlayerKeyMaps.value[playerIndex],
-  dispatchRemoteInput: ({ playerIndex, action, button, keyMap, controls }) => {
+  turboTargetsForPlayer: () => currentTurboTargets.value,
+  dispatchRemoteInput: ({ playerIndex, action, button, keyMap, controls, turboTargets }) => {
     if (!isArcadeNetplayInputEnabled({ isRoomMode, platform: romMeta.value?.platform })) return false
-    return dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls })
+    return dispatchArcadeNetplayInput({ playerIndex, action, button, keyMap, controls, turboTargets })
   },
   setFatalError,
   showToast,
@@ -343,7 +347,7 @@ const { guestKeyHandler, guestButtonInterceptor } = useGuestInputForwarding({
 const hostButtonInterceptor = (action, button) => {
   if (!isRoomMode || !isHostMode.value) return false
   const snapshotKeyboard = snapshotKeyboardMapping()
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
+  const turboTarget = turboTargetForButton(button)
   if (turboTarget) {
     dispatchHostPlayer1Turbo(button, turboTarget, action, snapshotKeyboard)
     return true
@@ -386,6 +390,7 @@ useGamepads({
   maxLocalPlayers: computed(() => 1),
   playerResolver: resolveGamepadPlayer,
   platformButtons: currentPlatformButtons,
+  platform: computed(() => romMeta.value?.platform || null),
 })
 
 function onBooted() {
@@ -419,7 +424,7 @@ function snapshotKeyboardMapping() {
   if (!snapshot) return runtimeKeyboard
   const out = {}
   for (const { key } of BUTTON_DEFS) {
-    const target = TURBO_BUTTON_TARGETS[key] || key
+    const target = turboTargetForButton(key) || key
     out[key] = snapshot[`input_player1_${target}`] || runtimeKeyboard[target] || 'nul'
   }
   return out
@@ -429,6 +434,7 @@ function inputButtonFromConfigKey(config, key, allowed = null, { includeTurbo = 
   const defs = includeTurbo ? BUTTON_DEFS : RETROPAD_BUTTON_DEFS
   for (const { key: button } of defs) {
     if (allowed && !allowed.has(button)) continue
+    if (!includeTurbo && turboTargetForButton(button)) continue
     if (config?.[button] === key) return button
   }
   return null
@@ -446,11 +452,11 @@ function handleHostKeyboardRemap(e) {
   const currentButton = inputButtonFromConfigKey(currentKeyboard, key, allowed, { includeTurbo: true })
 
   if (currentButton) {
-    const targetButton = TURBO_BUTTON_TARGETS[currentButton] || currentButton
+    const targetButton = turboTargetForButton(currentButton) || currentButton
     e.preventDefault()
     e.stopImmediatePropagation()
     const action = e.type === 'keydown' ? 'down' : 'up'
-    if (TURBO_BUTTON_TARGETS[currentButton]) dispatchHostPlayer1Turbo(currentButton, targetButton, action, snapshotKeyboard)
+    if (turboTargetForButton(currentButton)) dispatchHostPlayer1Turbo(currentButton, targetButton, action, snapshotKeyboard)
     else dispatchHostPlayer1Button(action, targetButton, snapshotKeyboard)
     return true
   }
@@ -477,7 +483,7 @@ function handleLocalPlayer2Keyboard(e) {
 
   const p2RuntimeKeyboard = buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value)
   const action = e.type === 'keydown' ? 'down' : 'up'
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
+  const turboTarget = turboTargetForButton(button)
   const targetButton = turboTarget || button
   const runtimeKey = p2RuntimeKeyboard[targetButton]
   if (!runtimeKey || runtimeKey === 'nul') return false
@@ -503,7 +509,7 @@ function handleLocalKeyboardButton(e) {
   if (!button) return false
 
   const action = e.type === 'keydown' ? 'down' : 'up'
-  const turboTarget = TURBO_BUTTON_TARGETS[button]
+  const turboTarget = turboTargetForButton(button)
   const targetButton = turboTarget || button
   const runtimeKeyboard = snapshotKeyboardMapping()
 
@@ -524,7 +530,7 @@ function handleTurboKeyboard(e) {
   const source = snapshotKeyboard || mapping.value.keyboard || {}
   const key = normalizeKeyboardEventKey(e)
   const allowed = currentPlatformButtons.value ? new Set(currentPlatformButtons.value) : null
-  for (const [turboButton, targetButton] of Object.entries(TURBO_BUTTON_TARGETS)) {
+  for (const [turboButton, targetButton] of Object.entries(currentTurboTargets.value || {})) {
     if (allowed && !allowed.has(turboButton)) continue
     if (source[turboButton] !== key) continue
     e.preventDefault()
@@ -626,6 +632,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('keyup', onKeyUp, true)
   stopViewport()
+  stopKeyboardTurboLoops()
   disconnectRoomRuntime({ guestKeyHandler })
 })
 </script>
