@@ -218,7 +218,10 @@ export function buildLocalMultiplayerRetroarchConfig(maxPlayers = 2, platformBut
     }
   }
   for (let player = 1; player < 4; player++) {
-    for (const { key: btn } of RETROPAD_BUTTON_DEFS) cfg[`input_player${player}_${btn}_btn`] = 'nul'
+    for (const { key: btn } of RETROPAD_BUTTON_DEFS) {
+      cfg[`input_player${player}_${btn}_btn`] = 'nul'
+      cfg[`input_player${player}_${btn}_axis`] = 'nul'
+    }
   }
   return cfg
 }

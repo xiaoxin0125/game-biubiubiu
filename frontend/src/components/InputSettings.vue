@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
   <div class="is-overlay" @click.self="$emit('close')">
-    <div class="is-panel" :class="{ 'room-mode': props.roomMode }">
+    <div class="is-panel" :class="{ 'source-mode': props.sourceStyle || props.roomMode, 'room-mode': props.roomMode }">
       <header class="is-head">
         <h2>按键设置<span v-if="platformName" class="is-plat">· {{ platformName }}</span></h2>
         <button class="is-close" @click="$emit('close')" aria-label="关闭">×</button>
@@ -92,6 +92,7 @@ const props = defineProps({
   gamepadProfileKeys: { type: Array, default: () => [] },
   gamepadBindingNote: { type: String, default: '' },
   roomMode: { type: Boolean, default: false },
+  sourceStyle: { type: Boolean, default: false },
 })
 defineEmits(['close'])
 
@@ -300,6 +301,13 @@ onBeforeUnmount(() => {
   --select-height: 36px;
   --select-min-height: 36px;
   --select-font-size: 12px;
+  color: #111;
+  --select-color: #111;
+  --select-focus-color: #111;
+}
+.is-select-field select option {
+  color: #111;
+  background: #FFFBF5;
 }
 .is-gp-note {
   margin: 0;
@@ -376,40 +384,40 @@ onBeforeUnmount(() => {
 .is-reset { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
 .is-reset:hover { background: rgba(255,255,255,0.14); }
 .is-done  { background: rgba(10,132,255,0.3); color: #fff; }
-.is-panel.room-mode {
+.is-panel.source-mode {
   background: rgba(255, 251, 245, 0.96);
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   color: #111;
   box-shadow: 6px 6px 0 var(--border-color, #111);
 }
-.room-mode .is-head {
+.source-mode .is-head {
   border-bottom: 2px solid var(--border-color, #111);
   background: rgba(255, 255, 255, 0.5);
 }
-.room-mode .is-head h2 { color: #111; font-weight: 900; }
-.room-mode .is-plat { color: var(--text-secondary); font-weight: 900; }
-.room-mode .is-close {
+.source-mode .is-head h2 { color: #111; font-weight: 900; }
+.source-mode .is-plat { color: var(--text-secondary); font-weight: 900; }
+.source-mode .is-close {
   border-radius: 7px;
   border: 2px solid var(--border-color, #111);
   color: #111;
   font-weight: 900;
   transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
-.room-mode .is-close:hover,
-.room-mode .is-close:focus-visible {
+.source-mode .is-close:hover,
+.source-mode .is-close:focus-visible {
   background: #111;
   color: #fff;
   transform: translate(-2px, -2px);
   box-shadow: 4px 4px 0 var(--border-color, #111);
   outline: none;
 }
-.room-mode .is-tabs,
-.room-mode .is-player-tabs,
-.room-mode .is-gp-controls,
-.room-mode .is-foot { border-color: var(--border-color, #111); }
-.room-mode .is-tabs button,
-.room-mode .is-player-tabs button {
+.source-mode .is-tabs,
+.source-mode .is-player-tabs,
+.source-mode .is-gp-controls,
+.source-mode .is-foot { border-color: var(--border-color, #111); }
+.source-mode .is-tabs button,
+.source-mode .is-player-tabs button {
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   color: #111;
@@ -417,38 +425,38 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.62);
   transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
-.room-mode .is-tabs button:hover,
-.room-mode .is-player-tabs button:hover,
-.room-mode .is-tabs button:focus-visible,
-.room-mode .is-player-tabs button:focus-visible {
+.source-mode .is-tabs button:hover,
+.source-mode .is-player-tabs button:hover,
+.source-mode .is-tabs button:focus-visible,
+.source-mode .is-player-tabs button:focus-visible {
   background: #fff;
   color: #111;
   transform: translate(-2px, -2px);
   box-shadow: 4px 4px 0 var(--border-color, #111);
   outline: none;
 }
-.room-mode .is-tabs .active,
-.room-mode .is-player-tabs .active { background: #111; border-color: #111; color: #fff; }
-.room-mode .is-tabs .active:hover,
-.room-mode .is-player-tabs .active:hover,
-.room-mode .is-tabs .active:focus-visible,
-.room-mode .is-player-tabs .active:focus-visible { background: #111; color: #fff; }
-.room-mode .is-select-field { color: #111; font-weight: 900; }
-.room-mode .is-gp-note { color: var(--text-secondary); font-weight: 700; }
-.room-mode .is-warning {
+.source-mode .is-tabs .active,
+.source-mode .is-player-tabs .active { background: #111; border-color: #111; color: #fff; }
+.source-mode .is-tabs .active:hover,
+.source-mode .is-player-tabs .active:hover,
+.source-mode .is-tabs .active:focus-visible,
+.source-mode .is-player-tabs .active:focus-visible { background: #111; color: #fff; }
+.source-mode .is-select-field { color: #111; font-weight: 900; }
+.source-mode .is-gp-note { color: var(--text-secondary); font-weight: 700; }
+.source-mode .is-warning {
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   background: color-mix(in srgb, var(--warn) 18%, #fff);
   color: #9A3412;
   font-weight: 900;
 }
-.room-mode .is-btn {
+.source-mode .is-btn {
   border-radius: 7px;
   border: 2px solid var(--border-color, #111);
   color: #111;
   font-weight: 900;
 }
-.room-mode .is-slot {
+.source-mode .is-slot {
   border: 2px solid var(--border-color, #111);
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.72);
@@ -456,37 +464,37 @@ onBeforeUnmount(() => {
   font-weight: 900;
   transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
 }
-.room-mode .is-slot:hover,
-.room-mode .is-slot:focus-visible {
+.source-mode .is-slot:hover,
+.source-mode .is-slot:focus-visible {
   background: #fff;
   color: #111;
   transform: translate(-2px, -2px);
   box-shadow: 4px 4px 0 var(--border-color, #111);
   outline: none;
 }
-.room-mode .is-slot.listening { background: #111; border-color: #111; color: #fff; }
-.room-mode .is-slot.listening:hover,
-.room-mode .is-slot.listening:focus-visible { background: #111; color: #fff; }
-.room-mode .is-slot.conflict { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
-.room-mode .is-reset,
-.room-mode .is-done {
+.source-mode .is-slot.listening { background: #111; border-color: #111; color: #fff; }
+.source-mode .is-slot.listening:hover,
+.source-mode .is-slot.listening:focus-visible { background: #111; color: #fff; }
+.source-mode .is-slot.conflict { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
+.source-mode .is-reset,
+.source-mode .is-done {
   border-radius: 7px;
   border: 2px solid var(--border-color, #111);
   font-weight: 900;
   transition: transform var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
-.room-mode .is-reset { background: rgba(255, 255, 255, 0.62); color: #111; }
-.room-mode .is-reset:hover,
-.room-mode .is-reset:focus-visible {
+.source-mode .is-reset { background: rgba(255, 255, 255, 0.62); color: #111; }
+.source-mode .is-reset:hover,
+.source-mode .is-reset:focus-visible {
   background: #fff;
   color: #111;
   transform: translate(-2px, -2px);
   box-shadow: 4px 4px 0 var(--border-color, #111);
   outline: none;
 }
-.room-mode .is-done { background: #111; color: #fff; }
-.room-mode .is-done:hover,
-.room-mode .is-done:focus-visible {
+.source-mode .is-done { background: #111; color: #fff; }
+.source-mode .is-done:hover,
+.source-mode .is-done:focus-visible {
   background: #111;
   color: #fff;
   transform: translate(-2px, -2px);

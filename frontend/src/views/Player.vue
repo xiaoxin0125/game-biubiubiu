@@ -93,6 +93,7 @@
       :local-players="Math.min(2, activeMaxPlayers)"
       :gamepad-players="Math.min(2, activeMaxPlayers)"
       gamepad-binding-note="连接两个手柄时分别控制 P1/P2；只有一个手柄时，单人游戏控制 P1，双人游戏默认控制 P2。左摇杆和十字键都可控制方向。"
+      source-style
       @close="closeInputSettings"
     />
   </div>

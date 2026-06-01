@@ -17,6 +17,7 @@ export function buildPlayerRetroarchConfig(inputMapping, platformButtons = null,
     const gp = gamepad?.[key]
     if (includeNativeGamepad && enabled && typeof gp === 'number') cfg[`input_player1_${key}_btn`] = gp
     else cfg[`input_player1_${key}_btn`] = 'nul'
+    if (!includeNativeGamepad || !enabled) cfg[`input_player1_${key}_axis`] = 'nul'
   }
   return cfg
 }
