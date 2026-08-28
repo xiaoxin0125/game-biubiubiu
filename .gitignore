@@ -4,6 +4,10 @@
 !.env.example
 !.env.docker.example
 
+# Runtime configuration
+/config/app.env
+/config/app.json
+
 # Runtime data
 /data/app.db
 /data/app.db-shm

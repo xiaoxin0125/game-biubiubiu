@@ -5,16 +5,6 @@ COPY frontend/package.json ./frontend/package.json
 RUN npm ci
 
 FROM dependencies AS frontend-build
-ARG VITE_WEBRTC_STUN_URLS="stun:stun.cloudflare.com:3478"
-ARG VITE_WEBRTC_TURN_URLS=""
-ARG VITE_WEBRTC_TURN_USERNAME=""
-ARG VITE_WEBRTC_TURN_CREDENTIAL=""
-ARG VITE_WEBRTC_FORCE_RELAY="0"
-ENV VITE_WEBRTC_STUN_URLS=${VITE_WEBRTC_STUN_URLS} \
-    VITE_WEBRTC_TURN_URLS=${VITE_WEBRTC_TURN_URLS} \
-    VITE_WEBRTC_TURN_USERNAME=${VITE_WEBRTC_TURN_USERNAME} \
-    VITE_WEBRTC_TURN_CREDENTIAL=${VITE_WEBRTC_TURN_CREDENTIAL} \
-    VITE_WEBRTC_FORCE_RELAY=${VITE_WEBRTC_FORCE_RELAY}
 COPY frontend ./frontend
 COPY shared ./shared
 RUN npm run build
@@ -47,4 +37,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "server/index.js"]
+CMD ["npm", "start"]

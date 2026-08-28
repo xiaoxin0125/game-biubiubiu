@@ -2,16 +2,10 @@ name: games-online
 
 services:
   app:
-    image: ${APP_IMAGE:-games-online:latest}
+    image: ${APP_IMAGE:-ghcr.io/xiaoxin0125/game-biubiubiu:latest}
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}}
-        VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=tcp}
-        VITE_WEBRTC_TURN_USERNAME: ${TURN_USERNAME:?Set TURN_USERNAME in .env}
-        VITE_WEBRTC_TURN_CREDENTIAL: ${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
-        VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
     restart: unless-stopped
     init: true
     depends_on:
@@ -20,6 +14,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      APP_CONFIG_FILE: ${APP_CONFIG_FILE:-}
       DATABASE_URL: mysql://${MYSQL_USER:-games}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}@mysql:3306/${MYSQL_DATABASE:-games_online}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
@@ -30,6 +25,12 @@ services:
       MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
       USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
       MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
+      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}}
+      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=tcp}
+      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in .env}}
+      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in .env}}
+      VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
+      VITE_WEBRTC_ICE_SERVERS: ${VITE_WEBRTC_ICE_SERVERS:-}
       UPLOADS_DIR: /app/data/uploads
       BIOS_DIR: /app/data/bios
       SAVES_DIR: /app/data/saves
@@ -39,6 +40,7 @@ services:
     volumes:
       - ./data/uploads:/app/data/uploads
       - ./data/saves:/app/data/saves
+      - ./config:/app/config:ro
     healthcheck:
       test:
         - CMD

@@ -197,7 +197,7 @@ FDS 需要 `disksys.rom`。PSX 常用 BIOS 包括 `scph5500.bin`、`scph5501.bin
 
 ## 环境变量
 
-项目不会自动读取 `.env` 文件。开发和生产都需要通过 shell、systemd、PM2、Docker 或面板环境变量显式注入。
+应用启动时支持两种配置来源：直接注入环境变量，或者读取 `config/app.env` / `config/app.json`。也可以通过 `APP_CONFIG_FILE` 指定其他路径。检测到配置文件时，文件中的受支持字段会覆盖同名环境变量，便于复用 GitHub 已构建好的通用镜像；未写入文件的字段继续使用环境变量或程序默认值。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
@@ -217,8 +217,9 @@ FDS 需要 `disksys.rom`。PSX 常用 BIOS 包括 `scph5500.bin`、`scph5501.bin
 | `BIOS_DIR` | `data/bios` | BIOS 目录 |
 | `SAVES_DIR` | `data/saves` | 云存档目录 |
 | `CORES_DIR` | `data/cores` | libretro core 目录 |
-| `VITE_WEBRTC_STUN_URLS` | `stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478` | 前端构建时写入的 WebRTC STUN 地址，逗号分隔 |
-| `VITE_WEBRTC_TURN_URLS` | 空 | 前端构建时写入的 WebRTC TURN 地址，逗号分隔；跨网络稳定联机需要配置 |
+| `APP_CONFIG_FILE` | 自动检测 | 可选配置文件路径；默认依次检测 `config/app.env`、`config/app.json` |
+| `VITE_WEBRTC_STUN_URLS` | `stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478` | 运行时 WebRTC STUN 地址，逗号分隔 |
+| `VITE_WEBRTC_TURN_URLS` | 空 | 运行时 WebRTC TURN 地址，逗号分隔；跨网络稳定联机需要配置 |
 | `VITE_WEBRTC_TURN_USERNAME` | 空 | TURN 用户名 |
 | `VITE_WEBRTC_TURN_CREDENTIAL` | 空 | TURN 密码或凭据 |
 | `VITE_WEBRTC_FORCE_RELAY` | `0` | 设为 `1` 时只走 TURN relay，适合验证中继是否生效 |
@@ -229,7 +230,7 @@ FDS 需要 `disksys.rom`。PSX 常用 BIOS 包括 `scph5500.bin`、`scph5501.bin
 
 ### 1. 准备环境
 
-- Node.js `>= 20.11`，推荐 Node.js 22 LTS。
+- Node.js `>= 20.12`，推荐 Node.js 22 LTS。
 - npm 10+。
 - MySQL 8.x 或兼容版本。
 
@@ -302,7 +303,17 @@ npm run build
 
 ### 2. Docker Compose（应用 + MySQL + STUN/TURN）
 
-仓库已包含 `Dockerfile`、`compose.yaml` 和 `.env.docker.example`。应用镜像会包含前端构建产物、后端、BIOS 和模拟器 core；ROM 上传、云存档和 MySQL 数据保留在宿主机或 Docker volume 中。`coturn` 同时提供 STUN 和 TURN，TURN 用于跨运营商、对称 NAT 或严格防火墙下的 WebRTC 中继。
+仓库已包含 `Dockerfile`、`compose.yaml`、`.env.docker.example` 和 GitHub Actions 工作流。推送到 `main`、推送 `v*` 标签或手动运行工作流时，会自动构建 `linux/amd64`、`linux/arm64` 镜像并发布到 GitHub Container Registry（GHCR）：
+
+```text
+ghcr.io/xiaoxin0125/game-biubiubiu:latest
+ghcr.io/xiaoxin0125/game-biubiubiu:v1.0.0
+ghcr.io/xiaoxin0125/game-biubiubiu:sha-xxxxxxx
+```
+
+Pull Request 只验证镜像构建，不推送。首次发布后，如果仓库或 Package 是私有的，需要在部署机器先执行 `docker login ghcr.io`；公开部署可在 GitHub Package 设置中将镜像改为 Public。
+
+应用镜像包含前端构建产物、后端、BIOS 和模拟器 core；ROM 上传、云存档和 MySQL 数据保留在宿主机或 Docker volume 中。`coturn` 同时提供 STUN 和 TURN，TURN 用于跨运营商、对称 NAT 或严格防火墙下的 WebRTC 中继。
 
 准备配置：
 
@@ -321,18 +332,25 @@ cp .env.docker.example .env.docker
 - `TURN_PUBLIC_IP`：Docker 宿主机的数字公网 IPv4。
 - `TURN_USERNAME`、`TURN_PASSWORD`：TURN 长期凭据。
 
-启动并检查：
+启动并检查 GitHub 发布的镜像：
 
 ```bash
-mkdir -p data/uploads data/saves
+mkdir -p data/uploads data/saves config
 # 默认镜像使用 uid/gid 1000；现有目录若不可写，需要调整权限
 sudo chown -R 1000:1000 data/uploads data/saves
 
 docker compose --env-file .env.docker config --quiet
-docker compose --env-file .env.docker up -d --build
+docker compose --env-file .env.docker pull app
+docker compose --env-file .env.docker up -d --no-build
 docker compose --env-file .env.docker ps
 docker compose --env-file .env.docker logs -f app mysql coturn
 curl http://127.0.0.1:3000/api/health
+```
+
+需要从当前源码本地构建时，改用：
+
+```bash
+docker compose --env-file .env.docker up -d --build
 ```
 
 默认端口：
@@ -343,11 +361,24 @@ curl http://127.0.0.1:3000/api/health
 
 云服务器安全组、宿主机防火墙，以及存在上级 NAT 时的端口转发，都必须同时开放 TURN 入口和完整 relay 范围。多人或多房间并发较高时，应扩大 `TURN_MIN_PORT`/`TURN_MAX_PORT`，并同步扩大防火墙规则。
 
-TURN 地址和凭据属于 Vite 构建时配置。修改 `TURN_PUBLIC_HOST`、`TURN_PORT`、`TURN_USERNAME` 或 `TURN_PASSWORD` 后，需要重新构建应用镜像：
+STUN/TURN 地址和凭据现在由容器启动时的环境变量通过 `/api/runtime-config` 提供给浏览器，不再固化到 GitHub 构建的镜像。修改 `TURN_PUBLIC_HOST`、`TURN_PORT`、`TURN_USERNAME`、`TURN_PASSWORD` 或 `VITE_WEBRTC_*` 后，只需重建容器，不需要重建镜像：
 
 ```bash
-docker compose --env-file .env.docker up -d --build app coturn
+docker compose --env-file .env.docker up -d --no-build --force-recreate app coturn
 ```
+
+也可以使用配置文件。Compose 会把本机 `./config` 只读挂载到容器 `/app/config`；复制 JSON 示例后，应用会自动读取 `/app/config/app.json`：
+
+```bash
+cp config/app.example.json config/app.json
+# 编辑 config/app.json，替换 CHANGE_ME、域名和数据库连接
+# 容器以 uid/gid 1000 运行，配置文件必须对该用户可读
+sudo chown 1000:1000 config/app.json && sudo chmod 600 config/app.json
+# MySQL 与 coturn 容器自身的密码和端口仍在 .env.docker 中配置
+docker compose --env-file .env.docker up -d --no-build --force-recreate app
+```
+
+如需使用其他文件名，在 `.env.docker` 中设置 `APP_CONFIG_FILE=/app/config/你的文件名.json`。配置文件支持 JSON 和 `KEY=value` 两种格式；配置文件只应保存在部署机器，`config/app.json` 与 `config/app.env` 已加入 Git 忽略列表。
 
 仅导出应用镜像供另一台服务器导入：
 
@@ -440,10 +471,9 @@ WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Co
 
 跨网络联机依赖 WebRTC ICE。只有 STUN 时，同网通常可用，但跨运营商 NAT、对称 NAT 或严格防火墙时可能一直停在“握手中”。生产环境建议同时部署 TURN。
 
-前端构建时需要写入 TURN 地址：
+WebRTC 参数由服务端在运行时输出，因此使用 GitHub 预构建镜像时也可以通过 Compose 环境变量或 `config/app.json` 修改：
 
 ```bash
-# frontend/.env.production
 VITE_WEBRTC_TURN_URLS=turn:公网IP:14276?transport=udp,turn:公网IP:14276?transport=tcp
 VITE_WEBRTC_TURN_USERNAME=你的TURN用户名
 VITE_WEBRTC_TURN_CREDENTIAL=你的TURN密码
@@ -491,12 +521,10 @@ NAT 或上级防火墙需要转发：
 
 如果 `14275/tcp` 被宝塔面板或其他管理服务占用，不要把它分配给 TURN。TURN 仍可只使用 `14276-14279`，但 relay 端口只有 3 个，并发中继能力有限；多人、多房间跨网时可能端口耗尽。
 
-修改 coturn 配置或前端 `.env.production` 后，需要重新构建前端并重启服务：
+修改 coturn 或 WebRTC 配置后，重建容器即可：
 
 ```bash
-cd /www/wwwroot/game
-npm run build
-sudo systemctl restart games-biubiubiu
+docker compose --env-file .env.docker up -d --no-build --force-recreate app coturn
 ```
 
 ## 常用命令
@@ -558,9 +586,9 @@ sudo tar -czf games_data_$(date +%F).tar.gz -C /www/wwwroot/game data
 
 ## 常见问题
 
-### `.env` 文件为什么不生效？
+### `.env` 或 config 文件怎样生效？
 
-项目没有内置 dotenv。需要手动导出环境变量，或通过 systemd `EnvironmentFile=`、PM2 ecosystem、Docker、面板环境变量注入。
+Compose 变量文件通过 `docker compose --env-file .env.docker ...` 传入。应用进程还会自动检测 `config/app.env` 和 `config/app.json`，或者读取 `APP_CONFIG_FILE` 指定的文件；配置文件中的受支持字段优先于同名环境变量。修改后需要重启应用进程或重建容器。
 
 ### 首次管理员密码忘记了怎么办？
 
@@ -589,10 +617,10 @@ sudo tar -czf games_data_$(date +%F).tar.gz -C /www/wwwroot/game data
 
 通常是 WebRTC 只配置了 STUN，跨运营商 NAT、对称 NAT 或严格防火墙无法打洞。处理顺序：
 
-1. 部署 coturn，并在前端构建环境写入 `VITE_WEBRTC_TURN_URLS`、`VITE_WEBRTC_TURN_USERNAME`、`VITE_WEBRTC_TURN_CREDENTIAL`。
+1. 部署 coturn，并通过 Compose 或应用配置文件写入 `VITE_WEBRTC_TURN_URLS`、`VITE_WEBRTC_TURN_USERNAME`、`VITE_WEBRTC_TURN_CREDENTIAL`。
 2. NAT 或上级防火墙转发 TURN 入口端口和 relay 端口。
-3. 修改前端 `.env.production` 后重新构建前端。
-4. 重启服务后，用跨网络手机热点实际加入房间验证。
+3. 重建应用容器，使运行时配置重新加载。
+4. 用跨网络手机热点实际加入房间验证。
 5. 临时设置 `VITE_WEBRTC_FORCE_RELAY=1` 可强制只走 TURN，用于验证中继链路是否真的可用。
 
 只开放少量 relay 端口时，能解决跨 NAT 连接问题，但并发能力会明显受限。

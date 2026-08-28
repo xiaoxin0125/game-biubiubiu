@@ -42,18 +42,23 @@ function parseCustomIceServers(value) {
   }
 }
 
+function runtimeValue(key, defaultValue = '') {
+  const value = window.__APP_CONFIG__?.[key]
+  return value === undefined || value === null ? defaultValue : value
+}
+
 function buildIceServers() {
-  const customServers = parseCustomIceServers(import.meta.env.VITE_WEBRTC_ICE_SERVERS)
+  const customServers = parseCustomIceServers(runtimeValue('WEBRTC_ICE_SERVERS'))
   if (customServers.length) return customServers
 
-  const stunUrls = splitIceUrls(import.meta.env.VITE_WEBRTC_STUN_URLS)
-  const turnUrls = splitIceUrls(import.meta.env.VITE_WEBRTC_TURN_URLS)
+  const stunUrls = splitIceUrls(runtimeValue('WEBRTC_STUN_URLS'))
+  const turnUrls = splitIceUrls(runtimeValue('WEBRTC_TURN_URLS'))
   const servers = [{ urls: stunUrls.length ? stunUrls : DEFAULT_STUN_URLS }]
 
   if (turnUrls.length) {
     const turnServer = { urls: turnUrls }
-    const username = String(import.meta.env.VITE_WEBRTC_TURN_USERNAME || '').trim()
-    const credential = String(import.meta.env.VITE_WEBRTC_TURN_CREDENTIAL || '').trim()
+    const username = String(runtimeValue('WEBRTC_TURN_USERNAME')).trim()
+    const credential = String(runtimeValue('WEBRTC_TURN_CREDENTIAL')).trim()
     if (username) turnServer.username = username
     if (credential) turnServer.credential = credential
     servers.push(turnServer)
@@ -64,7 +69,7 @@ function buildIceServers() {
 
 const ICE_CONFIG = {
   iceServers: buildIceServers(),
-  iceTransportPolicy: import.meta.env.VITE_WEBRTC_FORCE_RELAY === '1' ? 'relay' : 'all',
+  iceTransportPolicy: String(runtimeValue('WEBRTC_FORCE_RELAY')) === '1' ? 'relay' : 'all',
 }
 
 export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange }) {

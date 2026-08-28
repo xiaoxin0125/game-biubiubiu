@@ -1,0 +1,17 @@
+{
+  "DATABASE_URL": "mysql://games:CHANGE_ME@mysql:3306/games_online",
+  "ADMIN_USERNAME": "admin",
+  "ADMIN_PASSWORD": "CHANGE_ME_admin_password_at_least_12_chars",
+  "TRUST_PROXY": 1,
+  "CSRF_ALLOWED_ORIGINS": "https://game.example.com",
+  "CSRF_REQUIRE_ORIGIN": 1,
+  "MAX_UPLOAD_BYTES": 104857600,
+  "MAX_STATE_BYTES": 8388608,
+  "USER_UPLOAD_QUOTA_BYTES": 2147483648,
+  "MAX_SAVE_SLOT": 9,
+  "VITE_WEBRTC_STUN_URLS": "stun:turn.example.com:3478",
+  "VITE_WEBRTC_TURN_URLS": "turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp",
+  "VITE_WEBRTC_TURN_USERNAME": "games",
+  "VITE_WEBRTC_TURN_CREDENTIAL": "CHANGE_ME_turn_password",
+  "VITE_WEBRTC_FORCE_RELAY": 0
+}

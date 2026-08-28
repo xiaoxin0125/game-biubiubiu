@@ -17,6 +17,7 @@ import { publicSettingsRoutes, adminSettingsRoutes } from './routes/settings.js'
 import { cleanupExpiredSessions } from './middleware/auth.js'
 import { csrfProtection, securityHeaders } from './middleware/security.js'
 import { installErrorHandler, requestId } from './middleware/error-handler.js'
+import { getRuntimeConfig } from './runtime-config.js'
 
 process.on('uncaughtException', (err) => {
   console.error('[api] uncaught exception', err)
@@ -51,6 +52,10 @@ app.route('/api/settings', publicSettingsRoutes)
 app.route('/api/admin/settings', adminSettingsRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
+app.get('/api/runtime-config', (c) => {
+  c.header('Cache-Control', 'no-store')
+  return c.json(getRuntimeConfig())
+})
 
 const frontendDistRoot = resolve('frontend/dist')
 const frontendIndex = resolve(frontendDistRoot, 'index.html')

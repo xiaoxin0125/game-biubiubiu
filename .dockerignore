@@ -5,6 +5,8 @@ frontend/dist
 .gitignore
 .env
 .env.*
+**/.env
+**/.env.*
 !.env.docker.example
 *.log
 .DS_Store
@@ -12,3 +14,5 @@ frontend/dist
 data/uploads
 data/saves
 data/app.db*
+config/app.env
+config/app.json
