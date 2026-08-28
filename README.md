@@ -300,7 +300,66 @@ npm run build
 
 构建产物位于 `frontend/dist`。后端检测到 `frontend/dist/index.html` 后会自动托管前端页面。
 
-### 2. systemd 示例
+### 2. Docker Compose（应用 + MySQL + STUN/TURN）
+
+仓库已包含 `Dockerfile`、`compose.yaml` 和 `.env.docker.example`。应用镜像会包含前端构建产物、后端、BIOS 和模拟器 core；ROM 上传、云存档和 MySQL 数据保留在宿主机或 Docker volume 中。`coturn` 同时提供 STUN 和 TURN，TURN 用于跨运营商、对称 NAT 或严格防火墙下的 WebRTC 中继。
+
+准备配置：
+
+```bash
+cd /www/wwwroot/game
+cp .env.docker.example .env.docker
+# 编辑 .env.docker，替换全部 CHANGE_ME、域名和公网 IP
+```
+
+至少需要正确设置：
+
+- `CSRF_ALLOWED_ORIGINS`：站点实际 HTTPS Origin，例如 `https://game.example.com`。
+- `ADMIN_PASSWORD`：首次初始化管理员密码，至少 12 位。
+- `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD`：MySQL 密码。
+- `TURN_PUBLIC_HOST`：浏览器能访问的 TURN 域名或公网 IP；使用 Cloudflare DNS 时必须设为仅 DNS（灰云），不能代理。
+- `TURN_PUBLIC_IP`：Docker 宿主机的数字公网 IPv4。
+- `TURN_USERNAME`、`TURN_PASSWORD`：TURN 长期凭据。
+
+启动并检查：
+
+```bash
+mkdir -p data/uploads data/saves
+# 默认镜像使用 uid/gid 1000；现有目录若不可写，需要调整权限
+sudo chown -R 1000:1000 data/uploads data/saves
+
+docker compose --env-file .env.docker config --quiet
+docker compose --env-file .env.docker up -d --build
+docker compose --env-file .env.docker ps
+docker compose --env-file .env.docker logs -f app mysql coturn
+curl http://127.0.0.1:3000/api/health
+```
+
+默认端口：
+
+- 应用：宿主机 `127.0.0.1:3000`，用于 Nginx/Caddy HTTPS 反代。
+- STUN/TURN 入口：`3478/tcp` 和 `3478/udp`。
+- TURN relay：`49160-49200/tcp` 和 `49160-49200/udp`。
+
+云服务器安全组、宿主机防火墙，以及存在上级 NAT 时的端口转发，都必须同时开放 TURN 入口和完整 relay 范围。多人或多房间并发较高时，应扩大 `TURN_MIN_PORT`/`TURN_MAX_PORT`，并同步扩大防火墙规则。
+
+TURN 地址和凭据属于 Vite 构建时配置。修改 `TURN_PUBLIC_HOST`、`TURN_PORT`、`TURN_USERNAME` 或 `TURN_PASSWORD` 后，需要重新构建应用镜像：
+
+```bash
+docker compose --env-file .env.docker up -d --build app coturn
+```
+
+仅导出应用镜像供另一台服务器导入：
+
+```bash
+docker compose --env-file .env.docker build app
+docker save "$(grep '^APP_IMAGE=' .env.docker | cut -d= -f2-)" | gzip > games-online.tar.gz
+# 目标机：gzip -dc games-online.tar.gz | docker load
+```
+
+Compose 部署还需要目标机能获取 `mysql:8.4` 和 `coturn/coturn:alpine`，或者提前一并导出这两个镜像。
+
+### 3. systemd 示例
 
 环境变量文件 `/etc/games-online.env`：
 
@@ -349,7 +408,7 @@ sudo systemctl enable --now games-online
 sudo journalctl -u games-online -f
 ```
 
-### 3. Nginx 反代要点
+### 4. Nginx 反代要点
 
 ```nginx
 server {
@@ -377,7 +436,7 @@ WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Co
 
 生产环境建议启用 HTTPS，否则部分浏览器的 WebRTC、音频和移动端策略可能受限。
 
-### 4. WebRTC TURN / NAT 端口
+### 5. WebRTC TURN / NAT 端口
 
 跨网络联机依赖 WebRTC ICE。只有 STUN 时，同网通常可用，但跨运营商 NAT、对称 NAT 或严格防火墙时可能一直停在“握手中”。生产环境建议同时部署 TURN。
 

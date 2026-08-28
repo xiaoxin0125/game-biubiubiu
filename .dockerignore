@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+frontend/dist
+.git
+.gitignore
+.env
+.env.*
+!.env.docker.example
+*.log
+.DS_Store
+
+data/uploads
+data/saves
+data/app.db*

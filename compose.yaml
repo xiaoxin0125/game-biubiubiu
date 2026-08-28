@@ -1,0 +1,123 @@
+name: games-online
+
+services:
+  app:
+    image: ${APP_IMAGE:-games-online:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}}
+        VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=tcp}
+        VITE_WEBRTC_TURN_USERNAME: ${TURN_USERNAME:?Set TURN_USERNAME in .env}
+        VITE_WEBRTC_TURN_CREDENTIAL: ${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+        VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://${MYSQL_USER:-games}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}@mysql:3306/${MYSQL_DATABASE:-games_online}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:?Set CSRF_ALLOWED_ORIGINS in .env}
+      CSRF_REQUIRE_ORIGIN: ${CSRF_REQUIRE_ORIGIN:-1}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-104857600}
+      MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
+      USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
+      MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
+      UPLOADS_DIR: /app/data/uploads
+      BIOS_DIR: /app/data/bios
+      SAVES_DIR: /app/data/saves
+      CORES_DIR: /app/data/cores
+    ports:
+      - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    volumes:
+      - ./data/uploads:/app/data/uploads
+      - ./data/saves:/app/data/saves
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-games_online}
+      MYSQL_USER: ${MYSQL_USER:-games}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD} --silent"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+
+  coturn:
+    image: coturn/coturn:alpine
+    restart: unless-stopped
+    command:
+      - --listening-port=${TURN_PORT:-3478}
+      - --min-port=${TURN_MIN_PORT:-49160}
+      - --max-port=${TURN_MAX_PORT:-49200}
+      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in .env}
+      - --realm=${TURN_REALM:-games-online}
+      - --server-name=${TURN_REALM:-games-online}
+      - --user=${TURN_USERNAME:?Set TURN_USERNAME in .env}:${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      - --fingerprint
+      - --lt-cred-mech
+      - --no-multicast-peers
+      - --no-loopback-peers
+      - --stale-nonce=600
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --log-file=stdout
+      - --simple-log
+    ports:
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/tcp"
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/udp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/tcp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/udp"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+
+volumes:
+  mysql_data:
+
+networks:
+  backend:
+    driver: bridge
