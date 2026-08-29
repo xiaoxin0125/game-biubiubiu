@@ -2,9 +2,10 @@
 .env
 .env.*
 !.env.example
-!.env.docker.example
+!/config/.env.example
 
 # Runtime configuration
+/config/.env
 /config/app.env
 /config/app.json
 

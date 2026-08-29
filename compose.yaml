@@ -3,9 +3,6 @@ name: games-online
 services:
   app:
     image: ${APP_IMAGE:-ghcr.io/xiaoxin0125/game-biubiubiu:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
     restart: unless-stopped
     init: true
     depends_on:
@@ -14,21 +11,21 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      APP_CONFIG_FILE: ${APP_CONFIG_FILE:-}
-      DATABASE_URL: mysql://${MYSQL_USER:-games}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}@mysql:3306/${MYSQL_DATABASE:-games_online}
+      APP_CONFIG_FILE: ${APP_CONFIG_FILE:-/app/config/.env}
+      DATABASE_URL: mysql://${MYSQL_USER:-games}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in config/.env}@mysql:3306/${MYSQL_DATABASE:-games_online}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in config/.env}
       TRUST_PROXY: ${TRUST_PROXY:-1}
-      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:?Set CSRF_ALLOWED_ORIGINS in .env}
+      CSRF_ALLOWED_ORIGINS: ${CSRF_ALLOWED_ORIGINS:?Set CSRF_ALLOWED_ORIGINS in config/.env}
       CSRF_REQUIRE_ORIGIN: ${CSRF_REQUIRE_ORIGIN:-1}
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-104857600}
       MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
       USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
       MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
-      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}}
-      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in .env}:${TURN_PORT:-3478}?transport=tcp}
-      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in .env}}
-      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in .env}}
+      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}}
+      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}?transport=tcp}
+      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in config/.env}}
+      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}}
       VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
       VITE_WEBRTC_ICE_SERVERS: ${VITE_WEBRTC_ICE_SERVERS:-}
       UPLOADS_DIR: /app/data/uploads
@@ -36,11 +33,10 @@ services:
       SAVES_DIR: /app/data/saves
       CORES_DIR: /app/data/cores
     ports:
-      - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3000}:3000"
+      - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3001}:3000"
     volumes:
-      - ./data/uploads:/app/data/uploads
-      - ./data/saves:/app/data/saves
-      - ./config:/app/config:ro
+      - /www/wwwroot/game-biu/data:/app/data
+      - /www/wwwroot/game-biu/config:/app/config:ro
     healthcheck:
       test:
         - CMD
@@ -64,15 +60,15 @@ services:
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-games_online}
       MYSQL_USER: ${MYSQL_USER:-games}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in config/.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in config/.env}
       TZ: ${TZ:-Asia/Shanghai}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+08:00
     volumes:
-      - mysql_data:/var/lib/mysql
+      - /www/wwwroot/game-biu/mysql:/var/lib/mysql
     healthcheck:
       test:
         - CMD-SHELL
@@ -89,36 +85,28 @@ services:
   coturn:
     image: coturn/coturn:alpine
     restart: unless-stopped
+    network_mode: host
     command:
-      - --listening-port=${TURN_PORT:-3478}
-      - --min-port=${TURN_MIN_PORT:-49160}
-      - --max-port=${TURN_MAX_PORT:-49200}
-      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in .env}
+      - --listening-port=${TURN_PORT:-14276}
+      - --listening-ip=172.16.0.178
+      - --relay-ip=172.16.0.178
+      - --min-port=${TURN_MIN_PORT:-14277}
+      - --max-port=${TURN_MAX_PORT:-14280}
+      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/172.16.0.178
       - --realm=${TURN_REALM:-games-online}
       - --server-name=${TURN_REALM:-games-online}
-      - --user=${TURN_USERNAME:?Set TURN_USERNAME in .env}:${TURN_PASSWORD:?Set TURN_PASSWORD in .env}
+      - --user=${TURN_USERNAME:?Set TURN_USERNAME in config/.env}:${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}
       - --fingerprint
       - --lt-cred-mech
       - --no-multicast-peers
-      - --no-loopback-peers
       - --stale-nonce=600
-      - --no-cli
       - --no-tls
       - --no-dtls
       - --log-file=stdout
-      - --simple-log
-    ports:
-      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/tcp"
-      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/udp"
-      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/tcp"
-      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49200}/udp"
+    volumes:
+      - /www/wwwroot/game-biu/coturn:/var/lib/coturn
     security_opt:
       - no-new-privileges:true
-    networks:
-      - backend
-
-volumes:
-  mysql_data:
 
 networks:
   backend:
