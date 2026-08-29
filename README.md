@@ -309,7 +309,7 @@ npm run build
 
 Compose 会启动三个容器：
 
-- `app`：Games Online 应用，容器内部监听 `3000`，宿主机仅绑定 `127.0.0.1:3001`。
+- `app`：Games Online 应用，容器内部监听 `3000`，宿主机默认绑定 `0.0.0.0:32741`。
 - `mysql`：MySQL 8.4，保存用户、ROM 元数据、房间和站点设置。
 - `coturn`：STUN/TURN 服务，处理跨网络 WebRTC 连接和中继。
 
@@ -332,25 +332,24 @@ Compose 的宿主机映射目录全部位于 `/www/wwwroot/game-biu`。删除并
 将两个记录都解析到服务器公网 IPv4，并提前放行：
 
 - `80/tcp`、`443/tcp`：宝塔网站和 HTTPS。
-- `14276/tcp`、`14276/udp`：TURN 入口。
-- `14277-14280/tcp`、`14277-14280/udp`：TURN relay 端口范围。
+- `45123/tcp`、`45123/udp`：TURN 入口。
+- `45124-45129/tcp`、`45124-45129/udp`：TURN relay 端口范围。
 
 端口要同时在以下位置放行：
 
 1. 云厂商安全组。
 2. 服务器系统防火墙。
 3. 宝塔面板“安全”页面。
-4. 如果服务器位于路由器或上级 NAT 后方，还要配置同端口的 TCP/UDP 转发。
 
 使用 UFW 的服务器可以执行：
 
 ```bash
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw allow 14276/tcp
-ufw allow 14276/udp
-ufw allow 14277:14280/tcp
-ufw allow 14277:14280/udp
+ufw allow 45123/tcp
+ufw allow 45123/udp
+ufw allow 45124:45129/tcp
+ufw allow 45124:45129/udp
 ufw status
 ```
 
@@ -359,17 +358,17 @@ ufw status
 ```bash
 firewall-cmd --permanent --add-service=http
 firewall-cmd --permanent --add-service=https
-firewall-cmd --permanent --add-port=14276/tcp
-firewall-cmd --permanent --add-port=14276/udp
-firewall-cmd --permanent --add-port=14277-14280/tcp
-firewall-cmd --permanent --add-port=14277-14280/udp
+firewall-cmd --permanent --add-port=45123/tcp
+firewall-cmd --permanent --add-port=45123/udp
+firewall-cmd --permanent --add-port=45124-45129/tcp
+firewall-cmd --permanent --add-port=45124-45129/udp
 firewall-cmd --reload
 firewall-cmd --list-all
 ```
 
 只选择服务器实际使用的防火墙工具；宝塔安全页面和云安全组仍需同步配置。
 
-应用端口默认绑定 `127.0.0.1:3001`，供服务器本机的 Nginx 反向代理使用，因此无需向公网开放 `3001`。宿主机旧 systemd 服务继续使用 `3000` 时，两者也不会冲突。
+应用端口默认绑定 `0.0.0.0:32741`，可直接提供 HTTP 服务；如果使用本机 Nginx 反向代理，也可以改为绑定回环地址。宿主机旧 systemd 服务继续使用 `3000` 时，两者也不会冲突。
 
 #### 2.3 GitHub 镜像说明
 
@@ -457,9 +456,9 @@ nano /www/wwwroot/game-biu/config/.env
 系统没有 `nano` 时，可以使用 `vi config/.env`，也可以在宝塔文件管理中创建名为 `config/.env` 的文件。下面是一份可以直接复制的完整示例，必须替换域名、公网 IP 和全部密码：
 
 ```dotenv
-# 应用只供宝塔 Nginx 从本机反代
-APP_BIND_IP=127.0.0.1
-APP_PORT=3001
+# 应用监听地址可按实际反向代理方案调整
+APP_BIND_IP=0.0.0.0
+APP_PORT=32741
 CSRF_ALLOWED_ORIGINS=https://game.example.com
 TRUST_PROXY=1
 TZ=Asia/Shanghai
@@ -474,13 +473,15 @@ MYSQL_USER=games
 MYSQL_PASSWORD=请替换为MySQL应用密码
 MYSQL_ROOT_PASSWORD=请替换为MySQLRoot密码
 
-# TURN 公网信息
+# TURN 地址和端口示例
 TURN_PUBLIC_HOST=turn.example.com
-TURN_PUBLIC_IP=203.0.113.10
+TURN_PUBLIC_IP=203.0.113.25
+TURN_LISTENING_IP=192.0.2.25
+TURN_RELAY_IP=192.0.2.25
 TURN_REALM=games-online
-TURN_PORT=3478
-TURN_MIN_PORT=49160
-TURN_MAX_PORT=49200
+TURN_PORT=45123
+TURN_MIN_PORT=45124
+TURN_MAX_PORT=45129
 TURN_USERNAME=games
 TURN_PASSWORD=请替换为TURN强密码
 
@@ -507,6 +508,7 @@ APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:latest
 - `MYSQL_PASSWORD` 同时用于 MySQL 容器和应用连接串。为了避免连接 URL 解析问题，建议生成只含大小写字母和数字的长密码。
 - `TURN_PUBLIC_HOST` 填 TURN 域名或公网 IP，不要带 `http://`、`https://` 或端口。
 - `TURN_PUBLIC_IP` 必须是数字公网 IPv4，不要填域名。
+- `TURN_LISTENING_IP` 和 `TURN_RELAY_IP` 填 coturn 使用的本机网卡地址；普通独立服务器通常填写同一个本机地址。
 - `TURN_PASSWORD` 会由服务端运行时提供给浏览器用于 TURN 长期凭据，因此它不是只在服务器内部使用的秘密。
 - `APP_IMAGE` 可以固定为版本标签，例如 `ghcr.io/xiaoxin0125/game-biubiubiu:v1.0.0`，生产环境固定版本比长期使用 `latest` 更容易回滚。
 
@@ -613,7 +615,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env ps
 docker compose --env-file /www/wwwroot/game-biu/config/.env logs --tail=200 mysql
 docker compose --env-file /www/wwwroot/game-biu/config/.env logs --tail=200 app
 docker compose --env-file /www/wwwroot/game-biu/config/.env logs --tail=200 coturn
-curl --fail http://127.0.0.1:3001/api/health
+curl --fail http://127.0.0.1:32741/api/health
 ```
 
 健康检查应返回：
@@ -634,15 +636,15 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --build
 2. 在站点“SSL”页面申请并启用 Let's Encrypt 证书，然后开启“强制 HTTPS”。
 3. 打开“反向代理”，添加代理：
    - 代理名称：`games-online`。
-   - 目标 URL：`http://127.0.0.1:3001`。
+   - 目标 URL：`http://127.0.0.1:32741`。
    - 发送域名：`$host`；如果面板不接受该值，可以保留默认。
-4. 在站点 Nginx 配置中确认或补充以下内容。Docker 应用的宿主机端口是 `3001`：
+4. 在站点 Nginx 配置中确认或补充以下内容。Docker 应用的宿主机端口是 `32741`：
 
 ```nginx
 client_max_body_size 200m;
 
 location / {
-    proxy_pass http://127.0.0.1:3001;
+    proxy_pass http://127.0.0.1:32741;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
@@ -672,7 +674,7 @@ WebSocket 入口为 `/api/rooms/:code/ws`，必须透传 `Upgrade` 和 `Connecti
 先验证应用：
 
 ```bash
-curl --fail http://127.0.0.1:3001/api/health
+curl --fail http://127.0.0.1:32741/api/health
 curl --fail https://game.example.com/api/health
 curl --fail https://game.example.com/api/runtime-config
 ```
@@ -809,12 +811,11 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build --f
 
 依次确认：
 
-1. `TURN_PUBLIC_HOST` 已解析到本机公网 IPv4，且 DNS 记录没有开启 HTTP 代理。
+1. `TURN_PUBLIC_HOST` 已解析到部署使用的公网 IPv4，且 DNS 记录没有开启 HTTP 代理。
 2. `TURN_PUBLIC_IP` 是正确的数字公网 IPv4。
 3. 安全组、宝塔防火墙和系统防火墙同时开放 TURN TCP/UDP 入口及 relay 范围。
-4. 如果服务器在 NAT 后方，路由器已配置 TCP 和 UDP 端口转发。
-5. `docker compose --env-file /www/wwwroot/game-biu/config/.env logs --tail=200 coturn` 没有启动错误。
-6. 临时使用 `VITE_WEBRTC_FORCE_RELAY=1` 验证 TURN 中继。
+4. `docker compose --env-file /www/wwwroot/game-biu/config/.env logs --tail=200 coturn` 没有启动错误。
+5. 临时使用 `VITE_WEBRTC_FORCE_RELAY=1` 验证 TURN 中继。
 
 **修改 `config/.env` 后没有生效**
 
@@ -915,65 +916,6 @@ WebSocket 入口是 `/api/rooms/:code/ws`，反代必须透传 `Upgrade` 和 `Co
 
 生产环境建议启用 HTTPS，否则部分浏览器的 WebRTC、音频和移动端策略可能受限。
 
-### 5. 独立 coturn / 受限 NAT 端口示例
-
-标准 Compose 部署已经包含 coturn，并默认使用 `14276` 作为入口、`14277-14280` 作为 relay 端口。以下内容仅用于独立安装 coturn，或者服务器只能开放少量端口的特殊环境。
-
-WebRTC 参数由服务端在运行时输出，因此使用 GitHub 预构建镜像时也可以通过 Compose 环境变量或 `config/app.json` 修改：
-
-```bash
-VITE_WEBRTC_TURN_URLS=turn:公网IP:14276?transport=udp,turn:公网IP:14276?transport=tcp
-VITE_WEBRTC_TURN_USERNAME=你的TURN用户名
-VITE_WEBRTC_TURN_CREDENTIAL=你的TURN密码
-```
-
-coturn 受限 NAT 端口示例，适合只能开放 `14276-14280` 的机器：
-
-```text
-listening-port=14276
-listening-ip=内网IP
-relay-ip=内网IP
-external-ip=公网IP/内网IP
-realm=games-biubiubiu
-server-name=games-biubiubiu
-fingerprint
-lt-cred-mech
-user=你的TURN用户名:你的TURN密码
-min-port=14277
-max-port=14280
-no-multicast-peers
-stale-nonce=600
-no-cli
-no-tls
-no-dtls
-log-file=stdout
-simple-log
-```
-
-NAT 或上级防火墙需要转发：
-
-```text
-外部 14276/tcp -> 内网IP:14276/tcp
-外部 14276/udp -> 内网IP:14276/udp
-外部 14277-14280/tcp -> 内网IP:14277-14280/tcp
-外部 14277-14280/udp -> 内网IP:14277-14280/udp
-```
-
-端口分工：
-
-| 用途 | 端口 |
-|---|---|
-| TURN 入口 | `14276/tcp`、`14276/udp` |
-| TURN relay | `14277-14280/tcp`、`14277-14280/udp` |
-
-如果主机上的其他服务占用 `14276-14280` 中的任意端口，应先调整 `config/.env` 中的 TURN 入口和 relay 范围，并同步放行防火墙端口。
-
-修改 coturn 或 WebRTC 配置后，重建容器即可：
-
-```bash
-docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build --force-recreate app coturn
-```
-
 ## 常用命令
 
 | 命令 | 作用 |
@@ -1062,15 +1004,15 @@ Compose 变量文件通过 `docker compose --env-file /www/wwwroot/game-biu/conf
 
 ### 不同网络加入房间一直显示“握手中”怎么办？
 
-通常是 WebRTC 只配置了 STUN，跨运营商 NAT、对称 NAT 或严格防火墙无法打洞。处理顺序：
+通常是 WebRTC 只配置了 STUN，严格防火墙或不同运营商网络之间的连接无法打洞。处理顺序：
 
 1. 部署 coturn，并通过 Compose 或应用配置文件写入 `VITE_WEBRTC_TURN_URLS`、`VITE_WEBRTC_TURN_USERNAME`、`VITE_WEBRTC_TURN_CREDENTIAL`。
-2. NAT 或上级防火墙转发 TURN 入口端口和 relay 端口。
+2. 按部署环境开放 TURN 入口端口和 relay 端口。
 3. 重建应用容器，使运行时配置重新加载。
-4. 用跨网络手机热点实际加入房间验证。
+4. 用另一条网络实际加入房间验证。
 5. 临时设置 `VITE_WEBRTC_FORCE_RELAY=1` 可强制只走 TURN，用于验证中继链路是否真的可用。
 
-只开放少量 relay 端口时，能解决跨 NAT 连接问题，但并发能力会明显受限。
+只开放少量 relay 端口时，能解决跨网络连接问题，但并发能力会明显受限。
 
 ### 游客为什么不能控制？
 

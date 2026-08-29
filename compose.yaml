@@ -22,8 +22,8 @@ services:
       MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
       USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
       MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
-      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}}
-      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-14276}?transport=tcp}
+      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}}
+      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=tcp}
       VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in config/.env}}
       VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}}
       VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
@@ -33,7 +33,7 @@ services:
       SAVES_DIR: /app/data/saves
       CORES_DIR: /app/data/cores
     ports:
-      - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-3001}:3000"
+      - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-32741}:3000"
     volumes:
       - /www/wwwroot/game-biu/data:/app/data
       - /www/wwwroot/game-biu/config:/app/config:ro
@@ -87,12 +87,12 @@ services:
     restart: unless-stopped
     network_mode: host
     command:
-      - --listening-port=${TURN_PORT:-14276}
-      - --listening-ip=172.16.0.178
-      - --relay-ip=172.16.0.178
-      - --min-port=${TURN_MIN_PORT:-14277}
-      - --max-port=${TURN_MAX_PORT:-14280}
-      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/172.16.0.178
+      - --listening-port=${TURN_PORT:-45123}
+      - --listening-ip=${TURN_LISTENING_IP:?Set TURN_LISTENING_IP in config/.env}
+      - --relay-ip=${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
+      - --min-port=${TURN_MIN_PORT:-45124}
+      - --max-port=${TURN_MAX_PORT:-45129}
+      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
       - --realm=${TURN_REALM:-games-online}
       - --server-name=${TURN_REALM:-games-online}
       - --user=${TURN_USERNAME:?Set TURN_USERNAME in config/.env}:${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}
