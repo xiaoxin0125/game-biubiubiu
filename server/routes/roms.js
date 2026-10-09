@@ -15,6 +15,7 @@ import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-roms.js'
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
+import { listRomCheats } from '../rom-cheats.js'
 import { remoteDelete, remoteOpenFile, remoteUpload, REMOTE_UPLOAD_THRESHOLD_BYTES, remoteStorageConfig } from '../remote-storage.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
@@ -390,6 +391,18 @@ romRoutes.get('/:id', async (c) => {
   const me = await currentUser(c)
   if (!canAccessRom(me, row.rom)) return c.json({ error: 'forbidden' }, 403)
   return c.json({ rom: serialize(row.rom, row.user) })
+})
+
+// Cheat codes an admin pre-configured for this game. Read-only for players:
+// they can toggle them in the player bar, but only the admin edits the list.
+romRoutes.get('/:id/cheats', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: '不存在' }, 404)
+  const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
+  if (!rom) return c.json({ error: '不存在' }, 404)
+  const me = await currentUser(c)
+  if (!canAccessRom(me, rom)) return c.json({ error: 'forbidden' }, 403)
+  return c.json({ cheats: await listRomCheats(id) })
 })
 
 romRoutes.post('/upload', requireAuth, async (c) => {

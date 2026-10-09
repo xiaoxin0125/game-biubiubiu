@@ -5,12 +5,16 @@
       :platform="overlayPlatformInfo"
       :core-name="overlayCoreName"
       :can-save="canSaveState"
+      :can-reload="canReload"
+      :can-cheat="canCheat"
       :show-keys="!isTouchLayout"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
       @save-state="onSaveState"
       @load-state="onLoadState"
+      @reload="onReload"
+      @cheats="showCheats = true"
     >
       <template #extras>
         <!-- Version switcher: only when this game has multi-version siblings -->
@@ -148,6 +152,21 @@
       room-mode
       @close="closeInputSettings"
     />
+
+    <CheatDialog
+      v-if="showCheats"
+      :builtin-cheats="builtinCheats"
+      :cheats="cheats"
+      :core-name="coreDisplayName[activeCore] || activeCore"
+      :supported="cheatSupported"
+      :max-cheats="maxCheats"
+      @close="showCheats = false"
+      @add="addCheat"
+      @update="updateCheat"
+      @remove="removeCheat"
+      @toggle="toggleCheat"
+      @clear="clearCheats"
+    />
   </div>
 </template>
 
@@ -158,6 +177,7 @@ import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
+import { useCheats } from '../composables/player/useCheats.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
@@ -170,9 +190,11 @@ import { useRoomPlayerActions } from '../composables/player/room/useRoomPlayerAc
 import { useRoomPlayerLifecycle } from '../composables/player/room/useRoomPlayerLifecycle.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
+import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import RoomPanel from '../components/emulator-portal/RoomPanel.vue'
 import InputSettings from '../components/InputSettings.vue'
+import { coreDisplayName } from '../constants/cores.js'
 
 const props = defineProps({
   id: String,
@@ -323,11 +345,35 @@ const shouldShowVirtualGamepad = computed(() => {
 const displayName = computed(() =>
   romMeta.value?.title || roomInfo.value?.romTitle || (isGuestMode.value ? '连接中…' : '加载中…'))
 
+const showCheats = ref(false)
+// 模拟器只跑在房主一侧，重载与金手指都只对房主开放。
+const canControlEmulator = computed(() => isHostMode.value === true && !!rom.value && booted.value)
+const canCheat = computed(() => canControlEmulator.value)
+
 const { onSaveState, onLoadState } = useSaveState({
   romMeta,
   platformInfo,
   portalRef,
   isAuthed,
+  isGuestMode,
+  showToast,
+})
+
+const {
+  builtinCheats,
+  cheats,
+  cheatSupported,
+  maxCheats,
+  addCheat,
+  updateCheat,
+  removeCheat,
+  toggleCheat,
+  clearCheats,
+} = useCheats({
+  romMeta,
+  platformInfo,
+  portalRef,
+  booted,
   isGuestMode,
   showToast,
 })
@@ -375,10 +421,12 @@ const {
 const {
   onBooted,
   onInputConfigReloaded,
+  onReload,
   reloadPage,
   onFullscreen,
   goBack,
   switchVersion,
+  reloading,
 } = useRoomPlayerActions({
   router,
   roomCode,
@@ -389,7 +437,13 @@ const {
   markBooted,
   showToast,
   inviteConnectedRoomPeers,
+  resetInvites,
+  rtc,
+  signalMe,
+  signalPeers,
 })
+
+const canReload = computed(() => canControlEmulator.value && !reloading.value)
 
 useRoomPlayerLifecycle({
   routeRomId: () => props.id,

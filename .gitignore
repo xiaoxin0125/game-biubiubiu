@@ -19,6 +19,7 @@
 # Build artifacts and dependencies
 /frontend/dist/
 /node_modules/
+/frontend/node_modules/
 
 /rom-upload-php/data/
 /rom-upload-php/config.json

@@ -266,6 +266,7 @@
               </button>
               <div class="actions">
                 <button class="btn btn-sm" @click="editRom(r)">编辑</button>
+                <button class="btn btn-sm" @click="openCheats(r)"><span class="cheat-ico" aria-hidden="true">✦</span>金手指{{ r.cheatCount ? ` ${r.cheatCount}` : '' }}</button>
                 <button class="btn btn-sm" @click="play(r)">试玩</button>
                 <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
               </div>
@@ -338,6 +339,12 @@
 
     <UploadDialog v-if="showUpload" @close="showUpload = false" @uploaded="onUploaded" />
     <EditRomDialog v-if="editingRom" :rom="editingRom" @close="editingRom = null" @saved="onRomSaved" />
+    <RomCheatsDialog
+      v-if="cheatRom"
+      :rom="cheatRom"
+      @close="cheatRom = null"
+      @saved="onCheatsSaved"
+    />
   </div>
 </template>
 
@@ -351,6 +358,7 @@ import { getPlatform } from '../constants/platforms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import UploadDialog from '../components/UploadDialog.vue'
 import EditRomDialog from '../components/EditRomDialog.vue'
+import RomCheatsDialog from '../components/RomCheatsDialog.vue'
 import ClaySelect from '../components/ClaySelect.vue'
 import RomCover from '../components/RomCover.vue'
 
@@ -564,8 +572,18 @@ const togglingId = ref(null)
 const savingMaxPlayersId = ref(null)
 const savingCompatId = ref(null)
 const editingRom = ref(null)
+const cheatRom = ref(null)
 
 function editRom(r) { editingRom.value = r }
+
+function openCheats(r) { cheatRom.value = r }
+
+// The dialog returns the fresh list; mirror the count in the list badge.
+function onCheatsSaved(cheats) {
+  const rom = cheatRom.value
+  if (rom) rom.cheatCount = cheats.length
+  cheatRom.value = null
+}
 
 function onRomSaved() {
   editingRom.value = null
@@ -961,6 +979,7 @@ function fmtTime(v) {
 .muted { color: var(--text-tertiary); font-size: 13px; }
 
 .actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.cheat-ico { margin-right: 4px; color: var(--accent); }
 .rom-control {
   display: inline-flex;
   align-items: stretch;

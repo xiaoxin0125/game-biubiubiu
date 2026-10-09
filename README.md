@@ -4,7 +4,7 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.1.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.1.0`）。
+当前版本 **v1.2.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.2.0`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
@@ -12,9 +12,10 @@
 
 - 游戏库：公开库、个人 ROM、收藏、回收站，支持父子版本（街机 clone、修订版、汉化版）。
 - 模拟器：浏览器内运行 libretro core，支持本地键盘、物理手柄和移动端虚拟手柄，输入映射按用户保存。
+- 玩家工具条：云存档读写、重载游戏（重启模拟器）、金手指。金手指按 ROM 分成两部分：管理员在后台为游戏内置的代码（玩家只需开关），以及玩家自己添加的代码（保存在本机浏览器）。两者都即时下发给 core，由 core 解析代码文本（Nestopia / FCEUmm / Snes9x / mGBA / Genesis Plus GX / PicoDrive / PCSX-ReARMed 等实现了 `retro_cheat_set` 的 core 生效）；未实现该接口的 core（如 FBNeo、MAME 2003-Plus、QuickNES）会忽略代码。
 - 云存档：按 ROM 与槽位读写。
 - 联机房间：公开/私有房间、房间码与密码、聊天、席位同步；host 推流画面与音频，guest 通过 DataChannel 回传输入，游客默认观战。
-- 管理后台：用户、ROM、BIOS、站点设置（上传开关、联机开关、游客游玩、STUN）。
+- 管理后台：用户、ROM、BIOS、站点设置（上传开关、联机开关、游客游玩、STUN）；每个 ROM 可单独配置内置金手指（后台 ROM 列表里的「金手指」按钮）。
 - ROM 封面与元数据可编辑；超过 3MB 的 ROM 可转存到独立远端存储（Node 或 PHP 版，见 `deploy/README.md`）。
 
 ## 技术栈
@@ -152,7 +153,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.1.0"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.2.0"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -203,7 +204,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.1.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.2.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`），不需要手动改数据库。
 
 **6. 备份与恢复**
 

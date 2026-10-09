@@ -24,6 +24,9 @@ const {
   boot,
   saveState,
   loadState,
+  syncCheats,
+  readCheats,
+  coreSupportsCheats,
   pressButton,
   releaseButton,
   canvas,
@@ -31,6 +34,11 @@ const {
   toggleFullscreen,
   destroy,
 } = useEmulator()
+
+// Last cheat list handed to us by the page. RetroArch starts with an empty
+// cheat manager on every boot, so a restart (重载游戏 / 按键设置重载 / 换版本)
+// has to push it back in.
+let lastCheatList = []
 
 async function start() {
   try {
@@ -41,6 +49,7 @@ async function start() {
       retroarchConfig: props.retroarchConfig,
       retroarchCoreConfig: props.retroarchCoreConfig,
     })
+    if (lastCheatList.length) syncCheats(lastCheatList)
     emit('booted')
   } catch (err) {
     console.error('[emulator] boot failed', err)
@@ -63,6 +72,30 @@ async function restart() {
   await start()
 }
 
+// Remember what the page wants applied so `start()` can restore it after a
+// reboot. Codes never carry over to another ROM/core.
+function applyCheats(list) {
+  lastCheatList = Array.isArray(list) ? list.slice() : []
+  return syncCheats(lastCheatList)
+}
+
+// Exposed so the player bar can reboot the emulator (重载游戏). `restart()` is
+// also what the ROM/config watchers use internally.
+defineExpose({
+  restart,
+  saveState,
+  loadState,
+  syncCheats: applyCheats,
+  readCheats,
+  coreSupportsCheats,
+  pressButton,
+  releaseButton,
+  toggleFullscreen,
+  captureAudioStream,
+  destroy,
+  get canvas() { return canvas() },
+})
+
 // Re-boot on ROM change. Compare by primary fileContent URL (first entry of
 // an array or the single object) plus core name.
 function romKey(r) {
@@ -72,6 +105,7 @@ function romKey(r) {
 }
 watch(() => [romKey(props.rom), props.core], async ([newKey, newCore], [oldKey, oldCore]) => {
   if (newKey === oldKey && newCore === oldCore) return
+  lastCheatList = []
   await restart()
 })
 
@@ -79,17 +113,6 @@ watch([retroarchConfigSignature, retroarchCoreConfigSignature], async ([nextConf
   if ((!prevConfig && !prevCoreConfig) || (nextConfig === prevConfig && nextCoreConfig === prevCoreConfig)) return
   await restart()
   emit('config-reloaded')
-})
-
-defineExpose({
-  saveState,
-  loadState,
-  pressButton,
-  releaseButton,
-  toggleFullscreen,
-  captureAudioStream,
-  destroy,
-  get canvas() { return canvas() },
 })
 </script>
 

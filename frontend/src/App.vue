@@ -12,7 +12,7 @@
       <span>MADE BY</span>
       <a class="footer-author" href="https://www.hxino.com/" target="_blank" rel="noopener noreferrer">XIAOXIN</a>
       <span class="dot">·</span>
-      <span class="mono">v1.0</span>
+      <span class="mono">v{{ appVersion }}</span>
     </footer>
   </div>
 </template>
@@ -24,6 +24,8 @@ import AppHeader from './components/AppHeader.vue'
 
 const route = useRoute()
 const showChrome = computed(() => !route.meta?.fullscreen)
+// 构建时由 vite.config.js 的 define 注入，值与 package.json、镜像标签一致
+const appVersion = __APP_VERSION__
 </script>
 
 <style>

@@ -157,6 +157,69 @@ export function useEmulator() {
     await instance.value.loadState(blobOrArrayBuffer)
   }
 
+  // Cheats. RetroArch's cheat manager is reachable through the core's exported
+  // `_cmd_cheat_*` bridge (see RetroArch's frontend/drivers/platform_emscripten.c).
+  // Entries are registered with CHEAT_HANDLER_TYPE_EMU, i.e. the core itself
+  // parses the code text — Nestopia/FCEUmm take Game Genie + PAR + raw
+  // `addr:value`, Snes9x/Genesis Plus GX/mGBA take their own formats.
+  function cheatModule() {
+    const Module = instance.value?.getEmscripten?.()?.Module
+    if (!Module || typeof Module._cmd_cheat_realloc !== 'function') return null
+    return Module
+  }
+
+  function coreSupportsCheats() {
+    return !!cheatModule()
+  }
+
+  // Replace the running core's cheat list with `list` ([{ code, enabled }]) and
+  // re-apply it. Returns false when the emulator/core can't take cheats.
+  function syncCheats(list = []) {
+    const Module = cheatModule()
+    if (!Module) return false
+    const entries = (Array.isArray(list) ? list : [])
+      .map((item) => ({ code: String(item?.code || '').trim(), enabled: item?.enabled !== false }))
+      .filter((item) => item.code)
+    try {
+      // Clear first: cheat_manager_realloc() only frees entries above the new
+      // size, so reusing the same indexes would keep old codes alive. A size of
+      // 0 deliberately tears the whole list down (it reports failure for that).
+      Module._cmd_cheat_realloc(0)
+      // One extra disabled, code-less slot when the list is empty: with a NULL
+      // list cheat_manager_apply_cheats() returns early and the core never gets
+      // retro_cheat_reset(), leaving the previously applied cheats running.
+      if (!Module._cmd_cheat_realloc(Math.max(entries.length, 1))) return false
+      for (let i = 0; i < entries.length; i++) {
+        const ptr = Module.stringToNewUTF8(entries[i].code)
+        try { Module._cmd_cheat_set_code(i, ptr) } finally { Module._free(ptr) }
+        // set_code marks the slot enabled, so disabling needs an explicit toggle.
+        if (!!Module._cmd_cheat_get_code_state(i) !== entries[i].enabled) {
+          Module._cmd_cheat_toggle_index(true, i)
+        }
+      }
+      Module._cmd_cheat_apply_cheats()
+      return true
+    } catch (err) {
+      console.warn('[cheats] apply failed', err)
+      return false
+    }
+  }
+
+  // Read back what the running core currently holds (mostly for debugging).
+  function readCheats() {
+    const Module = cheatModule()
+    if (!Module) return []
+    const size = Module._cmd_cheat_get_size()
+    const out = []
+    for (let i = 0; i < size; i++) {
+      const ptr = Module._cmd_cheat_get_code(i)
+      const code = ptr ? Module.UTF8ToString(ptr) : ''
+      if (!code) continue
+      out.push({ code, enabled: !!Module._cmd_cheat_get_code_state(i) })
+    }
+    return out
+  }
+
   function pressButton(button, player = 1) {
     try { instance.value?.pressDown?.({ button, player }) } catch {}
   }
@@ -228,6 +291,11 @@ export function useEmulator() {
     error,
     instance,
     boot,
+    saveState,
+    loadState,
+    syncCheats,
+    readCheats,
+    coreSupportsCheats,
     pressButton,
     releaseButton,
     canvas,

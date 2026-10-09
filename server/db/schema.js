@@ -114,6 +114,21 @@ export const roms = mysqlTable('roms', {
   index('idx_roms_parent').on(t.parentRomId),
 ])
 
+// Built-in cheat codes configured by an admin for a specific ROM. Players see
+// them in the player-bar cheat dialog and can toggle/add their own on top; the
+// core parses the code text (see frontend/src/constants/cheats.js).
+export const romCheats = mysqlTable('rom_cheats', {
+  id: int('id').primaryKey().autoincrement(),
+  romId: int('rom_id').notNull().references(() => roms.id, { onDelete: 'cascade' }),
+  // Short human label ("无限命"); the column avoids the reserved word `desc`.
+  label: varchar('label', { length: 64 }).notNull().default(''),
+  code: varchar('code', { length: 128 }).notNull(),
+  createdAt: ts('created_at'),
+  updatedAt: ts('updated_at').$onUpdateFn(() => new Date()),
+}, (t) => [
+  index('idx_rom_cheats_rom').on(t.romId),
+])
+
 export const favorites = mysqlTable('favorites', {
   userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   romId: int('rom_id').notNull().references(() => roms.id, { onDelete: 'cascade' }),

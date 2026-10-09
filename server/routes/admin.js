@@ -11,6 +11,7 @@ import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { BIOS_BY_PLATFORM, BIOS_PLATFORM_LABELS } from '../../shared/registry/platform-bios.js'
 import { audit } from '../audit.js'
 import { coverUrlFor } from './roms.js'
+import { cheatCountsFor, listRomCheats, MAX_ROM_CHEATS, replaceRomCheats } from '../rom-cheats.js'
 
 export const adminRoutes = new Hono()
 
@@ -146,6 +147,7 @@ adminRoutes.get('/roms', async (c) => {
     .innerJoin(users, eq(users.id, roms.userId))
     .where(eq(roms.status, STATUS.normal))
     .orderBy(desc(roms.createdAt))
+  const cheatCounts = await cheatCountsFor(rows.map(({ rom }) => rom.id))
   return c.json({
     roms: rows.map(({ rom, user }) => ({
       id: rom.id,
@@ -162,8 +164,40 @@ adminRoutes.get('/roms', async (c) => {
       hasCover: !!rom.coverPath,
       coverUrl: coverUrlFor(rom),
       storage: rom.storage || 'local',
+      cheatCount: cheatCounts.get(rom.id) || 0,
       createdAt: rom.createdAt,
       owner: user,
     })),
   })
+})
+
+// Built-in cheat codes for one ROM (any ROM, including private ones).
+adminRoutes.get('/roms/:id/cheats', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: '不存在' }, 404)
+  const rom = (await db.select().from(roms).where(eq(roms.id, id)).limit(1))[0]
+  if (!rom) return c.json({ error: 'ROM 不存在' }, 404)
+  return c.json({ cheats: await listRomCheats(id) })
+})
+
+// Replace the whole cheat list of a ROM (add/edit/delete in one request).
+adminRoutes.put('/roms/:id/cheats', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: '不存在' }, 404)
+  const rom = (await db.select().from(roms).where(eq(roms.id, id)).limit(1))[0]
+  if (!rom) return c.json({ error: 'ROM 不存在' }, 404)
+
+  const body = await c.req.json().catch(() => null)
+  if (!body || !Array.isArray(body.cheats)) return c.json({ error: '参数不合法' }, 400)
+  if (body.cheats.length > MAX_ROM_CHEATS) {
+    return c.json({ error: `最多 ${MAX_ROM_CHEATS} 条金手指` }, 400)
+  }
+  const cheats = await replaceRomCheats(id, body.cheats)
+  await audit(c, {
+    action: 'rom.cheats.update',
+    targetType: 'rom',
+    targetId: String(id),
+    metadata: { count: cheats.length },
+  })
+  return c.json({ cheats })
 })

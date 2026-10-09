@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 export function useSoloPlayerActions({
   router,
   romMeta,
@@ -7,6 +9,8 @@ export function useSoloPlayerActions({
   markBooted,
   showToast,
 }) {
+  const reloading = ref(false)
+
   function onBooted() {
     booted.value = true
     markBooted()
@@ -20,6 +24,22 @@ export function useSoloPlayerActions({
 
   function reloadPage() {
     window.location.reload()
+  }
+
+  // 重载游戏：把模拟器整个重启（core + ROM 重新装载），等价于拔掉电源再开机。
+  async function onReload() {
+    const portal = portalRef.value
+    if (!portal?.restart || reloading.value) return
+    reloading.value = true
+    showToast('正在重载游戏…')
+    try {
+      await portal.restart()
+    } catch (err) {
+      console.warn('[player] reload failed', err)
+      showToast('重载失败')
+    } finally {
+      reloading.value = false
+    }
   }
 
   function onFullscreen() {
@@ -38,8 +58,10 @@ export function useSoloPlayerActions({
   }
 
   return {
+    reloading,
     onBooted,
     onInputConfigReloaded,
+    onReload,
     reloadPage,
     onFullscreen,
     goBack,

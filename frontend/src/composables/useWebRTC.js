@@ -70,6 +70,10 @@ function buildIceConfig() {
   }
 }
 
+function remoteUfrag(description) {
+  return /a=ice-ufrag:(\S+)/.exec(description?.sdp || '')?.[1] || ''
+}
+
 export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange }) {
   // peerId → { pc, dc }
   const peers = new Map()
@@ -130,6 +134,16 @@ export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange
   }
 
   async function handleOffer(fromPeerId, sdp) {
+    // The host may re-offer on an existing peer id: restarting the emulator
+    // (重载游戏) rebuilds its canvas, and a reloaded page re-joins the same room
+    // guest slot. A fresh offer carries a new ICE ufrag, which a PC that is
+    // already negotiated cannot accept — so drop the stale connection first and
+    // answer from a clean one.
+    const existing = peers.get(fromPeerId)
+    if (existing) {
+      const currentUfrag = remoteUfrag(existing.pc.remoteDescription)
+      if (!currentUfrag || currentUfrag !== remoteUfrag(sdp)) closePeer(fromPeerId)
+    }
     const { pc } = getOrCreate(fromPeerId)
     await pc.setRemoteDescription(new RTCSessionDescription(sdp))
     const answer = await pc.createAnswer()

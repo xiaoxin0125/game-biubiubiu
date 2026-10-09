@@ -43,6 +43,13 @@
       "when": 1791522000000,
       "tag": "0005_rom_remote_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1791590400000,
+      "tag": "0006_rom_cheats",
+      "breakpoints": true
     }
   ]
 }

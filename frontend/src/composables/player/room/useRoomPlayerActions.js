@@ -1,3 +1,5 @@
+import { ref } from 'vue'
+
 export function useRoomPlayerActions({
   router,
   roomCode,
@@ -8,7 +10,13 @@ export function useRoomPlayerActions({
   markBooted,
   showToast,
   inviteConnectedRoomPeers,
+  resetInvites,
+  rtc,
+  signalMe,
+  signalPeers,
 }) {
+  const reloading = ref(false)
+
   function onBooted() {
     booted.value = true
     markBooted()
@@ -23,6 +31,28 @@ export function useRoomPlayerActions({
 
   function reloadPage() {
     window.location.reload()
+  }
+
+  // 重载游戏（仅房主）：重启模拟器。canvas 会被换成新元素，所以先关掉访客的
+  // PeerConnection，重启完成后由 onBooted 用新画面重新发起邀请。
+  async function onReload() {
+    const portal = portalRef.value
+    if (!portal?.restart || reloading.value) return
+    reloading.value = true
+    showToast('正在重载游戏…')
+    try {
+      for (const peerId of Object.keys(signalPeers?.value || {})) {
+        if (peerId === signalMe?.value?.peerId) continue
+        try { rtc?.closePeer?.(peerId) } catch {}
+      }
+      resetInvites?.()
+      await portal.restart()
+    } catch (err) {
+      console.warn('[room] reload failed', err)
+      showToast('重载失败')
+    } finally {
+      reloading.value = false
+    }
   }
 
   function onFullscreen() {
@@ -41,8 +71,10 @@ export function useRoomPlayerActions({
   }
 
   return {
+    reloading,
     onBooted,
     onInputConfigReloaded,
+    onReload,
     reloadPage,
     onFullscreen,
     goBack,

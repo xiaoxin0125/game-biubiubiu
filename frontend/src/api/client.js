@@ -37,6 +37,7 @@ export const api = {
   romsPublic: () => request('/api/roms/public'),
   romsFavorites: () => request('/api/roms/favorites'),
   romGet: (id) => request(`/api/roms/${id}`),
+  romCheats: (id) => request(`/api/roms/${id}/cheats`),
   romUpload: (fd) => request('/api/roms/upload', { method: 'POST', formData: fd }),
   romUpdate: (id, patch) => request(`/api/roms/${id}`, { method: 'PATCH', body: patch }),
   romUploadCover: (id, fd) => request(`/api/roms/${id}/cover`, { method: 'POST', formData: fd }),
@@ -97,6 +98,8 @@ export const api = {
   // admin
   adminUsers: () => request('/api/admin/users'),
   adminRoms: () => request('/api/admin/roms'),
+  adminRomCheats: (id) => request(`/api/admin/roms/${id}/cheats`),
+  adminRomCheatsSave: (id, cheats) => request(`/api/admin/roms/${id}/cheats`, { method: 'PUT', body: { cheats } }),
   adminBios: () => request('/api/admin/bios'),
   adminUpdateUser: (id, patch) => request(`/api/admin/users/${id}`, { method: 'PATCH', body: patch }),
   adminDeleteUser: (id) => request(`/api/admin/users/${id}`, { method: 'DELETE' }),

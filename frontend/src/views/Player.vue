@@ -5,12 +5,16 @@
       :platform="overlayPlatformInfo"
       :core-name="overlayCoreName"
       :can-save="canSaveState"
+      :can-reload="canReload"
+      :can-cheat="canCheat"
       :show-keys="!isTouchLayout"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
       @save-state="onSaveState"
       @load-state="onLoadState"
+      @reload="onReload"
+      @cheats="showCheats = true"
     >
       <template #extras>
         <div v-if="siblings.length > 1" class="ver-switch" @click.stop>
@@ -96,6 +100,21 @@
       source-style
       @close="closeInputSettings"
     />
+
+    <CheatDialog
+      v-if="showCheats"
+      :builtin-cheats="builtinCheats"
+      :cheats="cheats"
+      :core-name="coreDisplayName[activeCore] || activeCore"
+      :supported="cheatSupported"
+      :max-cheats="maxCheats"
+      @close="showCheats = false"
+      @add="addCheat"
+      @update="updateCheat"
+      @remove="removeCheat"
+      @toggle="toggleCheat"
+      @clear="clearCheats"
+    />
   </div>
 </template>
 
@@ -106,14 +125,17 @@ import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
+import { useCheats } from '../composables/player/useCheats.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { useLocalPlayerInput } from '../composables/player/solo/useLocalPlayerInput.js'
 import { useSoloPlayerActions } from '../composables/player/solo/useSoloPlayerActions.js'
 import { useSoloPlayerLifecycle } from '../composables/player/solo/useSoloPlayerLifecycle.js'
+import { coreDisplayName } from '../constants/cores.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
+import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import InputSettings from '../components/InputSettings.vue'
 
@@ -199,12 +221,33 @@ const canSaveState = computed(() => isAuthed.value)
 const shouldShowVirtualGamepad = computed(() => !!rom.value)
 const displayName = computed(() => romMeta.value?.title || '加载中…')
 const isGuestMode = computed(() => false)
+const canCheat = computed(() => !!rom.value && booted.value)
+const showCheats = ref(false)
 
 const { onSaveState, onLoadState } = useSaveState({
   romMeta,
   platformInfo,
   portalRef,
   isAuthed,
+  isGuestMode,
+  showToast,
+})
+
+const {
+  builtinCheats,
+  cheats,
+  cheatSupported,
+  maxCheats,
+  addCheat,
+  updateCheat,
+  removeCheat,
+  toggleCheat,
+  clearCheats,
+} = useCheats({
+  romMeta,
+  platformInfo,
+  portalRef,
+  booted,
   isGuestMode,
   showToast,
 })
@@ -232,10 +275,12 @@ const {
 const {
   onBooted,
   onInputConfigReloaded,
+  onReload,
   reloadPage,
   onFullscreen,
   goBack,
   switchVersion,
+  reloading,
 } = useSoloPlayerActions({
   router,
   romMeta,
@@ -245,6 +290,8 @@ const {
   markBooted,
   showToast,
 })
+
+const canReload = computed(() => !!rom.value && booted.value && !reloading.value)
 
 useSoloPlayerLifecycle({
   routeRomId: () => props.id,
