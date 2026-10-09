@@ -1,3 +1,11 @@
+# 基础编排：应用 + MySQL。只启动这两个容器不需要任何 TURN 配置。
+#
+#   docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
+#
+# 跨网络联机需要自建中继时，再叠加 compose.turn.yaml（见该文件头部说明）：
+#
+#   docker compose --env-file /www/wwwroot/game-biu/config/.env \
+#     -f compose.yaml -f compose.turn.yaml up -d --no-build
 name: games-online
 
 services:
@@ -11,7 +19,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      APP_CONFIG_FILE: ${APP_CONFIG_FILE:-/app/config/.env}
+      # 留空时应用自动检测配置文件（挂载目录里的 config/.env、config/app.env、config/app.json）
+      APP_CONFIG_FILE: ${APP_CONFIG_FILE:-}
       DATABASE_URL: mysql://${MYSQL_USER:-games}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in config/.env}@mysql:3306/${MYSQL_DATABASE:-games_online}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in config/.env}
@@ -22,10 +31,12 @@ services:
       MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
       USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
       MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
-      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}}
-      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=tcp}
-      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in config/.env}}
-      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}}
+      # WebRTC 全部可选：STUN 建议在后台「站点设置」里填，这里留空即可；
+      # TURN 由 compose.turn.yaml 叠加写入，单独用本文件启动时不会配置中继。
+      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-}
+      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-}
+      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-}
+      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-}
       VITE_WEBRTC_FORCE_RELAY: ${VITE_WEBRTC_FORCE_RELAY:-0}
       VITE_WEBRTC_ICE_SERVERS: ${VITE_WEBRTC_ICE_SERVERS:-}
       UPLOADS_DIR: /app/data/uploads
@@ -35,8 +46,8 @@ services:
     ports:
       - "${APP_BIND_IP:-0.0.0.0}:${APP_PORT:-32741}:3000"
     volumes:
-      - /www/wwwroot/game-biu/data:/app/data
-      - /www/wwwroot/game-biu/config:/app/config:ro
+      - ${GAME_DATA_DIR:-/www/wwwroot/game-biu/data}:/app/data
+      - ${GAME_CONFIG_DIR:-/www/wwwroot/game-biu/config}:/app/config:ro
     healthcheck:
       test:
         - CMD
@@ -68,7 +79,7 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+08:00
     volumes:
-      - /www/wwwroot/game-biu/mysql:/var/lib/mysql
+      - ${GAME_MYSQL_DIR:-/www/wwwroot/game-biu/mysql}:/var/lib/mysql
     healthcheck:
       test:
         - CMD-SHELL
@@ -81,32 +92,6 @@ services:
       - no-new-privileges:true
     networks:
       - backend
-
-  coturn:
-    image: coturn/coturn:alpine
-    restart: unless-stopped
-    network_mode: host
-    command:
-      - --listening-port=${TURN_PORT:-45123}
-      - --listening-ip=${TURN_LISTENING_IP:?Set TURN_LISTENING_IP in config/.env}
-      - --relay-ip=${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
-      - --min-port=${TURN_MIN_PORT:-45124}
-      - --max-port=${TURN_MAX_PORT:-45129}
-      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
-      - --realm=${TURN_REALM:-games-online}
-      - --server-name=${TURN_REALM:-games-online}
-      - --user=${TURN_USERNAME:?Set TURN_USERNAME in config/.env}:${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}
-      - --fingerprint
-      - --lt-cred-mech
-      - --no-multicast-peers
-      - --stale-nonce=600
-      - --no-tls
-      - --no-dtls
-      - --log-file=stdout
-    volumes:
-      - /www/wwwroot/game-biu/coturn:/var/lib/coturn
-    security_opt:
-      - no-new-privileges:true
 
 networks:
   backend:

@@ -29,6 +29,20 @@
       "when": 1779499100000,
       "tag": "0003_rom_compat",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1791518400000,
+      "tag": "0004_rom_cover",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1791522000000,
+      "tag": "0005_rom_remote_storage",
+      "breakpoints": true
     }
   ]
 }

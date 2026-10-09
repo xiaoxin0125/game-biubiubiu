@@ -164,23 +164,23 @@ function labelOf(key, fallback) {
 // buttons; PlayStation uses its iconic symbol colors.
 const FACE_LAYOUTS = {
   // Famicom / NES / GB / GBC — 2 buttons: A 橙色, B 红色, 跟 小霸王 对齐
-  fc:     { keys: ['a', 'b'],             colors: { a: '#FF9500', b: '#FF3B30' } },
+  fc:     { keys: ['a', 'b'],             colors: { a: '#F0A05F', b: '#C4526F' } },
   // GBA — 2-button diagonal, orange/red with L/R shoulders
-  gba:    { keys: ['a', 'b'],             colors: { a: '#FF9500', b: '#FF3B30' } },
+  gba:    { keys: ['a', 'b'],             colors: { a: '#F0A05F', b: '#C4526F' } },
   // SNES (Japan) — 4-color diamond: Y绿 X蓝 A红 B黄
-  snes:   { keys: ['x', 'y', 'a', 'b'],   colors: { x: '#007AFF', y: '#34C759', a: '#FF3B30', b: '#FFCC00' } },
+  snes:   { keys: ['x', 'y', 'a', 'b'],   colors: { x: '#82AEF5', y: '#5FC48F', a: '#C4526F', b: '#EFC55B' } },
   // PlayStation — △绿 □粉 ✕蓝 ◯红
-  ps:     { keys: ['y', 'x', 'a', 'b'],   colors: { y: '#34C759', x: '#FF2D92', a: '#FF3B30', b: '#007AFF' } },
+  ps:     { keys: ['y', 'x', 'a', 'b'],   colors: { y: '#5FC48F', x: '#FF2D92', a: '#C4526F', b: '#82AEF5' } },
   // Mega Drive / Genesis 6-button cabinet — 2×3 grid A B C (top) / X Y Z
   // (bottom). retropad→label: b='A' a='B' y='C' l='X' x='Y' r='Z'.
   md:     { keys: ['b', 'a', 'y', 'l', 'x', 'r'],
-            colors: { b: '#34C759', a: '#0A84FF', y: '#FF3B30',
-                      l: '#FFCC00', x: '#FF9500', r: '#AF52DE' } },
+            colors: { b: '#5FC48F', a: '#82AEF5', y: '#C4526F',
+                      l: '#EFC55B', x: '#F0A05F', r: '#AF52DE' } },
   // Master System / Game Gear — 2 buttons: 1 蓝 2 红
-  sms:    { keys: ['b', 'a'],             colors: { b: '#0A84FF', a: '#FF3B30' } },
+  sms:    { keys: ['b', 'a'],             colors: { b: '#82AEF5', a: '#C4526F' } },
   // Arcade face buttons use A/B/C/D; retropad L/R are exposed below as E/F
   // for 6-button cabinets.
-  arcade: { keys: ['b', 'a', 'y', 'x'],   colors: { b: '#FF3B30', a: '#FFCC00', y: '#34C759', x: '#007AFF' } },
+  arcade: { keys: ['b', 'a', 'y', 'x'],   colors: { b: '#C4526F', a: '#EFC55B', y: '#5FC48F', x: '#82AEF5' } },
 }
 
 function pickLayout(platform) {
@@ -217,7 +217,7 @@ const faceBtns = computed(() => {
     .map((k) => ({
       key: k,
       label: labelOf(k, k.toUpperCase()),
-      color: spec.colors[k] || '#FF9500',
+      color: spec.colors[k] || '#F0A05F',
       className: `fbtn-${k}`,
     }))
 })
@@ -535,56 +535,42 @@ function onDpadEnd(e) {
   position: relative;
   width: 150px; height: 150px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%,
-    rgba(28, 28, 30, 0.68) 0%,
-    rgba(28, 28, 30, 0.72) 55%,
-    rgba(28, 28, 30, 0.8) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 2px 4px rgba(255,255,255,0.06),
-    inset 0 -2px 8px rgba(0,0,0,0.4),
-    0 6px 16px rgba(0,0,0,0.35);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: var(--clay-inset-surface);
+  border: 0;
+  box-shadow: var(--clay-in), var(--clay-md);
   touch-action: none;
   cursor: pointer;
-  transition: border-color 0.1s ease;
+  transition: box-shadow var(--t-fast) var(--clay-ease), background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease);
 }
-.stick.active { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.stick:active { transform: scaleX(1.05) scaleY(0.9); }
+.stick.active { background: var(--clay-pink-soft); box-shadow: var(--clay-in-deep), var(--clay-press); }
 .stick-knob {
   position: absolute;
   top: 50%; left: 50%;
   width: 66px; height: 66px;
   margin: -33px 0 0 -33px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%,
-    rgba(255,255,255,0.22) 0%,
-    rgba(110, 110, 120, 0.85) 40%,
-    rgba(40, 40, 45, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    inset 0 2px 4px rgba(255,255,255,0.22),
-    0 4px 12px rgba(0,0,0,0.5);
+  background: var(--clay-surface);
+  border: 0;
+  box-shadow: var(--clay-md);
   pointer-events: none;
-  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1), background 0.1s ease;
+  transition: transform 0.08s var(--clay-ease), background var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
 }
 .stick.active .stick-knob {
-  background: radial-gradient(circle at 35% 30%,
-    rgba(255,255,255,0.28) 0%,
-    color-mix(in srgb, var(--accent) 80%, transparent) 40%,
-    color-mix(in srgb, var(--accent) 95%, #000) 100%);
-  transition: transform 0s;
+  background: var(--clay-primary-grad);
+  box-shadow: var(--clay-sm);
+  transition: transform 0s, background var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
 }
 .stick-arrow {
   position: absolute;
   width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
-  color: rgba(255, 255, 255, 0.28);
+  color: var(--text-quaternary);
   font-size: 11px;
   pointer-events: none;
-  transition: color 0.1s ease;
+  transition: color var(--t-fast) var(--clay-ease);
 }
-.stick-arrow.on { color: var(--accent); }
+.stick-arrow.on { color: var(--ink-pink); }
 .stick-up    { top: 8px;  left: 50%; transform: translateX(-50%); }
 .stick-right { right: 8px; top: 50%; transform: translateY(-50%); }
 .stick-down  { bottom: 8px; left: 50%; transform: translateX(-50%); }
@@ -598,19 +584,17 @@ function onDpadEnd(e) {
   gap: 4px;
 }
 .face-btn {
-  --fc: #FF9500;
-  width: 52px; height: 52px;
+  --fc: #F0A05F;
+  width: 54px; height: 54px;
   border-radius: 50%;
-  border: 2px solid var(--fc);
-  background: rgba(20, 20, 22, 0.7);
-  color: var(--fc);
-  font-weight: 800;
+  border: 0;
+  background: var(--clay-surface);
+  color: color-mix(in srgb, var(--fc) 40%, var(--clay-ink));
+  font-weight: 900;
   font-size: 16px;
   font-family: inherit;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 4px 12px rgba(0,0,0,0.35);
-  transition: background 0.08s ease, transform 0.08s ease, color 0.08s ease;
+  box-shadow: var(--clay-md), 0 0 0 3px color-mix(in srgb, var(--fc) 22%, transparent);
+  transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   place-self: center;
   padding: 0;
   /* Block all native touch gestures so rapid tapping never triggers
@@ -622,19 +606,20 @@ function onDpadEnd(e) {
   -webkit-tap-highlight-color: transparent;
 }
 .face-btn.pressed {
-  background: var(--fc);
-  color: #fff;
-  transform: scale(0.95);
+  background: color-mix(in srgb, var(--fc) 34%, #fff);
+  color: color-mix(in srgb, var(--fc) 32%, var(--clay-ink));
+  transform: translateY(2px) scaleX(1.05) scaleY(0.9);
+  box-shadow: var(--clay-press), 0 0 0 3px color-mix(in srgb, var(--fc) 30%, transparent);
 }
 
 /* Turbo / 连发 indicator — pulsing glow ring while auto-firing */
 .face-btn.turbo,
 .sh-btn.turbo {
-  animation: turbo-pulse 0.5s ease-in-out infinite;
+  animation: turbo-pulse 0.5s var(--clay-ease) infinite;
 }
 @keyframes turbo-pulse {
-  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 4px 12px rgba(0,0,0,0.35), 0 0 0 0 var(--fc, #fff); }
-  50%      { box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 4px 12px rgba(0,0,0,0.35), 0 0 14px 3px var(--fc, #fff); }
+  0%, 100% { transform: scaleX(1) scaleY(1); box-shadow: var(--clay-md), 0 0 0 3px color-mix(in srgb, var(--fc, #F0A05F) 22%, transparent); }
+  50%      { transform: scaleX(0.94) scaleY(1.06); box-shadow: var(--clay-sm), 0 0 0 8px color-mix(in srgb, var(--fc, #F0A05F) 26%, transparent); }
 }
 
 /* FC / Famicom / GB — 2 large buttons on a clean diagonal, 小霸王 style.
@@ -732,55 +717,61 @@ function onDpadEnd(e) {
   max-width: 160px;
 }
 .sh-btn {
-  padding: 8px 18px;
-  border-radius: 10px 10px 20px 20px;
-  border: none;
-  background: rgba(20, 20, 22, 0.72);
-  color: rgba(255,255,255,0.85);
-  font-weight: 700;
+  padding: 9px 20px;
+  border-radius: var(--r-sm) var(--r-sm) var(--r-lg) var(--r-lg);
+  border: 0;
+  background: var(--clay-surface);
+  color: var(--text-secondary);
+  font-weight: 900;
   font-size: 12px;
   font-family: inherit;
-  backdrop-filter: blur(14px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 3px 8px rgba(0,0,0,0.3);
-  transition: background 0.08s ease, transform 0.08s ease;
+  box-shadow: var(--clay-md);
+  transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.sh-btn.pressed { background: color-mix(in srgb, var(--accent) 65%, transparent); color: #fff; transform: translateY(1px); }
+.sh-btn.pressed {
+  background: var(--clay-pink-soft);
+  color: #6C2039;
+  transform: translateY(2px) scaleX(1.05) scaleY(0.9);
+  box-shadow: var(--clay-press);
+}
 
 /* ===== System (Start/Select) ===== */
 .sys-btn {
-  padding: 7px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(20, 20, 22, 0.72);
-  color: rgba(255,255,255,0.85);
-  font-weight: 700;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+  padding: 8px 18px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: var(--clay-surface);
+  color: var(--text-secondary);
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   font-family: inherit;
-  backdrop-filter: blur(14px);
-  transition: background 0.08s ease;
+  box-shadow: var(--clay-sm);
+  transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.sys-btn.pressed { background: color-mix(in srgb, var(--accent) 65%, transparent); color: #fff; }
+.sys-btn.pressed {
+  background: var(--clay-pink-soft);
+  color: #6C2039;
+  transform: translateY(2px) scaleX(1.05) scaleY(0.9);
+  box-shadow: var(--clay-press-sm);
+}
 
 /* 连发开关 — 默认灰色，开启时发橙色光示警 */
-.turbo-toggle {
-  border-color: rgba(255,255,255,0.18);
-}
+.turbo-toggle { color: var(--text-secondary); }
 .turbo-toggle.on {
-  background: color-mix(in srgb, #FF9500 70%, transparent);
-  color: #fff;
-  border-color: #FF9500;
-  box-shadow: 0 0 8px color-mix(in srgb, #FF9500 60%, transparent);
+  background: var(--clay-cream);
+  color: var(--text-cream);
+  box-shadow: var(--clay-sm);
 }
 
 /* Portrait mobile: compact */

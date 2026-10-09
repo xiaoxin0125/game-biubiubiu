@@ -2,11 +2,14 @@ import { ref, computed, watch } from 'vue'
 import { api } from '../api/client.js'
 
 const DEFAULTS = {
-  siteTitle: '筱信游戏',
-  siteSubtitle: '个人经典游戏收藏与在线游玩分享',
+  siteTitle: 'Games Online',
+  siteSubtitle: '共赴复古联机之境',
   netplayEnabled: true,
   guestPlayEnabled: false,
   userUploadEnabled: true,
+  // 远端存储（大 ROM 转存）是否已在站点设置里配置好
+  remoteUploadAvailable: false,
+  remoteUploadThresholdBytes: 3 * 1024 * 1024,
 }
 
 const settings = ref({ ...DEFAULTS })
@@ -16,9 +19,11 @@ let primed = false
 function normalize(raw) {
   const out = { ...DEFAULTS, ...raw }
   // coerce "1"/"0" → boolean
-  for (const key of ['netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled']) {
+  for (const key of ['netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled', 'remoteUploadAvailable']) {
     if (typeof out[key] === 'string') out[key] = out[key] === '1'
   }
+  const threshold = Number(out.remoteUploadThresholdBytes)
+  out.remoteUploadThresholdBytes = Number.isFinite(threshold) && threshold > 0 ? threshold : DEFAULTS.remoteUploadThresholdBytes
   return out
 }
 

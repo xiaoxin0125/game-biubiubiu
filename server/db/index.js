@@ -47,7 +47,7 @@ async function cleanupDuplicateSaveStates() {
   `)
 }
 
-const MIN_ADMIN_PASSWORD_LENGTH = 12
+const MIN_ADMIN_PASSWORD_LENGTH = 6
 
 function requireInitialAdminPassword() {
   const password = process.env.ADMIN_PASSWORD

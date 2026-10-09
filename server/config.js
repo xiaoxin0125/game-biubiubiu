@@ -4,6 +4,7 @@ import { parseEnv } from 'node:util'
 
 const CONFIGURABLE_KEYS = new Set([
   'PORT',
+  'HOST',
   'NODE_ENV',
   'DATABASE_URL',
   'ADMIN_USERNAME',
@@ -57,7 +58,7 @@ export function loadConfigFile() {
   const configuredPath = String(process.env.APP_CONFIG_FILE || '').trim()
   const candidates = configuredPath
     ? [resolve(configuredPath)]
-    : [resolve('config/.env'), resolve('config/app.env'), resolve('config/app.json')]
+    : [resolve('config/.env'), resolve('config/app.env'), resolve('config/app.json'), resolve('.env')]
   const filePath = candidates.find((candidate) => existsSync(candidate))
 
   if (!filePath) {

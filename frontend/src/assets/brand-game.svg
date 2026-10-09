@@ -1,9 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Xiaoxin game logo">
-  <rect x="8" y="8" width="80" height="80" rx="18" fill="#fff7ed" stroke="#111" stroke-width="4"/>
-  <path d="M29 54h38c8 0 14 6 14 14 0 5-4 9-9 9-4 0-7-2-9-5H33c-2 3-5 5-9 5-5 0-9-4-9-9 0-8 6-14 14-14Z" fill="#fff" stroke="#111" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M30 65h14M37 58v14" stroke="#111" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="62" cy="65" r="4" fill="#f59e0b" stroke="#111" stroke-width="3"/>
-  <circle cx="74" cy="65" r="4" fill="#ef4444" stroke="#111" stroke-width="3"/>
-  <path d="M34 25 48 40 62 25" fill="none" stroke="#111" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 27 48 38 60 27" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="复古掌机标志">
+  <defs>
+    <linearGradient id="orbBody" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#FCC7E3"/>
+      <stop offset="1" stop-color="#F07FBB"/>
+    </linearGradient>
+    <linearGradient id="orbShell" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEFF7"/>
+    </linearGradient>
+    <linearGradient id="orbGlass" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#FFE4F1"/>
+      <stop offset="1" stop-color="#FFC8E1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 粘土圆底 + 左上柔光 -->
+  <rect width="96" height="96" fill="url(#orbBody)"/>
+  <ellipse cx="26" cy="10" rx="34" ry="20" fill="#FFFFFF" opacity="0.22"/>
+
+  <!-- 掌机机身（微微倾斜，粘土厚度靠白-粉渐变表现） -->
+  <g transform="rotate(-7 48 50)">
+    <rect x="12" y="26" width="72" height="48" rx="21" fill="url(#orbShell)"/>
+    <!-- 屏幕 -->
+    <rect x="22" y="35" width="34" height="30" rx="12" fill="url(#orbGlass)"/>
+    <rect x="28" y="50" width="7" height="11" rx="3.5" fill="#F27EB2"/>
+    <rect x="37" y="43" width="7" height="18" rx="3.5" fill="#F0A05F"/>
+    <rect x="46" y="47" width="7" height="14" rx="3.5" fill="#EFC55B"/>
+    <!-- 按键 -->
+    <circle cx="66" cy="43" r="6.5" fill="#F27EB2"/>
+    <circle cx="67" cy="59" r="6.5" fill="#EFC55B"/>
+  </g>
 </svg>

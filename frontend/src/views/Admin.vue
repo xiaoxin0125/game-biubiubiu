@@ -53,56 +53,102 @@
       <button class="seg-btn" :class="{ active: tab === 'bios' }" @click="tab = 'bios'">BIOS</button>
     </nav>
 
-    <section v-if="tab === 'site'" class="panel-card panel">
+    <section v-if="tab === 'site'" class="panel-card panel panel-site">
       <h2 class="panel-title">站点设置</h2>
-      <div class="field">
-        <label class="label">网站名称</label>
-        <input v-model.trim="form.siteTitle" class="input" maxlength="40" placeholder="Games Online" />
+
+      <div class="site-block">
+        <h3 class="site-block-title">基本信息</h3>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="site-title">网站名称</label>
+            <input id="site-title" v-model.trim="form.siteTitle" class="input" maxlength="40" placeholder="Games Online" />
+          </div>
+          <div class="field">
+            <label class="label" for="site-subtitle">副标题</label>
+            <input id="site-subtitle" v-model.trim="form.siteSubtitle" class="input" maxlength="80" />
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="webrtc-stun-urls">STUN 服务器（可选）</label>
+          <textarea id="webrtc-stun-urls" v-model.trim="form.webrtcStunUrls" class="input" rows="3" maxlength="2000" placeholder="留空即可部署；后续填写 stun:主机:端口，多个地址用逗号或换行分隔"></textarea>
+          <p class="field-hint">STUN 用于联机时发现公网地址。默认留空，不影响网站部署和单机游玩。保存后无需重新打包，其他玩家刷新页面后生效；跨网络联机可能还需要 TURN 中继。</p>
+        </div>
       </div>
-      <div class="field">
-        <label class="label">副标题</label>
-        <input v-model.trim="form.siteSubtitle" class="input" maxlength="80" />
+
+      <div class="site-block">
+        <h3 class="site-block-title">远端存储（大 ROM）</h3>
+        <div class="field">
+          <label class="label" for="remote-url">远端服务地址</label>
+          <input id="remote-url" v-model.trim="form.remoteUploadUrl" class="input" maxlength="200" placeholder="http://127.0.0.1:8790 或 http://另一台服务器:8790" />
+          <p class="field-hint">超过 3MB 的 ROM 可以选择转存到这台服务器，上传与播放都由主站带密钥转发，密钥不会下发到浏览器。远端服务代码在 <code>/www/wwwroot/rom-upload</code>，详见该目录的 README。</p>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="remote-token">远端密钥</label>
+            <input id="remote-token" v-model.trim="form.remoteUploadToken" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和远端 config.json 里的 token 一致" />
+          </div>
+          <div class="field">
+            <label class="label">连接测试</label>
+            <div class="remote-test">
+              <button class="btn" type="button" :disabled="testingRemote" @click="testRemote">
+                {{ testingRemote ? '测试中…' : '测试连接' }}
+              </button>
+              <span v-if="remoteTestResult" class="remote-test-result" :class="{ ok: remoteTestResult.ok }">
+                {{ remoteTestResult.text }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <p class="field-hint">远端是否可用只看「地址 + 密钥」是否都已保存：都填好后，上传 ROM 时超过 3MB 就会出现「上传到远端服务器」开关。</p>
       </div>
-      <label class="toggle-row">
-        <div class="toggle-sw">
-          <input type="checkbox" v-model="form.netplayEnabled" />
-          <span class="sw-track"><span class="sw-thumb"></span></span>
-        </div>
-        <div class="toggle-text">
-          <div class="tr-t">开启对战功能</div>
-          <div class="tr-s">关闭后用户无法创建或加入房间；管理员不受影响</div>
-        </div>
-      </label>
 
-      <label class="toggle-row">
-        <div class="toggle-sw">
-          <input type="checkbox" v-model="form.guestPlayEnabled" />
-          <span class="sw-track"><span class="sw-thumb"></span></span>
-        </div>
-        <div class="toggle-text">
-          <div class="tr-t">允许游客试玩</div>
-          <div class="tr-s">开启后未登录用户可以试玩公开 ROM；存档和对战控制权仍然需要登录</div>
-        </div>
-      </label>
+      <div class="site-block">
+        <h3 class="site-block-title">功能开关</h3>
+        <div class="toggle-grid">
+          <label class="toggle-row">
+            <div class="toggle-text">
+              <div class="tr-t">开启对战功能</div>
+              <div class="tr-s">关闭后用户无法创建或加入房间；管理员不受影响</div>
+            </div>
+            <div class="toggle-sw">
+              <input type="checkbox" v-model="form.netplayEnabled" />
+              <span class="sw-track"><span class="sw-thumb"></span></span>
+            </div>
+          </label>
 
-      <label class="toggle-row">
-        <div class="toggle-sw">
-          <input type="checkbox" v-model="form.userUploadEnabled" />
-          <span class="sw-track"><span class="sw-thumb"></span></span>
-        </div>
-        <div class="toggle-text">
-          <div class="tr-t">允许普通用户上传 ROM</div>
-          <div class="tr-s">关闭后只有管理员可以上传 ROM，普通用户的上传接口会被拒绝</div>
-        </div>
-      </label>
+          <label class="toggle-row">
+            <div class="toggle-text">
+              <div class="tr-t">允许游客试玩</div>
+              <div class="tr-s">开启后未登录用户可以试玩公开 ROM；存档和对战控制权仍然需要登录</div>
+            </div>
+            <div class="toggle-sw">
+              <input type="checkbox" v-model="form.guestPlayEnabled" />
+              <span class="sw-track"><span class="sw-thumb"></span></span>
+            </div>
+          </label>
 
-      <div class="row-end">
-        <button class="btn btn-primary" :disabled="savingSite" @click="saveSite">
+          <label class="toggle-row">
+            <div class="toggle-text">
+              <div class="tr-t">允许普通用户上传 ROM</div>
+              <div class="tr-s">关闭后只有管理员可以上传 ROM，普通用户的上传接口会被拒绝</div>
+            </div>
+            <div class="toggle-sw">
+              <input type="checkbox" v-model="form.userUploadEnabled" />
+              <span class="sw-track"><span class="sw-thumb"></span></span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="site-actions">
+        <div class="site-status">
+          <Transition name="saved">
+            <span v-if="siteSaved" class="saved">已保存</span>
+          </Transition>
+        </div>
+        <button class="btn btn-primary site-save" :disabled="savingSite" @click="saveSite">
           {{ savingSite ? '保存中…' : '保存' }}
         </button>
-        <Transition name="saved">
-          <span v-if="siteSaved" class="saved">已保存</span>
-        </Transition>
       </div>
     </section>
 
@@ -146,22 +192,25 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <input v-model.trim="adminRomSearch" placeholder="搜索 ROM、文件名或上传者" />
         </div>
-        <select v-model="adminRomPlatform" class="filter-select" aria-label="筛选平台">
-          <option value="all">全部平台</option>
-          <option v-for="p in adminRomPlatformOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
-        </select>
-        <select v-model="adminRomVisibility" class="filter-select" aria-label="筛选公开状态">
-          <option value="all">全部状态</option>
-          <option value="public">公开</option>
-          <option value="private">私密</option>
-        </select>
+        <ClaySelect
+          v-model="adminRomPlatform"
+          class="filter-select"
+          aria-label="筛选平台"
+          :options="adminRomPlatformSelectOptions"
+        />
+        <ClaySelect
+          v-model="adminRomVisibility"
+          class="filter-select"
+          aria-label="筛选公开状态"
+          :options="adminVisibilitySelectOptions"
+        />
       </div>
 
       <div v-if="!filteredAdminRoms.length" class="empty-state">没有匹配的 ROM</div>
       <div v-else class="admin-rom-list">
         <article v-for="r in pagedAdminRoms" :key="r.id" class="admin-rom-entry">
           <div class="admin-rom-main">
-            <span class="pdot" :style="{ background: platColor(r.platform) }"></span>
+            <RomCover :rom="r" class="entry-cover" />
             <div class="admin-rom-title-wrap">
               <div class="rt">{{ r.title }}</div>
               <div class="rf">{{ r.fileName }} · {{ fmtSize(r.fileSize) }}</div>
@@ -170,6 +219,8 @@
           <div class="admin-rom-meta">
             <div class="admin-rom-facts">
               <span class="plat-badge" :style="{ '--pc': platColor(r.platform) }">{{ platLabel(r.platform) }}</span>
+              <span v-if="r.storage === 'remote'" class="meta-chip chip-remote" title="文件存放在远端存储服务器">远端</span>
+              <span v-if="r.parentRomId" class="meta-chip">{{ r.versionLabel || '变体' }}</span>
               <span class="meta-chip">@{{ r.owner?.username || '—' }}</span>
               <span class="meta-chip time-chip">{{ fmtTime(r.createdAt) }}</span>
             </div>
@@ -177,29 +228,27 @@
             <div class="admin-rom-settings">
               <div class="rom-control rom-control-players">
                 <span class="rom-control-label">游玩人数</span>
-                <select
+                <ClaySelect
                   class="admin-select max-player-select"
-                  :value="r.maxPlayers ?? ''"
+                  flat
+                  aria-label="游玩人数"
+                  :model-value="r.maxPlayers ?? ''"
                   :disabled="savingMaxPlayersId === r.id"
-                  @change="updateMaxPlayers(r, $event.target.value)"
-                >
-                  <option value="">自动（{{ r.effectiveMaxPlayers || 4 }}P）</option>
-                  <option v-for="n in [1, 2, 3, 4]" :key="n" :value="n">{{ n }}P</option>
-                </select>
+                  :options="maxPlayerOptionsFor(r)"
+                  @change="updateMaxPlayers(r, $event)"
+                />
               </div>
               <div class="rom-control rom-control-core">
                 <span class="rom-control-label">核心</span>
-                <select
+                <ClaySelect
                   class="admin-select compat-select"
-                  :value="r.defaultCore ?? ''"
+                  flat
+                  aria-label="默认核心"
+                  :model-value="r.defaultCore ?? ''"
                   :disabled="savingCompatId === r.id"
-                  @change="updateDefaultCore(r, $event.target.value)"
-                >
-                  <option value="">默认核心</option>
-                  <option v-for="core in coreOptionsFor(r.platform)" :key="core" :value="core">
-                    {{ coreDisplayName[core] || core }}
-                  </option>
-                </select>
+                  :options="coreSelectOptionsFor(r)"
+                  @change="updateDefaultCore(r, $event)"
+                />
               </div>
             </div>
 
@@ -216,6 +265,7 @@
                 <span class="switch-label public-label">公开</span>
               </button>
               <div class="actions">
+                <button class="btn btn-sm" @click="editRom(r)">编辑</button>
                 <button class="btn btn-sm" @click="play(r)">试玩</button>
                 <button class="btn btn-sm btn-danger" @click="deleteRom(r)">删除</button>
               </div>
@@ -287,6 +337,7 @@
     </section>
 
     <UploadDialog v-if="showUpload" @close="showUpload = false" @uploaded="onUploaded" />
+    <EditRomDialog v-if="editingRom" :rom="editingRom" @close="editingRom = null" @saved="onRomSaved" />
   </div>
 </template>
 
@@ -299,6 +350,9 @@ import { useSettings } from '../composables/useSettings.js'
 import { getPlatform } from '../constants/platforms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import UploadDialog from '../components/UploadDialog.vue'
+import EditRomDialog from '../components/EditRomDialog.vue'
+import ClaySelect from '../components/ClaySelect.vue'
+import RomCover from '../components/RomCover.vue'
 
 const router = useRouter()
 const { user: me } = useAuth()
@@ -311,9 +365,14 @@ const form = reactive({
   netplayEnabled: true,
   guestPlayEnabled: false,
   userUploadEnabled: true,
+  webrtcStunUrls: '',
+  remoteUploadUrl: '',
+  remoteUploadToken: '',
 })
 const savingSite = ref(false)
 const siteSaved = ref(false)
+const testingRemote = ref(false)
+const remoteTestResult = ref(null)
 
 const users = ref([])
 const roms = ref([])
@@ -332,6 +391,27 @@ const adminRomPlatformOptions = computed(() => {
     .map((id) => ({ id, label: platLabel(id) }))
     .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
 })
+const adminRomPlatformSelectOptions = computed(() => [
+  { value: 'all', label: '全部平台' },
+  ...adminRomPlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
+])
+const adminVisibilitySelectOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 'public', label: '公开' },
+  { value: 'private', label: '私密' },
+]
+function maxPlayerOptionsFor(rom) {
+  return [
+    { value: '', label: `自动（${rom.effectiveMaxPlayers || 4}P）` },
+    ...[1, 2, 3, 4].map((n) => ({ value: String(n), label: `${n}P` })),
+  ]
+}
+function coreSelectOptionsFor(rom) {
+  return [
+    { value: '', label: '默认核心' },
+    ...coreOptionsFor(rom.platform).map((core) => ({ value: core, label: coreDisplayName[core] || core })),
+  ]
+}
 const filteredAdminRoms = computed(() => {
   const q = adminRomSearch.value.trim().toLowerCase()
   return roms.value
@@ -371,8 +451,36 @@ onMounted(async () => {
     form.netplayEnabled = s.netplayEnabled === '1'
     form.guestPlayEnabled = s.guestPlayEnabled === '1'
     form.userUploadEnabled = s.userUploadEnabled !== '0'
+    form.webrtcStunUrls = s.webrtcStunUrls || ''
+    form.remoteUploadUrl = s.remoteUploadUrl || ''
+    form.remoteUploadToken = s.remoteUploadToken || ''
   } catch {}
 })
+
+// 用当前表单里的地址/密钥测试远端服务，未保存的值也能先测
+async function testRemote() {
+  testingRemote.value = true
+  remoteTestResult.value = null
+  try {
+    const res = await api.adminTestRemote({ url: form.remoteUploadUrl, token: form.remoteUploadToken })
+    if (res?.ok === false || !res?.health) {
+      remoteTestResult.value = { ok: false, text: res?.error || '远端服务返回异常' }
+      return
+    }
+    const h = res.health
+    const parts = [
+      `连接正常（${h.latencyMs ?? '?'}ms）`,
+      h.writable === false ? '存储目录不可写' : '存储目录可写',
+      `${h.files ?? 0} 个文件`,
+      h.freeBytes != null ? `剩余 ${fmtSize(h.freeBytes)}` : null,
+    ].filter(Boolean)
+    remoteTestResult.value = { ok: true, text: parts.join(' · ') }
+  } catch (err) {
+    remoteTestResult.value = { ok: false, text: err?.message || '测试失败' }
+  } finally {
+    testingRemote.value = false
+  }
+}
 
 async function saveSite() {
   savingSite.value = true
@@ -384,6 +492,16 @@ async function saveSite() {
       netplayEnabled: form.netplayEnabled,
       guestPlayEnabled: form.guestPlayEnabled,
       userUploadEnabled: form.userUploadEnabled,
+      webrtcStunUrls: form.webrtcStunUrls,
+      remoteUploadUrl: form.remoteUploadUrl,
+      remoteUploadToken: form.remoteUploadToken,
+    })
+    form.webrtcStunUrls = next.webrtcStunUrls || ''
+    form.remoteUploadUrl = next.remoteUploadUrl || ''
+    form.remoteUploadToken = next.remoteUploadToken || ''
+    window.__APP_CONFIG__ = Object.freeze({
+      ...window.__APP_CONFIG__,
+      WEBRTC_STUN_URLS: form.webrtcStunUrls,
     })
     updateLocal({
       siteTitle: next.siteTitle,
@@ -391,6 +509,7 @@ async function saveSite() {
       netplayEnabled: next.netplayEnabled === '1',
       guestPlayEnabled: next.guestPlayEnabled === '1',
       userUploadEnabled: next.userUploadEnabled !== '0',
+      remoteUploadAvailable: !!(next.remoteUploadUrl && next.remoteUploadToken),
     })
     siteSaved.value = true
     setTimeout(() => { siteSaved.value = false }, 1600)
@@ -444,6 +563,14 @@ async function deleteRom(r) {
 const togglingId = ref(null)
 const savingMaxPlayersId = ref(null)
 const savingCompatId = ref(null)
+const editingRom = ref(null)
+
+function editRom(r) { editingRom.value = r }
+
+function onRomSaved() {
+  editingRom.value = null
+  loadRoms()
+}
 async function togglePublic(r) {
   togglingId.value = r.id
   try {
@@ -533,32 +660,33 @@ function fmtTime(v) {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px 18px;
-  background: transparent;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  box-shadow: none;
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 18px 20px;
+  background: var(--clay-surface);
+  border: 0;
+  border-radius: var(--r-xl);
+  box-shadow: var(--clay-card);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .stat-card:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
 
 .stat-icon {
-  width: 44px; height: 44px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: #fff;
+  width: 46px; height: 46px;
+  border-radius: var(--r-md);
+  border: 0;
+  background: var(--clay-inset-surface);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: var(--clay-in-sm);
 }
-.icon-blue   { color: var(--sys-blue); }
-.icon-orange { color: var(--sys-orange); }
-.icon-green  { color: var(--sys-green); }
-.icon-purple { color: var(--sys-purple); }
+.icon-blue   { color: var(--ink-blue); }
+.icon-orange { color: var(--ink-orange); }
+.icon-green  { color: var(--ink-green); }
+.icon-purple { color: var(--ink-purple); }
 
 .stat-body { min-width: 0; }
 .stat-label { font-size: 13px; color: var(--text-secondary); margin-bottom: 2px; font-weight: 900; }
@@ -566,64 +694,126 @@ function fmtTime(v) {
   font-size: 24px;
   font-weight: 900;
   letter-spacing: -0.01em;
-  color: #111;
+  color: var(--text-primary);
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
 }
 
 .admin-seg { margin-bottom: 20px; }
 
-.panel { padding: 24px; }
-.panel-title { font-size: 16px; font-weight: 900; margin: 0 0 16px; color: #111; }
+.panel {
+  padding: 24px;
+  /* 面板本身做成“托盘”，内部的 ROM 条目/开关才是粘土卡片，避免卡片嵌套 */
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: var(--clay-in-sm);
+}
+.panel-title { font-size: 16px; font-weight: 900; margin: 0 0 16px; color: var(--text-primary); }
 .panel-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 .panel-sub code {
-  padding: 1px 5px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  border: 0;
+  color: var(--text-primary);
+  box-shadow: var(--clay-xs);
   font-family: ui-monospace, 'SF Mono', monospace;
 }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 16px; }
 
-.field { margin-bottom: 16px; max-width: 480px; }
-
-.toggle-row {
-  display: flex; align-items: center; gap: 14px;
-  margin: 18px 0 22px;
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.46);
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  cursor: pointer;
-  max-width: 480px;
+/* 站点设置：按“基本信息 / 功能开关”分区排布，保存按钮固定在面板最下方整行 */
+.panel-site { padding: 26px 26px 22px; }
+.panel-site .panel-title { margin-bottom: 18px; }
+.site-block + .site-block { margin-top: 24px; }
+.site-block-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-secondary);
 }
+.site-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.site-block .field { margin: 0; max-width: none; }
+.field-hint {
+  margin: 8px 2px 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.field-hint code {
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  color: var(--text-primary);
+  font-family: var(--mono-stack);
+  font-size: 11px;
+}
+
+/* 远端存储：测试按钮 + 结果 */
+.remote-test { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 44px; }
+.remote-test-result {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--error);
+  line-height: 1.5;
+}
+.remote-test-result.ok { color: var(--success); }
+
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin: 0;
+  min-height: 88px;
+  padding: 16px 18px;
+  background: var(--clay-surface);
+  border: 0;
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  max-width: none;
+  box-shadow: var(--clay-sm);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
+}
+.toggle-row:hover { transform: var(--clay-lift); box-shadow: var(--clay-lift-shadow); }
+.toggle-row:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press); }
+.toggle-text { min-width: 0; }
 .toggle-sw { position: relative; flex-shrink: 0; }
 .toggle-sw input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
 .sw-track {
-  display: block; width: 40px; height: 24px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
+  display: block; width: 44px; height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  border: 0;
   position: relative;
-  transition: all var(--t);
+  box-shadow: var(--clay-in-sm);
+  transition: background var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .sw-thumb {
-  position: absolute; top: 2px; left: 2px;
-  width: 16px; height: 16px;
-  background: #111;
-  border-radius: 5px;
-  box-shadow: none;
-  transition: transform var(--t) var(--ease-spring);
+  position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: var(--clay-primary-grad);
+  border-radius: var(--r-pill);
+  box-shadow: var(--clay-xs);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
-.toggle-sw input:checked + .sw-track { background: #111; border-color: #111; }
-.toggle-sw input:checked + .sw-track .sw-thumb { background: #fff; transform: translateX(16px); }
-.tr-t { font-size: 14px; font-weight: 900; color: #111; }
+.toggle-row:active .sw-thumb { transform: scaleX(1.08) scaleY(0.9); }
+.toggle-sw input:checked + .sw-track { background: var(--clay-primary-grad); box-shadow: var(--clay-sm); }
+.toggle-sw input:checked + .sw-track .sw-thumb { background: var(--clay-surface-flat); transform: translateX(18px); }
+.toggle-row:active .toggle-sw input:checked + .sw-track .sw-thumb { transform: translateX(18px) scaleX(1.08) scaleY(0.9); }
+.tr-t { font-size: 14px; font-weight: 900; color: var(--text-primary); }
 .tr-s { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
-.row-end { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+.site-actions { display: flex; flex-direction: column; margin-top: 26px; }
+.site-status { display: flex; align-items: center; justify-content: center; min-height: 22px; }
+.site-save { width: 100%; height: 48px; font-size: 15px; }
 .saved { color: var(--success); font-size: 13px; font-weight: 900; }
-.saved-enter-active, .saved-leave-active { transition: all 0.2s var(--ease-out); }
+.saved-enter-active, .saved-leave-active { transition: all var(--t) var(--clay-ease); }
 .saved-enter-from, .saved-leave-to { opacity: 0; transform: translateY(4px); }
 
 .rom-toolbar {
@@ -637,11 +827,12 @@ function fmtTime(v) {
   align-items: center;
   gap: 8px;
   height: 40px;
-  padding: 0 12px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #111;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  color: var(--text-primary);
+  box-shadow: var(--clay-in-sm);
 }
 .rom-search input {
   width: 100%;
@@ -650,12 +841,13 @@ function fmtTime(v) {
   border: 0;
   outline: none;
   background: transparent;
-  color: #111;
+  color: var(--text-primary);
   font: inherit;
   font-weight: 800;
 }
 .rom-search input::placeholder { color: var(--text-quaternary); }
 .filter-select {
+  --select-width: 100%;
   --select-height: 40px;
   --select-min-height: 40px;
   --select-font-size: 13px;
@@ -665,15 +857,16 @@ function fmtTime(v) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: transparent;
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 18px;
+  border: 0;
+  border-radius: var(--r-xl);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-card);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .admin-rom-entry:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
 .admin-rom-main {
   display: flex;
@@ -712,17 +905,19 @@ function fmtTime(v) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chip-remote { color: var(--ink-purple); background: var(--clay-lilac); }
 .meta-chip {
   display: inline-flex;
   align-items: center;
   height: 28px;
-  padding: 0 9px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface-flat);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 900;
+  box-shadow: var(--clay-xs);
 }
 .tbl { display: flex; flex-direction: column; gap: 2px; }
 .trow {
@@ -730,33 +925,38 @@ function fmtTime(v) {
   grid-template-columns: 2fr 1fr 1.2fr 180px;
   gap: 14px;
   align-items: center;
-  padding: 12px 14px;
-  border-radius: 7px;
-  transition: background var(--t-fast);
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  transition: background var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
 }
 .trow-roms { grid-template-columns: 2fr 110px 1fr 120px 160px 90px 170px; }
-.trow:not(.trow-head):hover { background: rgba(17, 17, 17, 0.06); }
+.trow:not(.trow-head):hover { background: rgba(255, 255, 255, 0.72); box-shadow: var(--clay-sm); }
 .trow-head {
-  font-size: 12px; font-weight: 900; color: #111;
-  padding: 10px 14px;
-  border-bottom: 2px solid var(--border-color, #111);
-  border-radius: 0;
+  font-size: 12px; font-weight: 900; color: var(--text-secondary);
+  padding: 12px 16px;
+  border-bottom: 0;
+  border-radius: var(--r-md);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in-sm);
 }
 .right { text-align: right; }
 
 .u-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .avatar {
-  width: 32px; height: 32px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
+  width: 34px; height: 34px;
+  border-radius: var(--r-pill);
+  background: var(--clay-lilac);
+  border: 0;
+  color: var(--text-lilac);
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 900;
   flex-shrink: 0;
+  box-shadow: var(--clay-xs);
 }
-.pdot { width: 10px; height: 10px; margin-top: 7px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
-.rt { font-size: 16px; font-weight: 900; color: #111; overflow-wrap: anywhere; word-break: break-word; }
+.pdot { width: 10px; height: 10px; margin-top: 7px; border-radius: 14px; flex-shrink: 0; border: 0; }
+/* ROM 条目的封面（无封面时是默认卡带 SVG） */
+.entry-cover { --cover-size: 46px; }
+.rt { font-size: 16px; font-weight: 900; color: var(--text-primary); overflow-wrap: anywhere; word-break: break-word; }
 .rf { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; overflow-wrap: anywhere; }
 .muted { color: var(--text-tertiary); font-size: 13px; }
 
@@ -765,11 +965,12 @@ function fmtTime(v) {
   display: inline-flex;
   align-items: stretch;
   width: 220px;
-  height: 32px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
+  height: 34px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
   overflow: hidden;
+  box-shadow: var(--clay-in-sm);
 }
 .rom-control-label {
   display: inline-flex;
@@ -777,7 +978,7 @@ function fmtTime(v) {
   justify-content: center;
   width: 70px;
   padding: 0 8px;
-  background: #111;
+  background: var(--clay-primary-grad);
   color: #fff;
   font-size: 11px;
   font-weight: 900;
@@ -786,28 +987,26 @@ function fmtTime(v) {
 .admin-select {
   flex: 1;
   min-width: 0;
+  --select-width: 100%;
   --select-height: 100%;
   --select-min-height: 0;
-  --select-padding: 0 26px 0 8px;
-  --select-border: 0;
+  --select-padding: 0 26px 0 10px;
   --select-font-size: 12px;
-  --select-hover-transform: none;
-  --select-hover-shadow: none;
-  --select-focus-shadow: none;
-}
-.admin-select:disabled {
-  cursor: wait;
+  --select-arrow-right: 9px;
+  /* 嵌在托盘里的选择框只用焦点环提示，不做位移 */
+  --select-focus-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.08), 0 0 0 3px var(--accent-ring);
 }
 .pill-tag {
   display: inline-flex; align-items: center;
-  padding: 3px 10px;
-  border-radius: 7px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 900;
-  border: 2px solid var(--border-color, #111);
-  background: #fff;
+  border: 0;
+  background: var(--clay-surface-flat);
+  box-shadow: var(--clay-xs);
 }
-.pill-admin  { color: var(--accent); }
+.pill-admin  { color: var(--ink-pink); }
 .pill-member { color: var(--text-secondary); }
 .pill-pub    { color: var(--success); }
 .pill-priv   { color: var(--text-tertiary); }
@@ -822,15 +1021,16 @@ function fmtTime(v) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: transparent;
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 18px;
+  border-radius: var(--r-xl);
+  border: 0;
+  background: var(--clay-surface);
+  box-shadow: var(--clay-card);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .bios-card:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
 .bios-head {
   display: flex;
@@ -844,7 +1044,7 @@ function fmtTime(v) {
   gap: 8px;
   font-size: 14px;
   font-weight: 900;
-  color: #111;
+  color: var(--text-primary);
 }
 .bios-path {
   margin-top: 3px;
@@ -863,10 +1063,11 @@ function fmtTime(v) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 9px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 2px solid var(--border-color, #111);
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--clay-inset-surface);
+  border: 0;
+  box-shadow: var(--clay-in-sm);
 }
 .bios-name {
   overflow: hidden;
@@ -874,17 +1075,18 @@ function fmtTime(v) {
   white-space: nowrap;
   font-family: ui-monospace, 'SF Mono', monospace;
   font-size: 12px;
-  color: #111;
+  color: var(--text-primary);
 }
 .bios-ok,
 .bios-missing,
 .empty-state {
-  padding: 10px 12px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: #fff;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 0;
+  background: var(--clay-surface-flat);
   font-size: 12px;
   line-height: 1.5;
+  box-shadow: var(--clay-xs);
 }
 .bios-ok { color: var(--success); }
 .bios-missing { color: var(--warn); }
@@ -894,22 +1096,24 @@ function fmtTime(v) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 32px;
-  padding: 0 8px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
-  color: #111;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  color: var(--text-primary);
   font: inherit;
   font-size: 11px;
   font-weight: 900;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+  box-shadow: var(--clay-in-sm);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), opacity var(--t) var(--clay-ease);
 }
 .visibility-switch:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-  box-shadow: 3px 3px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
+.visibility-switch:active:not(:disabled) { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
 .visibility-switch:disabled {
   opacity: 0.6;
   cursor: wait;
@@ -917,41 +1121,49 @@ function fmtTime(v) {
 .switch-track {
   display: inline-flex;
   align-items: center;
-  width: 38px;
-  height: 22px;
+  width: 40px;
+  height: 24px;
   padding: 2px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #f2f2f2;
-  transition: background 0.2s;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgba(94, 58, 84, 0.12);
+  box-shadow: var(--clay-in-sm);
+  transition: background var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .switch-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 5px;
-  background: #111;
-  transition: transform 0.2s var(--ease-spring), background 0.2s;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--clay-primary-grad);
+  box-shadow: var(--clay-xs);
+  transition: transform var(--t) var(--clay-ease), background var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
-.visibility-switch.active .switch-track { background: #111; }
+.visibility-switch:active:not(:disabled) .switch-thumb { transform: scaleX(1.08) scaleY(0.9); }
+.visibility-switch.active .switch-track { background: var(--clay-primary-grad); }
 .visibility-switch.active .switch-thumb {
-  background: #fff;
-  transform: translateX(16px);
+  background: var(--clay-surface-flat);
+  transform: translateX(18px);
+}
+.visibility-switch.active:active:not(:disabled) .switch-thumb {
+  transform: translateX(18px) scaleX(1.08) scaleY(0.9);
 }
 .switch-label { color: var(--text-tertiary); }
-.visibility-switch:not(.active) .private-label { color: #111; }
+.visibility-switch:not(.active) .private-label { color: var(--text-primary); }
 .visibility-switch.active .public-label { color: var(--success); }
 
 .plat-badge {
   --pc: var(--accent);
   display: inline-flex; align-items: center;
   height: 28px;
-  padding: 0 10px;
-  border-radius: 7px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 900;
-  background: #fff;
-  border: 2px solid var(--pc);
-  color: var(--pc);
+  background: color-mix(in srgb, var(--pc) 16%, #fff);
+  border: 0;
+  /* 平台色只做浅底，文字混入深梅子保证浅底上 ≥ 4.5:1 */
+  color: color-mix(in srgb, var(--pc) 40%, var(--clay-ink));
+  box-shadow: var(--clay-xs);
 }
 .pagination {
   display: flex;
@@ -973,13 +1185,14 @@ function fmtTime(v) {
   justify-content: center;
   height: 38px;
   min-width: 42px;
-  color: #111;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 900;
   letter-spacing: 0.08em;
 }
 
 @media (max-width: 900px) {
+  .site-fields { grid-template-columns: minmax(0, 1fr); }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
   .rom-toolbar { grid-template-columns: 1fr; }
   .admin-rom-meta {

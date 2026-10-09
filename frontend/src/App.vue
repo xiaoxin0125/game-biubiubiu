@@ -10,7 +10,7 @@
     </router-view>
     <footer v-if="showChrome" class="app-footer">
       <span>MADE BY</span>
-      <a class="footer-author" href="https://www.hanxin.vip/" target="_blank" rel="noopener noreferrer">XIAOXIN</a>
+      <a class="footer-author" href="https://www.hxino.com/" target="_blank" rel="noopener noreferrer">XIAOXIN</a>
       <span class="dot">·</span>
       <span class="mono">v1.0</span>
     </footer>
@@ -35,25 +35,38 @@ const showChrome = computed(() => !route.meta?.fullscreen)
 }
 .app-footer {
   margin-top: auto;
-  padding: 24px 16px 28px;
+  padding: 30px 18px 34px;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 12px;
-  color: var(--text-tertiary, #86868B);
+  color: var(--text-secondary);
   letter-spacing: 0.04em;
 }
-.app-footer .dot { color: var(--text-quaternary, #B4B4B8); }
+.app-footer .dot { color: var(--text-quaternary); }
 .app-footer .footer-author {
-  color: #111;
-  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-xs);
+  color: var(--text-primary);
+  font-weight: 800;
   text-decoration: none;
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
-.app-footer .footer-author:hover { color: #111; text-decoration: underline; }
+.app-footer .footer-author:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-hover);
+}
+.app-footer .footer-author:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press); }
 .app-footer .mono {
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.1em;
-  color: var(--text-tertiary, #86868B);
+  color: var(--text-secondary);
 }
 </style>

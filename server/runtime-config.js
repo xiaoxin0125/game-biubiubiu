@@ -1,8 +1,12 @@
-const DEFAULT_STUN_URLS = 'stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478'
+import { getSetting } from './routes/settings.js'
+import { STUN_SETTING_KEY } from './webrtc-settings.js'
 
-export function getRuntimeConfig() {
+export async function getRuntimeConfig() {
+  // STUN comes from Admin > Site settings. The environment variable stays as a
+  // fallback so existing Compose/config-file deployments keep working.
+  const stunFromSettings = await getSetting(STUN_SETTING_KEY, '')
   return {
-    WEBRTC_STUN_URLS: process.env.VITE_WEBRTC_STUN_URLS || DEFAULT_STUN_URLS,
+    WEBRTC_STUN_URLS: stunFromSettings || process.env.VITE_WEBRTC_STUN_URLS || '',
     WEBRTC_TURN_URLS: process.env.VITE_WEBRTC_TURN_URLS || '',
     WEBRTC_TURN_USERNAME: process.env.VITE_WEBRTC_TURN_USERNAME || '',
     WEBRTC_TURN_CREDENTIAL: process.env.VITE_WEBRTC_TURN_CREDENTIAL || '',

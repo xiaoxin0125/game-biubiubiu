@@ -1,0 +1,49 @@
+# 可选的 TURN 中继叠加编排：默认部署（只跑 compose.yaml）不需要它。
+#
+# 需要跨网络联机中继时，在 config/.env 里填好 TURN_* 变量，然后用两份文件一起启动：
+#
+#   cd /www/wwwroot/game
+#   docker compose --env-file /www/wwwroot/game-biu/config/.env \
+#     -f compose.yaml -f compose.turn.yaml up -d --no-build
+#
+# 也可以长期生效，省掉每次的 -f 参数：
+#
+#   echo 'COMPOSE_FILE=/www/wwwroot/game/compose.yaml:/www/wwwroot/game/compose.turn.yaml' \
+#     >> /www/wwwroot/game-biu/config/.env
+#
+# 叠加后会多出 coturn 容器，并把 TURN 地址与凭据写进应用的运行时配置（无需重新构建镜像）。
+# 排查中继链路时可临时设置 VITE_WEBRTC_FORCE_RELAY=1，只走 TURN，验证完改回 0。
+services:
+  app:
+    environment:
+      # 后台「站点设置」里填了 STUN 时以后台为准，这里只是兜底
+      VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-stun:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}}
+      VITE_WEBRTC_TURN_URLS: ${VITE_WEBRTC_TURN_URLS:-turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=udp,turn:${TURN_PUBLIC_HOST:?Set TURN_PUBLIC_HOST in config/.env}:${TURN_PORT:-45123}?transport=tcp}
+      VITE_WEBRTC_TURN_USERNAME: ${VITE_WEBRTC_TURN_USERNAME:-${TURN_USERNAME:?Set TURN_USERNAME in config/.env}}
+      VITE_WEBRTC_TURN_CREDENTIAL: ${VITE_WEBRTC_TURN_CREDENTIAL:-${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}}
+
+  coturn:
+    image: coturn/coturn:alpine
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --listening-port=${TURN_PORT:-45123}
+      - --listening-ip=${TURN_LISTENING_IP:?Set TURN_LISTENING_IP in config/.env}
+      - --relay-ip=${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
+      - --min-port=${TURN_MIN_PORT:-45124}
+      - --max-port=${TURN_MAX_PORT:-45129}
+      - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
+      - --realm=${TURN_REALM:-games-online}
+      - --server-name=${TURN_REALM:-games-online}
+      - --user=${TURN_USERNAME:?Set TURN_USERNAME in config/.env}:${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}
+      - --fingerprint
+      - --lt-cred-mech
+      - --no-multicast-peers
+      - --stale-nonce=600
+      - --no-tls
+      - --no-dtls
+      - --log-file=stdout
+    volumes:
+      - ${GAME_TURN_DIR:-/www/wwwroot/game-biu/coturn}:/var/lib/coturn
+    security_opt:
+      - no-new-privileges:true

@@ -102,7 +102,7 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  background: linear-gradient(180deg, #382C46 0%, #2A2138 100%);
   position: relative;
   overflow: hidden;
   contain: layout paint;
@@ -118,7 +118,7 @@ defineExpose({
   object-fit: contain;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  background: #000;
+  background: linear-gradient(180deg, #382C46 0%, #2A2138 100%);
   outline: none;
 }
 </style>

@@ -19,6 +19,9 @@ import { csrfProtection, securityHeaders } from './middleware/security.js'
 import { installErrorHandler, requestId } from './middleware/error-handler.js'
 import { getRuntimeConfig } from './runtime-config.js'
 
+// 启动时读一次版本号：与 package.json、镜像标签保持一致，便于确认线上实际运行的版本。
+const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+
 process.on('uncaughtException', (err) => {
   console.error('[api] uncaught exception', err)
 })
@@ -51,10 +54,10 @@ app.route('/api/saves', saveRoutes)
 app.route('/api/settings', publicSettingsRoutes)
 app.route('/api/admin/settings', adminSettingsRoutes)
 
-app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/runtime-config', (c) => {
+app.get('/api/health', (c) => c.json({ ok: true, version: APP_VERSION }))
+app.get('/api/runtime-config', async (c) => {
   c.header('Cache-Control', 'no-store')
-  return c.json(getRuntimeConfig())
+  return c.json(await getRuntimeConfig())
 })
 
 const frontendDistRoot = resolve('frontend/dist')
@@ -71,7 +74,8 @@ if (existsSync(frontendIndex)) {
 }
 
 const PORT = Number(process.env.PORT) || 3000
-const server = serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' }, (info) => {
-  console.log(`[api] listening on http://0.0.0.0:${info.port}`)
+const HOST = process.env.HOST || '0.0.0.0'
+const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
+  console.log(`[api] listening on http://${HOST}:${info.port}`)
 })
 injectWebSocket(server)

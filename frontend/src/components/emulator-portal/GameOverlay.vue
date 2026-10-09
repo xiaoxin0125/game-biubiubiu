@@ -6,7 +6,7 @@
     </button>
 
     <div class="bar-center">
-      <span class="bar-badge" :style="{ background: platform.color }">{{ platform.label }}</span>
+      <span class="bar-badge" :style="{ '--pc': platform.color }">{{ platform.label }}</span>
       <h2 class="bar-title">{{ title }}</h2>
       <span v-if="coreName" class="bar-core">{{ coreName }}</span>
       <span class="playing-led" title="游戏运行中">
@@ -49,15 +49,15 @@ const canFullscreen = hasFs && !isIOS
 </script>
 
 <style scoped>
-/* Dark chrome bar — stays dark regardless of app theme (canvas is black). */
+/* Clay chrome bar — 顶部工具条沿用粘土表面，与全站一致。 */
 .player-bar {
-  --b-bg:        rgba(18, 18, 20, 0.92);
-  --b-border:    rgba(255, 255, 255, 0.06);
-  --b-btn-bg:    rgba(255, 255, 255, 0.08);
-  --b-btn-hover: rgba(255, 255, 255, 0.16);
-  --b-text:      #F5F5F7;
-  --b-muted:     rgba(235, 235, 245, 0.6);
-  --b-tertiary:  rgba(235, 235, 245, 0.42);
+  --b-bg:        var(--clay-float-surface);
+  --b-border:    transparent;
+  --b-btn-bg:    var(--clay-inset-surface);
+  --b-btn-hover: var(--clay-surface-alt);
+  --b-text:      var(--text-primary);
+  --b-muted:     var(--text-secondary);
+  --b-tertiary:  var(--text-tertiary);
 
   /* Always visible — takes its own row in the .player-page flex column, so
      the canvas below sizes itself to the remaining viewport. */
@@ -67,14 +67,18 @@ const canFullscreen = hasFs && !isIOS
 
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding:
-    calc(6px + env(safe-area-inset-top))
-    calc(10px + env(safe-area-inset-right))
-    6px
-    calc(10px + env(safe-area-inset-left));
+    calc(8px + env(safe-area-inset-top))
+    calc(12px + env(safe-area-inset-right))
+    8px
+    calc(12px + env(safe-area-inset-left));
   background: var(--b-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   color: var(--b-text);
+  border-bottom: 0;
+  box-shadow: var(--clay-sm);
 }
 
 .bar-center {
@@ -87,18 +91,22 @@ const canFullscreen = hasFs && !isIOS
   min-width: 0;
 }
 .bar-badge {
+  --pc: var(--accent);
   flex-shrink: 0;
   font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: #fff;
+  font-weight: 900;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  /* 平台色仅做浅底，文字用墨色版本保证 ≥ 4.5:1 */
+  color: color-mix(in srgb, var(--pc) 40%, var(--clay-ink));
+  background: color-mix(in srgb, var(--pc) 16%, #fff);
+  box-shadow: var(--clay-xs);
   letter-spacing: 0.02em;
   line-height: 1.4;
 }
 .bar-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 900;
   color: var(--b-text);
   margin: 0;
   overflow: hidden;
@@ -112,29 +120,31 @@ const canFullscreen = hasFs && !isIOS
   color: var(--b-tertiary);
   flex-shrink: 0;
 }
-/* "PLAYING" indicator — status green LED */
+/* "PLAYING" indicator — 粘土薄荷徽章 */
 .playing-led {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
+  gap: 6px;
+  padding: 5px 12px;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: var(--success);
+  background: var(--clay-mint);
+  color: var(--text-mint);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 900;
+  box-shadow: var(--clay-xs);
   letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 .led-dot {
-  width: 6px; height: 6px;
+  width: 7px; height: 7px;
   border-radius: 50%;
-  background: var(--success);
-  animation: led-pulse 1.6s ease-in-out infinite;
+  background: var(--sys-green);
+  box-shadow: 0 0 0 3px rgba(95, 196, 143, 0.22);
+  animation: led-pulse 1.6s var(--clay-ease) infinite;
 }
 @keyframes led-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
+  0%, 100% { transform: scaleX(1) scaleY(1); opacity: 1; }
+  50%      { transform: scaleX(0.8) scaleY(1.2); opacity: 0.6; }
 }
 @media (max-width: 640px) {
   .playing-led { display: none; }
@@ -145,39 +155,42 @@ const canFullscreen = hasFs && !isIOS
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 32px;
-  min-height: 30px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--b-border);
+  min-width: 34px;
+  min-height: 34px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  border: 0;
   background: var(--b-btn-bg);
-  color: var(--b-text);
+  color: var(--text-secondary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 900;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.1s ease;
+  box-shadow: var(--clay-in-sm);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
   flex-shrink: 0;
 }
 .bar-btn:hover {
   background: var(--b-btn-hover);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  color: var(--text-primary);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
-.bar-btn:active { transform: scale(0.96); }
+.bar-btn:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+.bar-btn:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 .bar-btn-accent {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  color: var(--accent);
+  background: var(--clay-primary-grad);
+  border-color: transparent;
+  color: #fff;
 }
 .bar-btn-accent:hover {
-  background: color-mix(in srgb, var(--accent) 32%, transparent);
-  color: #fff;
+  background: var(--clay-pink-soft);
+  color: #6C2039;
 }
 
 @media (max-width: 768px) {
   .bar-btn-label { display: none; }
-  .bar-btn { padding: 4px; min-width: 32px; min-height: 32px; }
+  .bar-btn { padding: 8px; min-width: 36px; min-height: 36px; }
   .bar-title { font-size: 12px; }
   .bar-badge { padding: 1px 6px; font-size: 10px; }
   .bar-core, .playing-led { display: none; }

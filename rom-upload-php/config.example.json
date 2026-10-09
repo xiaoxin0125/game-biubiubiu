@@ -1,0 +1,5 @@
+{
+  "token": "CHANGE_ME_至少16位随机字符串",
+  "dataDir": "/www/wwwroot/rom-upload-php/data",
+  "maxFileBytes": 209715200
+}

@@ -39,6 +39,8 @@ export const api = {
   romGet: (id) => request(`/api/roms/${id}`),
   romUpload: (fd) => request('/api/roms/upload', { method: 'POST', formData: fd }),
   romUpdate: (id, patch) => request(`/api/roms/${id}`, { method: 'PATCH', body: patch }),
+  romUploadCover: (id, fd) => request(`/api/roms/${id}/cover`, { method: 'POST', formData: fd }),
+  romDeleteCover: (id) => request(`/api/roms/${id}/cover`, { method: 'DELETE' }),
   romDelete: (id, { permanent = false } = {}) =>
     request(`/api/roms/${id}${permanent ? '?permanent=1' : ''}`, { method: 'DELETE' }),
   romsTrash:  () => request('/api/roms/trash'),
@@ -90,6 +92,7 @@ export const api = {
   settings: () => request('/api/settings'),
   adminSettings: () => request('/api/admin/settings'),
   adminUpdateSettings: (patch) => request('/api/admin/settings', { method: 'PATCH', body: patch }),
+  adminTestRemote: (payload) => request('/api/admin/settings/test-remote', { method: 'POST', body: payload || {} }),
 
   // admin
   adminUsers: () => request('/api/admin/users'),

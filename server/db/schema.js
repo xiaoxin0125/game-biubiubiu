@@ -99,6 +99,14 @@ export const roms = mysqlTable('roms', {
   // picker on the parent's detail. `null` = this ROM is a top-level game.
   parentRomId: int('parent_rom_id'),
   versionLabel: varchar('version_label', { length: 64 }),
+  // Optional cover image. Stored as a path under UPLOADS_DIR next to the rom
+  // file; children (变体) reuse the parent's cover instead of their own.
+  coverPath: varchar('cover_path', { length: 1024 }),
+  // 'local' = file lives under UPLOADS_DIR, 'remote' = file was pushed to the
+  // standalone rom-upload service (see /www/wwwroot/rom-upload) and is streamed
+  // back through this API. `filePath` then holds a `remote:<id>` placeholder.
+  storage: varchar('storage', { length: 16 }).notNull().default('local'),
+  remoteFileId: varchar('remote_file_id', { length: 128 }),
   status: int('status').notNull().default(STATUS.normal),
   createdAt: ts('created_at'),
   updatedAt: ts('updated_at').$onUpdateFn(() => new Date()),

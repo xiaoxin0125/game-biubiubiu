@@ -1,14 +1,15 @@
 <template>
   <Teleport to="body">
-    <div class="mask" @click.self="$emit('close')">
+    <div class="mask">
       <div class="dialog" role="dialog" aria-modal="true" aria-label="上传 ROM">
         <header class="dh">
           <h3>上传 ROM</h3>
-          <button class="btn btn-ghost btn-icon btn-sm" @click="$emit('close')" aria-label="关闭">
+          <button class="btn btn-ghost btn-icon btn-sm dlg-close" @click="$emit('close')" aria-label="关闭">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </header>
 
+        <div class="dialog-body">
         <div
           class="drop"
           :class="{ dragging, 'has-file': !!file }"
@@ -39,6 +40,21 @@
           </template>
         </div>
 
+        <label v-if="canUseRemote" class="pub-row remote-row">
+          <div class="sw">
+            <input type="checkbox" v-model="useRemoteStorage" />
+            <span class="track"><span class="thumb"></span></span>
+          </div>
+          <div class="pub-copy">
+            <div class="pub-copy-title">上传到远端服务器</div>
+            <div class="pub-copy-hint">
+              {{ useRemoteStorage
+                ? `将转存到远端存储，本机只保留记录；${fileSizeMb}MB 转发需要一点时间`
+                : `当前文件 ${fileSizeMb}MB，超过 ${remoteThresholdMb}MB 可以转存到远端存储服务器` }}
+            </div>
+          </div>
+        </label>
+
         <div class="field">
           <label class="label">标题</label>
           <input v-model.trim="title" class="input" placeholder="留空使用文件名" />
@@ -63,12 +79,7 @@
 
         <div v-if="coreOptions.length" class="field compat-field">
           <label class="label">默认核心</label>
-          <select v-model="defaultCore" class="select">
-            <option value="">跟随平台默认</option>
-            <option v-for="core in coreOptions" :key="core" :value="core">
-              {{ coreDisplayName[core] || core }}
-            </option>
-          </select>
+          <ClaySelect v-model="defaultCore" class="select" aria-label="默认核心" :options="coreSelectOptions" />
           <div class="hint-text">只影响启动前选择，不会在运行中切换核心。</div>
         </div>
 
@@ -77,9 +88,9 @@
             <input type="checkbox" v-model="isPublic" :disabled="!!selectedParent" />
             <span class="track"><span class="thumb"></span></span>
           </div>
-          <div class="pub-text">
-            <div class="pr-t">公开给所有玩家</div>
-            <div class="pr-s">{{ selectedParent ? '作为版本时会继承父 ROM 的公开状态' : '其他用户也可以在游戏库里看到并试玩' }}</div>
+          <div class="pub-copy">
+            <div class="pub-copy-title">公开给所有玩家</div>
+            <div class="pub-copy-hint">{{ selectedParent ? '作为版本时会继承父 ROM 的公开状态' : '其他用户也可以在游戏库里看到并试玩' }}</div>
           </div>
         </label>
 
@@ -88,9 +99,9 @@
             <input type="checkbox" v-model="asVariant" :disabled="!sameCandidates.length" />
             <span class="track"><span class="thumb"></span></span>
           </div>
-          <div class="pub-text">
-            <div class="pr-t">作为已有游戏的版本</div>
-            <div class="pr-s">
+          <div class="pub-copy">
+            <div class="pub-copy-title">作为已有游戏的版本</div>
+            <div class="pub-copy-hint">
               {{ sameCandidates.length
                 ? '选择父 ROM，本文件作为变体（如拳皇97 的 Plus / 风云再起）'
                 : '先上传一个同平台的 ROM 才能作为其变体' }}
@@ -119,27 +130,51 @@
           <input v-model.trim="versionLabel" class="input" placeholder="如：Plus / 风云再起 / 大蛇版" maxlength="64" />
         </div>
 
+        <div class="field cover-field">
+          <label class="label">{{ coverLabel }}</label>
+          <div class="cover-picker" :class="{ 'has-cover': !!coverPreview }">
+            <input ref="coverInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden @change="onCover" />
+            <template v-if="coverPreview">
+              <img class="cover-preview" :src="coverPreview" alt="封面预览" />
+              <div class="cover-actions">
+                <button type="button" class="btn btn-sm" @click="pickCover">更换</button>
+                <button type="button" class="btn btn-sm btn-ghost" @click="clearCover">移除</button>
+              </div>
+            </template>
+            <button v-else type="button" class="cover-empty" @click="pickCover">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 3.5 3.5L16 13l4 4"/></svg>
+              <span class="cover-empty-title">点击选择封面图片</span>
+              <span class="cover-empty-sub">PNG / JPG / WebP / GIF / AVIF，不超过 4MB</span>
+            </button>
+          </div>
+          <div v-if="coverError" class="cover-error">{{ coverError }}</div>
+        </div>
+
         <div v-if="error" class="err">{{ error }}</div>
 
         <footer class="df">
           <button class="btn" @click="$emit('close')" :disabled="uploading">取消</button>
           <button class="btn btn-primary" :disabled="!file || !platform || uploading" @click="submit">
             <span v-if="!uploading">上传</span>
-            <span v-else>{{ percent }}%</span>
+            <span v-else>{{ percent < 100 ? `${percent}%` : '处理中…' }}</span>
           </button>
         </footer>
+        </div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { platforms } from '../constants/platforms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import { api } from '../api/client.js'
+import { useSettings } from '../composables/useSettings.js'
+import ClaySelect from './ClaySelect.vue'
 
 const emit = defineEmits(['close', 'uploaded'])
+const { settings } = useSettings()
 
 const file = ref(null)
 const title = ref('')
@@ -150,6 +185,8 @@ const percent = ref(0)
 const error = ref('')
 const dragging = ref(false)
 const maxMb = 100
+// 大文件可以选择转存到远端存储服务器（主站磁盘不够时用）
+const useRemoteStorage = ref(false)
 
 const asVariant = ref(false)
 const parentRomId = ref(null)
@@ -157,6 +194,29 @@ const versionLabel = ref('')
 const defaultCore = ref('')
 const existingRoms = ref([])
 const parentQuery = ref('')
+const coverFile = ref(null)
+const coverUrl = ref('')
+const coverError = ref('')
+const coverInput = ref(null)
+const MAX_COVER_MB = 4
+
+function releaseCoverUrl() {
+  if (coverUrl.value) URL.revokeObjectURL(coverUrl.value)
+  coverUrl.value = ''
+}
+
+const coverPreview = computed(() => (coverFile.value ? coverUrl.value : ''))
+
+// 远端存储开关：仅在“已配置远端”且“文件超过阈值”时出现，且变体永远跟父 ROM
+const remoteThresholdBytes = computed(() => Number(settings.value.remoteUploadThresholdBytes) || 3 * 1024 * 1024)
+const remoteAvailable = computed(() => !!settings.value.remoteUploadAvailable)
+const canUseRemote = computed(() => remoteAvailable.value && !asVariant.value && !!file.value && file.value.size > remoteThresholdBytes.value)
+const remoteThresholdMb = computed(() => Math.round(remoteThresholdBytes.value / 1024 / 1024))
+const fileSizeMb = computed(() => (file.value ? (file.value.size / 1024 / 1024).toFixed(1) : '0'))
+
+watch(canUseRemote, (allowed) => { if (!allowed) useRemoteStorage.value = false })
+
+onBeforeUnmount(releaseCoverUrl)
 
 onMounted(async () => {
   try {
@@ -174,6 +234,12 @@ onMounted(async () => {
 
 const platformList = computed(() => Object.entries(platforms))
 const coreOptions = computed(() => platform.value ? platforms[platform.value]?.cores || [] : [])
+const coreSelectOptions = computed(() => [
+  { value: '', label: '跟随平台默认' },
+  ...coreOptions.value.map((core) => ({ value: core, label: coreDisplayName[core] || core })),
+])
+// 变体没上传封面时由父 ROM 的封面代替
+const coverLabel = computed(() => (asVariant.value ? '封面图片（可选，留空沿用父 ROM 的封面）' : '封面图片（可选）'))
 
 const sameCandidates = computed(() => {
   if (!platform.value) return []
@@ -222,6 +288,33 @@ function assignFile(f) {
   if (!platform.value) platform.value = guessPlatform(f.name)
 }
 
+function onCover(e) {
+  const f = e.target.files?.[0]
+  if (!f) return
+  coverError.value = ''
+  if (!/^image\/(png|jpeg|webp|gif|avif)$/.test(f.type)) {
+    coverError.value = '封面只支持 PNG / JPG / WebP / GIF / AVIF'
+    e.target.value = ''
+    return
+  }
+  if (f.size > MAX_COVER_MB * 1024 * 1024) {
+    coverError.value = `封面不能超过 ${MAX_COVER_MB}MB`
+    e.target.value = ''
+    return
+  }
+  releaseCoverUrl()
+  coverFile.value = f
+  coverUrl.value = URL.createObjectURL(f)
+}
+
+function pickCover() { coverInput.value?.click() }
+
+function clearCover() {
+  releaseCoverUrl()
+  coverFile.value = null
+  if (coverInput.value) coverInput.value.value = ''
+}
+
 function guessPlatform(name) {
   const ext = name.split('.').pop()?.toLowerCase() || ''
   for (const [id, p] of Object.entries(platforms)) {
@@ -256,6 +349,9 @@ async function submit() {
       fd.append('parentRomId', String(parentRomId.value))
       fd.append('versionLabel', versionLabel.value || '变体')
     }
+    // 封面是可选功能：变体也可以有自己的封面，没传则沿用父 ROM
+    if (coverFile.value) fd.append('cover', coverFile.value)
+    if (canUseRemote.value && useRemoteStorage.value) fd.append('storage', 'remote')
     const xhr = new XMLHttpRequest()
     await new Promise((resolve, reject) => {
       xhr.open('POST', '/api/roms/upload')
@@ -284,7 +380,7 @@ async function submit() {
 <style scoped>
 .mask {
   position: fixed; inset: 0;
-  background: rgba(17, 17, 17, 0.28);
+  background: rgba(94, 58, 84, 0.28);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   z-index: 300;
@@ -294,80 +390,155 @@ async function submit() {
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+/* 标题栏不参与滚动，关闭按钮固定在弹窗右上角；只有 .dialog-body 滚动 */
 .dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
-  overflow-y: auto;
-  border-radius: 7px;
-  padding: 28px;
-  background: rgba(255, 251, 245, 0.96);
-  border: 2px solid var(--border-color, #111);
+  overflow: hidden;
+  border-radius: var(--r-2xl);
+  background: var(--clay-surface);
+  border: 0;
   animation: popIn 0.2s var(--ease-spring);
-}
-@keyframes popIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-.dh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.dh h3 { margin: 0; font-size: 18px; font-weight: 900; color: #111; }
+  box-shadow: var(--clay-lg);
+}
+@keyframes popIn { from { opacity: 0; transform: translateY(10px) scaleX(0.96) scaleY(0.94); } to { opacity: 1; transform: translateY(0) scaleX(1) scaleY(1); } }
+
+.dh {
+  flex: 0 0 auto;
+  padding: 22px 58px 12px 28px;
+  background: var(--clay-surface-flat);
+}
+.dh h3 { margin: 0; font-size: 18px; font-weight: 900; color: var(--text-primary); }
+
+.dlg-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 28px 24px;
+}
 
 .drop {
   position: relative;
-  border: 2px dashed var(--border-color, #111);
-  border-radius: 7px;
-  padding: 28px;
+  border: 0;
+  outline: 3px dashed rgba(242, 126, 178, 0.42);
+  outline-offset: -10px;
+  border-radius: var(--r-2xl);
+  padding: 30px;
   text-align: center;
   cursor: pointer;
   color: var(--text-secondary);
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), outline-color var(--t) var(--clay-ease);
 }
-.drop:hover,
+.drop:hover:not(.has-file),
 .drop.dragging {
-  background: #fff;
-  color: #111;
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  background: var(--clay-surface-alt);
+  color: var(--text-primary);
+  outline-color: rgba(242, 126, 178, 0.7);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
 .drop.has-file {
-  padding: 14px;
-  border-style: solid;
-  border-color: var(--border-color, #111);
+  padding: 16px;
+  outline: none;
   cursor: default;
-  background: #fff;
+  background: var(--clay-surface);
+  box-shadow: var(--clay-sm);
 }
-.drop.has-file:hover { transform: none; box-shadow: none; }
 
 .drop-icon {
-  width: 52px; height: 52px;
-  margin: 0 auto 10px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
+  width: 54px; height: 54px;
+  margin: 0 auto 12px;
+  border-radius: var(--r-lg);
+  background: var(--clay-surface);
+  border: 0;
+  color: var(--text-primary);
   display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--clay-md);
 }
-.drop-title { margin: 8px 0 4px; font-weight: 900; font-size: 14px; color: #111; }
+.drop-title { margin: 8px 0 4px; font-weight: 900; font-size: 14px; color: var(--text-primary); }
 .drop-sub { margin: 0; font-size: 12px; color: var(--text-tertiary); }
 
 .file-row { display: flex; align-items: center; gap: 12px; text-align: left; }
 .file-icon {
   flex-shrink: 0;
-  width: 44px; height: 44px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
+  width: 46px; height: 46px;
+  border-radius: var(--r-md);
+  background: var(--clay-lilac);
+  border: 0;
+  color: var(--text-lilac);
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 900;
   letter-spacing: 0.04em;
+  box-shadow: var(--clay-xs);
 }
 .file-meta { flex: 1; min-width: 0; }
-.fn { font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #111; }
+.fn { font-size: 14px; font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .fs { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
 .field { margin-top: 18px; }
-.select {
+.cover-field { margin-top: 18px; }
+.cover-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in-sm);
+}
+.cover-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 16px;
+  border: 0;
+  border-radius: var(--r-md);
+  outline: 2px dashed rgba(242, 126, 178, 0.42);
+  outline-offset: -8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--clay-ease), outline-color var(--t-fast) var(--clay-ease), background var(--t-fast) var(--clay-ease);
+}
+.cover-empty:hover { color: var(--text-primary); outline-color: rgba(242, 126, 178, 0.7); background: rgba(255, 255, 255, 0.5); }
+.cover-empty-title { font-size: 13px; font-weight: 900; }
+.cover-empty-sub { font-size: 11px; color: var(--text-tertiary); }
+.cover-preview {
+  display: block;
   width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: var(--r-md);
+  background: var(--clay-surface-flat);
+  box-shadow: var(--clay-xs);
+}
+.cover-actions { display: flex; gap: 8px; }
+.cover-error {
+  margin-top: 8px;
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 800;
+}
+.select {
+  --select-width: 100%;
   --select-height: 42px;
   --select-min-height: 42px;
   --select-font-size: 13px;
@@ -390,75 +561,104 @@ async function submit() {
 .plat-btn {
   --pc: var(--accent);
   display: flex; align-items: center; gap: 6px;
-  height: 36px;
-  padding: 0 10px;
-  border: 2px solid var(--border-color, #111);
-  background: transparent;
-  color: #111;
-  border-radius: 7px;
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  background: var(--clay-inset-surface);
+  color: var(--text-secondary);
+  border-radius: var(--r-pill);
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
+  box-shadow: var(--clay-in-sm);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
   font-family: inherit;
 }
 .plat-btn:hover:not(.active) {
-  color: #111;
-  background: transparent;
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  color: var(--text-primary);
+  background: var(--clay-surface-alt);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
+.plat-btn:active:not(.active) { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
 .plat-btn.active {
-  background: #111;
-  border-color: #111;
+  background: var(--clay-primary-grad);
   color: #fff;
   font-weight: 900;
+  box-shadow: var(--clay-sm);
 }
-.pd { width: 8px; height: 8px; border-radius: 3px; background: var(--pc); border: 1px solid #111; }
+.pd { width: 8px; height: 8px; border-radius: 14px; background: var(--pc); border: 0; }
 .plat-btn.active .pd { background: currentColor; border-color: currentColor; }
 
 .pub-row {
   display: flex; gap: 14px; align-items: center;
   margin-top: 20px;
-  padding: 14px 16px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.46);
-  border: 2px solid var(--border-color, #111);
+  padding: 16px 18px;
+  border-radius: var(--r-lg);
+  /* 面板本身是白色粘土卡，开关行改用糖果粉卡片，避免白底叠白卡看不出层次 */
+  background: var(--clay-pink-soft);
+  box-shadow: var(--clay-sm);
+  border: 0;
   cursor: pointer;
-  transition: background var(--t-fast);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t-fast) var(--clay-ease);
 }
-.pub-row:hover { background: #fff; }
+.pub-row:hover { transform: var(--clay-lift); box-shadow: var(--clay-lift-shadow); }
+.pub-row:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
 .sw { position: relative; flex-shrink: 0; }
 .sw input { opacity: 0; position: absolute; width: 100%; height: 100%; top: 0; left: 0; margin: 0; cursor: pointer; }
+/* 行内文案：显式声明 display / 字体 / 颜色（写死十六进制），不依赖变量与 font 简写 */
+.pub-copy { display: block; flex: 1 1 auto; min-width: 0; }
+.pub-copy-title,
+.pub-copy-hint { display: block; }
+.pub-copy-title {
+  color: #4E3348;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.4;
+}
+.pub-copy-hint {
+  margin-top: 3px;
+  color: #6E5069;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.5;
+}
 .track {
   position: relative; display: block;
-  width: 40px; height: 24px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  transition: all var(--t);
+  width: 44px; height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  border: 0;
+  box-shadow: var(--clay-in-sm);
+  transition: background var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .thumb {
-  position: absolute; top: 2px; left: 2px;
-  width: 16px; height: 16px;
-  background: #111;
-  border-radius: 5px;
-  box-shadow: none;
-  transition: all var(--t) var(--ease-spring);
+  position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: var(--clay-primary-grad);
+  border-radius: var(--r-pill);
+  box-shadow: var(--clay-xs);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
-.sw input:checked + .track { background: #111; border-color: #111; }
-.sw input:checked + .track .thumb { background: #fff; transform: translateX(16px); }
-.pr-t { font-size: 14px; font-weight: 900; color: #111; }
-.pr-s { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
+.sw input:checked + .track { background: var(--clay-primary-grad); box-shadow: var(--clay-sm); }
+.sw input:checked + .track .thumb { background: var(--clay-surface-flat); transform: translateX(18px); }
+.sw:active .thumb { transform: scaleX(1.08) scaleY(0.9); }
+.sw input:checked:active + .track .thumb { transform: translateX(18px) scaleX(1.08) scaleY(0.9); }
 
 .variant-field { display: flex; flex-direction: column; gap: 8px; }
 .parent-list {
   margin-top: 6px;
   max-height: 220px;
   overflow-y: auto;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in-sm);
+  padding: 6px;
 }
 .parent-row {
   width: 100%;
@@ -468,37 +668,41 @@ async function submit() {
   gap: 10px;
   padding: 10px 14px;
   border: none;
-  border-bottom: 2px solid var(--border-color, #111);
+  border-bottom: 0;
   background: transparent;
-  color: #111;
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: background var(--t-fast), color var(--t-fast);
+  box-shadow: var(--clay-xs);
+  transition: background var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .parent-row:last-child { border-bottom: none; }
-.parent-row:hover { background: rgba(17, 17, 17, 0.06); }
-.parent-row.selected { background: #111; color: #fff; }
+.parent-row:hover { background: var(--clay-surface-alt); transform: var(--clay-lift); box-shadow: var(--clay-lift-shadow); }
+.parent-row:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+.parent-row.selected { background: var(--clay-primary-grad); color: #fff; box-shadow: var(--clay-sm); }
 .parent-row.selected .parent-file { color: rgba(255, 255, 255, 0.78); }
 .parent-title { font-weight: 900; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parent-file { color: var(--text-tertiary); font-size: 11px; flex-shrink: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parent-empty {
-  padding: 12px;
+  padding: 14px;
   font-size: 12px;
   color: var(--text-tertiary);
   text-align: center;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-xs);
 }
 
 .err {
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--error) 12%, #fff);
+  border: 0;
+  box-shadow: var(--clay-in-sm);
   color: var(--error);
   font-size: 13px;
   font-weight: 800;

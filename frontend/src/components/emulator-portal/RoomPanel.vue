@@ -99,14 +99,15 @@ watch(() => props.chat.length, async () => {
   bottom: 16px;
   width: 340px;
   max-width: calc(100vw - 32px);
-  background: rgba(255, 251, 245, 0.96);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
+  background: var(--clay-surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 0;
+  border-radius: var(--r-2xl);
   display: flex;
   flex-direction: column;
-  color: #111;
+  color: var(--text-primary);
+  box-shadow: var(--clay-lg);
   z-index: 50;
   overflow: hidden;
 }
@@ -115,9 +116,9 @@ watch(() => props.chat.length, async () => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px;
-  border-bottom: 2px solid var(--border-color, #111);
-  background: rgba(255, 255, 255, 0.5);
+  padding: 18px;
+  border-bottom: 0;
+  background: var(--clay-surface-alt);
 }
 .rp-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .rp-code {
@@ -125,49 +126,59 @@ watch(() => props.chat.length, async () => {
   font-size: 14px;
   font-weight: 900;
   letter-spacing: 0.12em;
-  color: #111;
+  color: var(--text-primary);
 }
 .rp-state,
 .rp-mode {
   font-size: 11px;
   font-weight: 900;
-  padding: 3px 8px;
-  border-radius: 7px;
-  color: #111;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
+  padding: 4px 11px;
+  border-radius: var(--r-pill);
+  color: var(--text-secondary);
+  background: var(--clay-surface-flat);
+  border: 0;
+  box-shadow: var(--clay-xs);
   line-height: 1.2;
 }
-.rp-state.ok { background: color-mix(in srgb, var(--success) 20%, #fff); color: #047857; }
-.rp-state.pending { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
-.rp-mode.play { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
+.rp-state.ok { background: color-mix(in srgb, var(--success) 20%, #fff); color: #2C6B4F; }
+.rp-state.pending { background: color-mix(in srgb, var(--warn) 18%, #fff); color: var(--warn); }
+.rp-mode.play { background: color-mix(in srgb, var(--warn) 18%, #fff); color: var(--warn); }
 .rp-mode.view { background: rgba(255, 255, 255, 0.78); color: var(--text-secondary); }
 .rp-close {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  background: transparent;
-  color: #111;
-  border: 2px solid var(--border-color, #111);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface-flat);
+  color: var(--text-secondary);
+  border: 0;
   cursor: pointer;
   font-size: 20px;
   font-weight: 900;
   line-height: 1;
   flex-shrink: 0;
+  box-shadow: var(--clay-xs);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
 }
-.rp-close:hover { background: #111; color: #fff; }
+.rp-close:hover {
+  background: var(--clay-primary-grad);
+  color: #fff;
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
+}
+.rp-close:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+.rp-close:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 
 .rp-section-title {
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.04em;
-  color: #111;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
 .rp-members {
   padding: 14px 16px;
-  border-bottom: 2px solid var(--border-color, #111);
+  border-bottom: 0;
 }
 .rp-list {
   list-style: none;
@@ -181,27 +192,29 @@ watch(() => props.chat.length, async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.62);
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--clay-surface-flat);
   font-size: 13px;
-  color: #111;
+  color: var(--text-primary);
+  box-shadow: var(--clay-xs);
 }
-.rp-list li.me { background: var(--accent-soft); }
+.rp-list li.me { background: var(--clay-pink-soft); }
 .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 900; }
 .m-player,
 .m-observer {
   font-size: 10px;
   font-weight: 900;
-  padding: 2px 7px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: #fff;
-  color: #111;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: var(--clay-surface-flat);
+  color: var(--text-secondary);
+  box-shadow: var(--clay-xs);
   flex-shrink: 0;
 }
-.m-player { background: color-mix(in srgb, var(--warn) 18%, #fff); color: #9A3412; }
+.m-player { background: color-mix(in srgb, var(--warn) 18%, #fff); color: var(--warn); }
 .m-observer { color: var(--text-secondary); }
 
 .rp-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 14px 16px; }
@@ -215,51 +228,63 @@ watch(() => props.chat.length, async () => {
   margin-bottom: 12px;
 }
 .msg {
-  padding: 8px 10px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.62);
-  color: #111;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--clay-surface-flat);
+  color: var(--text-primary);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   word-break: break-word;
+  box-shadow: var(--clay-xs);
 }
-.msg.me { background: var(--accent-soft); }
+.msg.me { background: var(--clay-pink-soft); }
 .msg-from { color: var(--text-tertiary); margin-right: 6px; font-weight: 900; }
-.msg.me .msg-from { color: #9A3412; }
+.msg.me .msg-from { color: var(--warn); }
 .rp-input { display: flex; gap: 8px; }
 .rp-input input {
   flex: 1;
   min-width: 0;
-  height: 38px;
-  background: rgba(255, 255, 255, 0.88);
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  padding: 0 12px;
-  color: #111;
-  font-size: 13px;
-  outline: none;
-}
-.rp-input input:focus { box-shadow: 0 0 0 4px var(--accent-ring); }
-.rp-input button {
-  height: 38px;
+  height: 42px;
+  background: var(--clay-inset-surface);
+  border: 0;
+  border-radius: var(--r-md);
   padding: 0 14px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: #111;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  box-shadow: var(--clay-in);
+  transition: box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease);
+}
+.rp-input input::placeholder { color: var(--text-quaternary); }
+.rp-input input:focus { box-shadow: var(--clay-in-deep), 0 0 0 4px var(--accent-ring); }
+.rp-input button {
+  height: 42px;
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  border: 0;
+  background: var(--clay-primary-grad);
   color: #fff;
   font-size: 13px;
   font-weight: 900;
+  font-family: inherit;
   cursor: pointer;
+  box-shadow: var(--clay-sm);
   flex-shrink: 0;
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
 }
 .rp-input button:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  background: var(--clay-pink-soft);
+  color: #6C2039;
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
-.rp-input button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.rp-input button:active:not(:disabled) { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press); }
+.rp-input button:focus-visible { outline: none; box-shadow: var(--clay-focus); }
+.rp-input button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: var(--clay-xs); }
 
-.slide-enter-active, .slide-leave-active { transition: transform 0.22s ease, opacity 0.22s ease; }
+.slide-enter-active, .slide-leave-active { transition: transform var(--t) var(--clay-ease), opacity var(--t) var(--clay-ease); }
 .slide-enter-from, .slide-leave-to { transform: translateX(12px); opacity: 0; }
 
 @media (max-width: 600px) {

@@ -10,6 +10,7 @@ import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { BIOS_BY_PLATFORM, BIOS_PLATFORM_LABELS } from '../../shared/registry/platform-bios.js'
 import { audit } from '../audit.js'
+import { coverUrlFor } from './roms.js'
 
 export const adminRoutes = new Hono()
 
@@ -156,6 +157,11 @@ adminRoutes.get('/roms', async (c) => {
       maxPlayers: rom.maxPlayers ?? null,
       defaultCore: rom.defaultCore ?? null,
       effectiveMaxPlayers: resolveMaxPlayersInfo(rom).maxPlayers,
+      parentRomId: rom.parentRomId ?? null,
+      versionLabel: rom.versionLabel ?? null,
+      hasCover: !!rom.coverPath,
+      coverUrl: coverUrlFor(rom),
+      storage: rom.storage || 'local',
       createdAt: rom.createdAt,
       owner: user,
     })),

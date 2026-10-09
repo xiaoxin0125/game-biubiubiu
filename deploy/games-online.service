@@ -1,0 +1,25 @@
+[Unit]
+Description=Games Online (xbw.ppxin.com)
+After=network.target mysqld.service
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/xbw.ppxin.com
+ExecStart=/www/server/nodejs/v24.20.0/bin/node --import ./server/config.js server/index.js
+Environment=TZ=Asia/Shanghai
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/www/wwwroot/xbw.ppxin.com/data
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

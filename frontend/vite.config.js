@@ -20,6 +20,11 @@ export default defineConfig({
   root: frontendRoot,
   base: '/',
   plugins: [vue()],
+  build: {
+    // dist is also the web root of the hosting panel, which writes certificate
+    // challenge files into it. Cleaning is handled by scripts/clean-dist.js.
+    emptyOutDir: false,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

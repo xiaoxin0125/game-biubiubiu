@@ -2,7 +2,9 @@
   <div class="auth-page">
     <div class="auth-card">
       <div class="auth-brand">
-        <span class="orb-brand">童</span>
+        <span class="orb-brand" aria-hidden="true">
+          <img src="../assets/brand-game.svg" alt="" />
+        </span>
         <div class="brand-text">
           <h1 class="brand-name">{{ settings.siteTitle }}</h1>
           <p class="brand-sub">{{ mode === 'login' ? '欢迎回来' : '创建一个账号' }}</p>
@@ -91,11 +93,11 @@ async function submit() {
 .auth-card {
   width: 100%;
   max-width: 400px;
-  padding: 32px 28px;
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm);
+  padding: 34px 30px;
+  background: var(--clay-surface);
+  border: 0;
+  border-radius: var(--r-2xl);
+  box-shadow: var(--clay-card);
 }
 
 .auth-brand {
@@ -108,8 +110,8 @@ async function submit() {
 .brand-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .brand-name {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 900;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
@@ -124,12 +126,14 @@ async function submit() {
 
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
 .err {
-  padding: 9px 12px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--error) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--error) 12%, #fff);
+  border: 0;
+  box-shadow: var(--clay-in-sm);
   color: var(--error);
   font-size: 13px;
+  font-weight: 800;
 }
 .btn-submit { width: 100%; margin-top: 4px; }
 
@@ -139,6 +143,6 @@ async function submit() {
   font-size: 13px;
   color: var(--text-tertiary);
 }
-.foot-tip a { color: var(--accent); font-weight: 500; }
+.foot-tip a { color: var(--accent-hover); font-weight: 900; }
 .foot-tip a:hover { color: var(--accent-hover); }
 </style>

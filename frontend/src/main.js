@@ -19,7 +19,7 @@ async function loadRuntimeConfig() {
     const config = await response.json()
     window.__APP_CONFIG__ = Object.freeze(config && typeof config === 'object' ? config : {})
   } catch (error) {
-    console.warn('[web] runtime config unavailable; using build defaults', error)
+    console.warn('[web] runtime config unavailable; STUN/TURN will remain unconfigured', error)
     window.__APP_CONFIG__ = Object.freeze({})
   }
 }

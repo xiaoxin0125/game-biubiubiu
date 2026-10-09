@@ -30,6 +30,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # 镜像版本以源码版本为准：package.json 的 version 同时决定镜像标签和构建参数。
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${VERSION%.*}" >> "$GITHUB_OUTPUT"
+          echo "source version: $VERSION"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -51,10 +60,12 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=v${{ steps.version.outputs.version }},enable={{is_default_branch}}
+            type=raw,value=v${{ steps.version.outputs.major_minor }},enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=sha,prefix=sha-
 
       - name: Build and publish image
@@ -66,5 +77,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

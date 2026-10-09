@@ -10,6 +10,12 @@ COPY shared ./shared
 RUN npm run build
 
 FROM node:22-alpine AS production
+# 镜像版本与源码版本（package.json）保持一致：构建时由工作流传入，本地构建默认 dev。
+ARG APP_VERSION=dev
+LABEL org.opencontainers.image.title="Games Online" \
+      org.opencontainers.image.description="Self-hosted browser arcade with ROM management, emulator, cloud saves and WebRTC netplay" \
+      org.opencontainers.image.source="https://github.com/xiaoxin0125/game-biubiubiu" \
+      org.opencontainers.image.version="${APP_VERSION}"
 ENV NODE_ENV=production \
     PORT=3000 \
     UPLOADS_DIR=/app/data/uploads \

@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import { and, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm'
 import { z } from 'zod'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, createReadStream, statSync, unlinkSync, existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { join, extname, resolve } from 'node:path'
+import { basename, join, extname, resolve } from 'node:path'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
 import { roms, users, favorites, rooms, STATUS } from '../db/schema.js'
 import { requireAuth, currentUser } from '../middleware/auth.js'
@@ -15,6 +15,7 @@ import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-roms.js'
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
+import { remoteDelete, remoteOpenFile, remoteUpload, REMOTE_UPLOAD_THRESHOLD_BYTES, remoteStorageConfig } from '../remote-storage.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const LEGACY_UPLOAD_ROOTS = [
@@ -24,6 +25,37 @@ const LEGACY_UPLOAD_ROOTS = [
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
 const USER_UPLOAD_QUOTA_BYTES = Number(process.env.USER_UPLOAD_QUOTA_BYTES) || 2 * 1024 * 1024 * 1024
 const ALLOWED_PLATFORMS = new Set(PLATFORM_IDS)
+
+// Cover images: accepted types are decided by magic bytes, never by the
+// client-provided Content-Type, and the stored name always carries the
+// extension we detected so it can be served back with the right MIME.
+const COVER_MAX_BYTES = 4 * 1024 * 1024
+const COVER_MIME_BY_EXT = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+  ['.avif', 'image/avif'],
+])
+const COVER_TYPE_HINT = '封面只支持 PNG / JPG / WebP / GIF / AVIF'
+
+function sniffCoverExt(buf) {
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return '.png'
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return '.jpg'
+  if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return '.webp'
+  if (buf.length >= 6 && buf.toString('ascii', 0, 3) === 'GIF') return '.gif'
+  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp') return '.avif'
+  return null
+}
+
+// Cover URLs carry the stored file name as a cache key, so replacing a cover
+// always busts the browser cache without an extra DB column.
+export function coverUrlFor(rom) {
+  if (!rom?.coverPath) return null
+  const version = basename(String(rom.coverPath)).replace(/[^\w.-]/g, '')
+  return `/api/roms/${rom.id}/cover?v=${encodeURIComponent(version)}`
+}
+
 function normalizeDefaultCore(platform, value) {
   const core = String(value || '').trim()
   if (!core) return null
@@ -53,6 +85,9 @@ function serialize(rom, owner, opts = {}) {
     owner: owner ? { id: owner.id, username: owner.username } : undefined,
     parentRomId: rom.parentRomId ?? null,
     versionLabel: rom.versionLabel ?? null,
+    hasCover: !!rom.coverPath,
+    coverUrl: coverUrlFor(rom),
+    storage: rom.storage || 'local',
     versionCount: opts.versionCount ?? undefined,
     isFavorite: !!opts.isFavorite,
     createdAt: rom.createdAt,
@@ -155,6 +190,28 @@ function safeUnlink(root, filePath) {
   unlinkSync(checked)
 }
 
+function safeUnlinkCover(filePath) {
+  if (!filePath) return
+  try { safeUnlinkUpload(filePath) } catch {}
+}
+
+// Validates a cover upload (magic bytes, size) and writes it into `dir`.
+// Returns `{ filePath }` on success or `{ error, status }` for the caller.
+async function storeCoverFile(file, dir) {
+  if (!file || typeof file === 'string') return { error: '未收到封面文件', status: 400 }
+  const buf = Buffer.from(await file.arrayBuffer())
+  if (buf.length > COVER_MAX_BYTES) {
+    return { error: `封面不能超过 ${Math.round(COVER_MAX_BYTES / 1024 / 1024)}MB`, status: 413 }
+  }
+  const ext = sniffCoverExt(buf)
+  if (!ext) return { error: COVER_TYPE_HINT, status: 400 }
+  const targetDir = resolve(dir)
+  mkdirSync(targetDir, { recursive: true })
+  const filePath = assertInsideRoot(targetDir, join(targetDir, `cover-${randomUUID()}${ext}`))
+  await writeFile(filePath, buf)
+  return { filePath }
+}
+
 romRoutes.get('/mine', requireAuth, async (c) => {
   const user = c.get('user')
   // `/mine` returns everything the user uploaded (parents + children) so they
@@ -248,11 +305,21 @@ romRoutes.get('/:id/versions', async (c) => {
     .where(liveRom(or(eq(roms.id, parentId), eq(roms.parentRomId, parentId))))
     .orderBy(roms.id)
   const me = await currentUser(c)
+  const parentRow = rows.find(({ rom }) => rom.id === parentId)?.rom || null
+  const inheritedCoverUrl = parentRow?.coverPath ? coverUrlFor({ id: parentId, coverPath: parentRow.coverPath }) : null
   return c.json({
     parentId,
     versions: rows
       .filter(({ rom }) => rom.isPublic || rom.userId === me?.id || me?.role === 'admin')
-      .map(({ rom, user }) => serialize(rom, user)),
+      .map(({ rom, user }) => {
+        const payload = serialize(rom, user)
+        // 变体没有自己的封面时，展示上沿用父 ROM 的封面
+        if (!payload.coverUrl && rom.parentRomId && inheritedCoverUrl) {
+          payload.coverUrl = inheritedCoverUrl
+          payload.coverInherited = true
+        }
+        return payload
+      }),
   })
 })
 
@@ -374,36 +441,165 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   }
 
   const userDir = checkedUploadPath(String(user.id), platform)
-  mkdirSync(userDir, { recursive: true })
-  const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
-  const storedName = `${randomUUID()}${safeExt}`
-  const filePath = assertInsideRoot(userDir, join(userDir, storedName))
-  const buf = Buffer.from(await file.arrayBuffer())
-  await writeFile(filePath, buf)
-
+  // Validate the requested core before touching the filesystem, so a rejected
+  // request never leaves stray upload/cover blobs behind.
   const rowDefaultCore = normalizeDefaultCore(platform, body.defaultCore)
   if (rowDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
+
+  // Large ROMs can be pushed to the standalone rom-upload service instead of
+  // this server's disk. Variants always follow the parent, so the flag is only
+  // honoured for top-level ROMs.
+  const wantsRemote = String(body.storage || '') === 'remote' && !parentRomId
+  let storage = 'local'
+  let remoteFileId = null
+  let storedPath = null
+  let storedBytes = 0
+  let storedSha = null
+
+  if (wantsRemote && file.size <= REMOTE_UPLOAD_THRESHOLD_BYTES) {
+    return c.json({ error: `只有超过 ${Math.round(REMOTE_UPLOAD_THRESHOLD_BYTES / 1024 / 1024)}MB 的 ROM 才能上传到远端服务器` }, 400)
+  }
+  if (wantsRemote) {
+    const remote = await remoteStorageConfig()
+    if (!remote.configured) {
+      return c.json({ error: '尚未配置远端存储，请在站点设置里填写远端地址和密钥' }, 400)
+    }
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
+    let uploaded
+    try {
+      uploaded = await remoteUpload({ buffer: fileBuffer, fileName: file.name, sha256 })
+    } catch (err) {
+      return c.json({ error: err?.message || '上传到远端服务器失败' }, 502)
+    }
+    storage = 'remote'
+    remoteFileId = String(uploaded.id)
+    storedPath = `remote:${remoteFileId}`
+    storedBytes = Number(uploaded.size || fileBuffer.length)
+    storedSha = uploaded.sha256 || sha256
+  } else {
+    mkdirSync(userDir, { recursive: true })
+    const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
+    const storedName = `${randomUUID()}${safeExt}`
+    storedPath = assertInsideRoot(userDir, join(userDir, storedName))
+    const buf = Buffer.from(await file.arrayBuffer())
+    await writeFile(storedPath, buf)
+    storedBytes = file.size
+  }
+
+  // Optional cover image. Variants may carry their own cover (the UI offers it
+  // as an optional extra); when they don't, /cover falls back to the parent's.
+  // Covers always stay on this server — they are small.
+  let coverPath = null
+  if (body.cover && typeof body.cover !== 'string') {
+    const stored = await storeCoverFile(body.cover, userDir)
+    if (stored.error) return c.json({ error: stored.error }, stored.status)
+    coverPath = stored.filePath
+  }
 
   const row = await insertAndFetch(roms, {
     userId: user.id,
     title: title.data,
     platform,
     fileName: file.name,
-    filePath,
-    fileSize: file.size,
+    filePath: storedPath,
+    fileSize: storedBytes,
     isPublic,
     defaultCore: rowDefaultCore,
     parentRomId,
     versionLabel,
-  }, and(eq(roms.userId, user.id), eq(roms.filePath, filePath)))
+    coverPath,
+    storage,
+    remoteFileId,
+  }, and(eq(roms.userId, user.id), eq(roms.filePath, storedPath)))
 
   await audit(c, {
     action: 'rom.upload',
     targetType: 'rom',
     targetId: row.id,
-    metadata: { platform, fileSize: file.size, isPublic, parentRomId },
+    metadata: { platform, fileSize: storedBytes, isPublic, parentRomId, hasCover: !!coverPath, storage, sha256: storedSha },
   })
   return c.json(serialize(row))
+})
+
+// GET /api/roms/:id/cover — public covers are readable by anyone (the Gallery
+// is public); private ones only by their owner or an admin. A variant without
+// its own cover falls back to the parent's cover.
+romRoutes.get('/:id/cover', async (c) => {
+  const id = Number(c.req.param('id'))
+  let rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
+  if (!rom) return c.json({ error: 'not found' }, 404)
+  if (!rom.coverPath && rom.parentRomId) {
+    const parent = (await db.select().from(roms).where(liveRom(eq(roms.id, rom.parentRomId))).limit(1))[0]
+    if (parent?.coverPath) rom = { ...rom, coverPath: parent.coverPath }
+  }
+  if (!rom.coverPath) return c.json({ error: 'not found' }, 404)
+  if (!rom.isPublic) {
+    const me = await currentUser(c)
+    if (me?.id !== rom.userId && me?.role !== 'admin') return c.json({ error: 'forbidden' }, 403)
+  }
+  let file
+  try {
+    file = openUploadReadStream(rom.coverPath)
+  } catch {
+    return c.json({ error: '封面文件缺失' }, 404)
+  }
+  c.header('Content-Type', COVER_MIME_BY_EXT.get(extname(file.path).toLowerCase()) || 'application/octet-stream')
+  c.header('Content-Length', String(file.stat.size))
+  c.header('Cache-Control', rom.isPublic ? 'public, max-age=604800' : 'private, max-age=86400')
+  return stream(c, async (s) => {
+    const fileStream = file.stream
+    await s.pipe(new ReadableStream({
+      start(controller) {
+        fileStream.on('data', (chunk) => controller.enqueue(chunk))
+        fileStream.on('end', () => controller.close())
+        fileStream.on('error', (err) => controller.error(err))
+      },
+    }))
+  })
+})
+
+// POST /api/roms/:id/cover — replace the cover of an existing ROM
+romRoutes.post('/:id/cover', requireAuth, async (c) => {
+  const user = c.get('user')
+  const id = Number(c.req.param('id'))
+  const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
+  if (!rom) return c.json({ error: '不存在' }, 404)
+  if (rom.userId !== user.id && user.role !== 'admin') return c.json({ error: 'forbidden' }, 403)
+
+  const body = await c.req.parseBody({ all: false })
+  const stored = await storeCoverFile(body.cover, checkedUploadPath(String(rom.userId), rom.platform))
+  if (stored.error) return c.json({ error: stored.error }, stored.status)
+
+  const previousCover = rom.coverPath
+  await updateAndFetch(roms, { coverPath: stored.filePath }, eq(roms.id, id))
+  if (previousCover && previousCover !== stored.filePath) safeUnlinkCover(previousCover)
+
+  const updated = (await db.select().from(roms).where(eq(roms.id, id)).limit(1))[0]
+  await audit(c, {
+    action: 'rom.cover.update',
+    targetType: 'rom',
+    targetId: id,
+    metadata: { replaced: !!previousCover },
+  })
+  return c.json(serialize(updated))
+})
+
+// DELETE /api/roms/:id/cover — drop the cover and its file
+romRoutes.delete('/:id/cover', requireAuth, async (c) => {
+  const user = c.get('user')
+  const id = Number(c.req.param('id'))
+  const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
+  if (!rom) return c.json({ error: '不存在' }, 404)
+  if (rom.userId !== user.id && user.role !== 'admin') return c.json({ error: 'forbidden' }, 403)
+
+  if (rom.coverPath) {
+    await updateAndFetch(roms, { coverPath: null }, eq(roms.id, id))
+    safeUnlinkCover(rom.coverPath)
+    await audit(c, { action: 'rom.cover.delete', targetType: 'rom', targetId: id })
+  }
+  const updated = (await db.select().from(roms).where(eq(roms.id, id)).limit(1))[0]
+  return c.json(serialize(updated))
 })
 
 romRoutes.patch('/:id', requireAuth, async (c) => {
@@ -419,7 +615,39 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const wantsVisibility = typeof body.isPublic === 'boolean'
   const wantsMaxPlayers = user.role === 'admin' && Object.prototype.hasOwnProperty.call(body, 'maxPlayers')
   const wantsDefaultCore = Object.prototype.hasOwnProperty.call(body, 'defaultCore')
-  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore) return c.json(serialize(rom))
+  // Platform is an admin-only fix-up: the upload platform is guessed from the
+  // file, and a wrong guess leaves the ROM tied to the wrong core set.
+  const wantsPlatform = user.role === 'admin'
+    && typeof body.platform === 'string'
+    && body.platform !== rom.platform
+  if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore && !wantsPlatform) {
+    return c.json(serialize(rom))
+  }
+
+  async function familyRowsFor(rootRom) {
+    const root = rootRom.parentRomId
+      ? (await db.select().from(roms).where(liveRom(eq(roms.id, rootRom.parentRomId))).limit(1))[0] || rootRom
+      : rootRom
+    const children = root.parentRomId ? [] : await familyChildrenForParent(root.id)
+    return { root, rows: [root, ...children] }
+  }
+
+  if (wantsPlatform) {
+    if (!ALLOWED_PLATFORMS.has(body.platform)) return c.json({ error: '不支持的平台' }, 400)
+    const { root, rows: familyRows } = await familyRowsFor(rom)
+    const foreignRows = foreignFamilyRowsFor(user, root, familyRows.filter((row) => row.id !== root.id))
+    if (foreignRows.length) {
+      return c.json({ error: '该版本家族包含其他用户的 ROM，请联系管理员处理' }, 409)
+    }
+    // Cores are platform-specific, so a leftover default core that the new
+    // platform does not offer is dropped instead of silently kept.
+    for (const row of familyRows) {
+      const keptCore = normalizeDefaultCore(body.platform, row.defaultCore) ?? null
+      await db.update(roms)
+        .set({ platform: body.platform, defaultCore: keptCore })
+        .where(eq(roms.id, row.id))
+    }
+  }
 
   if (wantsVisibility) {
     const familyRoot = rom.parentRomId
@@ -447,7 +675,8 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     await updateAndFetch(roms, { maxPlayers: nextMaxPlayers }, eq(roms.id, id))
   }
   if (wantsDefaultCore) {
-    const nextDefaultCore = normalizeDefaultCore(rom.platform, body.defaultCore)
+    const effectivePlatform = wantsPlatform ? body.platform : rom.platform
+    const nextDefaultCore = normalizeDefaultCore(effectivePlatform, body.defaultCore)
     if (nextDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
     await updateAndFetch(roms, { defaultCore: nextDefaultCore }, eq(roms.id, id))
   }
@@ -464,12 +693,14 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     metadata: {
       before: {
         title: rom.title,
+        platform: rom.platform,
         isPublic: Boolean(rom.isPublic),
         maxPlayers: rom.maxPlayers ?? null,
         defaultCore: rom.defaultCore ?? null,
       },
       after: {
         title: updated.title,
+        platform: updated.platform,
         isPublic: Boolean(updated.isPublic),
         maxPlayers: updated.maxPlayers ?? null,
         defaultCore: updated.defaultCore ?? null,
@@ -535,8 +766,15 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
     for (const s of states) {
       try { safeUnlink(resolve(process.env.SAVES_DIR || 'data/saves'), s.filePath) } catch {}
     }
-    // the rom file itself
-    try { safeUnlinkUpload(t.filePath) } catch {}
+    // the rom file itself: remote blobs are dropped on the rom-upload service,
+    // local ones from this server's upload directory
+    if (t.storage === 'remote') {
+      await remoteDelete(t.remoteFileId)
+    } else {
+      try { safeUnlinkUpload(t.filePath) } catch {}
+    }
+    // and its cover image, when present
+    safeUnlinkCover(t.coverPath)
   }
 
   // DB: children first, then the parent. FK cascades remove favorites/save_states/rooms.
@@ -571,6 +809,33 @@ async function serveRomFile(c) {
     if (!rom.isPublic) return c.json({ error: '该 ROM 非公开' }, 403)
   } else if (!rom.isPublic && user.id !== rom.userId && user.role !== 'admin') {
     return c.json({ error: 'forbidden' }, 403)
+  }
+
+  // Remote-stored ROMs are streamed back through this server so the shared
+  // token of the rom-upload service never reaches the browser.
+  if (rom.storage === 'remote') {
+    let remote
+    try {
+      remote = await remoteOpenFile(rom.remoteFileId, c.req.header('range'))
+    } catch (err) {
+      return c.json({ error: err?.message || '远端文件不可用' }, 502)
+    }
+    if (!remote.ok && remote.status !== 206) {
+      const detail = await remote.json().catch(() => null)
+      return c.json({ error: detail?.error || '远端文件不可用' }, remote.status === 404 ? 404 : 502)
+    }
+    c.status(remote.status === 206 ? 206 : 200)
+    c.header('Content-Type', 'application/octet-stream')
+    c.header('Accept-Ranges', remote.headers.get('accept-ranges') || 'bytes')
+    c.header('Content-Disposition', `inline; filename="${encodeURIComponent(rom.fileName)}"`)
+    const length = remote.headers.get('content-length')
+    if (length) c.header('Content-Length', length)
+    const contentRange = remote.headers.get('content-range')
+    if (contentRange) c.header('Content-Range', contentRange)
+    return stream(c, async (s) => {
+      if (!remote.body) return
+      await s.pipe(remote.body)
+    })
   }
 
   let file

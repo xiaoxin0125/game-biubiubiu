@@ -19,7 +19,11 @@
           v-for="r in myOpenRooms"
           :key="r.id"
           class="row is-mine"
+          tabindex="0"
+          :aria-label="`进入我主持的房间 ${r.name}`"
           @click="resume(r)"
+          @keydown.enter="resume(r)"
+          @keydown.space.prevent="resume(r)"
         >
           <div class="row-main">
             <div class="row-title">
@@ -63,7 +67,11 @@
           :key="r.id"
           class="row"
           :class="{ offline: r.hostOnline === false }"
+          tabindex="0"
+          :aria-label="`${r.name}｜${platformLabel(r.romPlatform)}｜${r.hostOnline === false ? '房主离线' : '房主在线'}｜${isAuthed ? '加入' : '围观'}`"
           @click="pickRoom(r)"
+          @keydown.enter="pickRoom(r)"
+          @keydown.space.prevent="pickRoom(r)"
         >
           <div class="row-main">
             <div class="row-title">
@@ -182,7 +190,7 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
 .section-title {
   font-size: 14px;
   font-weight: 900;
-  color: #111;
+  color: var(--text-primary);
   margin: 0 0 12px;
   letter-spacing: 0.02em;
 }
@@ -193,19 +201,22 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
   align-items: center;
   gap: 12px;
   min-height: 96px;
-  padding: 18px 16px;
-  background: transparent;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
+  padding: 20px 22px;
+  background: var(--clay-surface);
+  border: 0;
+  border-radius: var(--r-xl);
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--clay-card);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .row:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
-.row.offline { opacity: 0.6; }
-.row.is-mine { background: rgba(255, 255, 255, 0.44); }
+.row:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press); }
+.row:focus-visible { outline: none; box-shadow: var(--clay-focus); }
+.row.offline { opacity: 0.75; }
+.row.is-mine { background: var(--clay-surface-alt); }
 
 .row-main { flex: 1; min-width: 0; }
 .row-title {
@@ -218,7 +229,7 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
 .name {
   font-size: 15px;
   font-weight: 900;
-  color: #111;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -241,41 +252,42 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
   flex-wrap: wrap;
 }
 .meta-item { display: inline-flex; align-items: center; gap: 6px; }
-.pc-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
+.pc-dot { width: 10px; height: 10px; border-radius: 14px; flex-shrink: 0; border: 0; }
 .meta-code {
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 2px 7px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
-  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  border: 0;
+  color: var(--text-primary);
+  letter-spacing: 0.06em;
+  box-shadow: var(--clay-in-sm);
 }
 
 .row-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 .state,
 .empty-state {
-  padding: 40px 24px;
+  padding: 44px 24px;
   text-align: center;
   color: var(--text-tertiary);
   font-size: 13px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.72);
+  border: 0;
+  border-radius: var(--r-xl);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-card);
 }
 .spinner {
   display: inline-block;
   width: 14px; height: 14px;
-  margin-right: 6px;
+  margin: 0 8px 0 0;
   border-radius: 50%;
-  border: 2px solid var(--border-color, #111);
-  border-top-color: var(--accent);
-  animation: spin 0.7s linear infinite;
+  background: var(--clay-primary-grad);
+  box-shadow: var(--clay-xs);
+  animation: clay-pulse 1s var(--clay-ease) infinite;
   vertical-align: -3px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 600px) {
   .page-head { flex-direction: column; align-items: stretch; }

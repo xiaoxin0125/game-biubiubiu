@@ -42,15 +42,18 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             <input v-model.trim="activeSearch" placeholder="搜索 ROM 名称或文件名" />
           </div>
-          <select v-model="activePlatform" class="filter-select" aria-label="筛选平台">
-            <option value="all">全部平台</option>
-            <option v-for="p in activePlatformOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
-          </select>
-          <select v-model="activeVisibility" class="filter-select" aria-label="筛选公开状态">
-            <option value="all">全部状态</option>
-            <option value="public">公开</option>
-            <option value="private">私密</option>
-          </select>
+          <ClaySelect
+            v-model="activePlatform"
+            class="filter-select"
+            aria-label="筛选平台"
+            :options="activePlatformSelectOptions"
+          />
+          <ClaySelect
+            v-model="activeVisibility"
+            class="filter-select"
+            aria-label="筛选公开状态"
+            :options="activeVisibilitySelectOptions"
+          />
         </div>
 
         <div v-if="!filteredRoms.length" class="panel-card empty-card">
@@ -60,7 +63,7 @@
         <div v-else class="rom-card-table">
           <article v-for="rom in pagedRoms" :key="rom.id" class="rom-entry">
             <div class="rom-entry-main">
-              <span class="pdot" :style="{ background: platformColor(rom.platform) }"></span>
+              <RomCover :rom="rom" class="entry-cover" />
               <div class="rom-entry-title-wrap">
                 <div v-if="editingId === rom.id" class="rt-edit">
                   <input
@@ -82,6 +85,7 @@
             </div>
             <div class="rom-entry-meta">
               <span class="plat-badge" :style="{ '--pc': platformColor(rom.platform) }">{{ platformLabel(rom.platform) }}</span>
+              <span v-if="rom.storage === 'remote'" class="meta-chip" title="文件存放在远端存储服务器">远端</span>
               <span class="meta-chip">{{ fmtSize(rom.fileSize) }}</span>
               <span class="meta-chip">{{ fmtTime(rom.createdAt) }}</span>
               <label class="switch" :title="rom.isPublic ? '公开' : '私密'">
@@ -164,6 +168,8 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { getPlatform } from '../constants/platforms.js'
 import UploadDialog from '../components/UploadDialog.vue'
+import ClaySelect from '../components/ClaySelect.vue'
+import RomCover from '../components/RomCover.vue'
 
 const router = useRouter()
 const roms = ref([])
@@ -188,6 +194,15 @@ const activePlatformOptions = computed(() => {
     .map((id) => ({ id, label: platformLabel(id) }))
     .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
 })
+const activePlatformSelectOptions = computed(() => [
+  { value: 'all', label: '全部平台' },
+  ...activePlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
+])
+const activeVisibilitySelectOptions = [
+  { value: 'all', label: '全部状态' },
+  { value: 'public', label: '公开' },
+  { value: 'private', label: '私密' },
+]
 
 const filteredRoms = computed(() => {
   const q = activeSearch.value.trim().toLowerCase()
@@ -357,67 +372,66 @@ function fmtTime(v) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 34px;
-  padding: 0 14px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: transparent;
-  color: #111;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  color: var(--text-secondary);
   font-family: inherit;
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--clay-in-sm);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
   white-space: nowrap;
 }
 .tab:hover:not(.active) {
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
-.tab.active { color: #fff; background: #111; box-shadow: none; }
+.tab:active:not(.active) { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+.tab:focus-visible { outline: none; box-shadow: var(--clay-focus); }
+.tab.active { color: #fff; background: var(--clay-primary-grad); box-shadow: var(--clay-sm); }
 .tab .n {
   font-size: 11px;
   font-weight: 900;
-  padding: 0;
-  min-width: auto;
+  padding: 1px 8px;
+  min-width: 22px;
   text-align: center;
-  border-radius: 0;
-  background: transparent;
-  color: #111;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  box-shadow: var(--clay-xs);
 }
-.tab.active .n { background: transparent; color: #fff; }
+.tab.active .n { background: rgba(255, 255, 255, 0.82); color: #7A3D5C; box-shadow: var(--clay-xs); }
 
 .trash-hint {
-  padding: 12px 16px;
+  padding: 14px 18px;
   margin-bottom: 16px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
+  background: var(--clay-surface-alt);
+  border: 0;
+  border-radius: var(--r-lg);
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.55;
+  box-shadow: var(--clay-sm);
 }
 
 .loading-card, .empty-card { text-align: center; padding: 56px 24px; }
-.spinner {
-  width: 28px; height: 28px; margin: 0 auto 12px;
-  border-radius: 50%;
-  border: 3px solid var(--border-color, #111);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
+/* 加载指示器由 global.css 的 .clay-loader / .spinner 提供（挤压回弹，无线性旋转） */
 .empty-icon {
   width: 64px; height: 64px;
   margin: 0 auto 16px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
+  border-radius: var(--r-lg);
+  background: var(--clay-surface);
+  border: 0;
   display: flex; align-items: center; justify-content: center;
-  color: #111;
+  color: var(--text-primary);
+  box-shadow: var(--clay-md);
 }
-.empty-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 900; color: #111; }
+.empty-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 900; color: var(--text-primary); }
 .empty-card p, .loading-card p { margin: 0 0 18px; color: var(--text-tertiary); font-size: 14px; }
 
 .rom-toolbar {
@@ -432,10 +446,11 @@ function fmtTime(v) {
   gap: 8px;
   height: 40px;
   padding: 0 12px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.88);
-  color: #111;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  color: var(--text-primary);
+  box-shadow: var(--clay-in-sm);
 }
 .rom-search input {
   width: 100%;
@@ -444,12 +459,13 @@ function fmtTime(v) {
   border: 0;
   outline: none;
   background: transparent;
-  color: #111;
+  color: var(--text-primary);
   font: inherit;
   font-weight: 800;
 }
 .rom-search input::placeholder { color: var(--text-quaternary); }
 .filter-select {
+  --select-width: 100%;
   --select-height: 40px;
   --select-min-height: 40px;
   --select-font-size: 13px;
@@ -459,16 +475,18 @@ function fmtTime(v) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.72);
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 18px;
+  border: 0;
+  border-radius: var(--r-xl);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-card);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .rom-entry:hover {
-  transform: translate(-3px, -3px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
+.rom-entry:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press); }
 .rom-entry-main {
   display: flex;
   align-items: flex-start;
@@ -484,7 +502,7 @@ function fmtTime(v) {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #111;
+  color: var(--text-primary);
   font: inherit;
   font-size: 16px;
   font-weight: 900;
@@ -492,7 +510,7 @@ function fmtTime(v) {
   cursor: text;
 }
 .trash-title {
-  color: #111;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 900;
   overflow-wrap: anywhere;
@@ -514,41 +532,47 @@ function fmtTime(v) {
   display: inline-flex;
   align-items: center;
   height: 26px;
-  padding: 0 9px;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  background: #fff;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface-flat);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 900;
+  box-shadow: var(--clay-xs);
 }
-.pdot { width: 10px; height: 10px; margin-top: 7px; border-radius: 3px; flex-shrink: 0; border: 1px solid #111; }
-.rt-pen { opacity: 0; flex-shrink: 0; color: var(--text-tertiary); transition: opacity var(--t-fast); }
+.pdot { width: 10px; height: 10px; margin-top: 7px; border-radius: 14px; flex-shrink: 0; border: 0; }
+/* ROM 条目的封面（无封面时是默认卡带 SVG） */
+.entry-cover { --cover-size: 46px; }
+.rt-pen { opacity: 0; flex-shrink: 0; color: var(--text-tertiary); transition: opacity var(--t-fast) var(--clay-ease); }
 .rt-edit { padding: 0; }
 .rt-input {
   width: 100%;
   font-size: 16px; font-weight: 900;
   font-family: inherit;
-  color: #111;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
-  padding: 6px 8px;
+  color: var(--text-primary);
+  background: var(--clay-inset-surface);
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 8px 12px;
   outline: none;
-  box-shadow: none;
+  box-shadow: var(--clay-in);
 }
+.rt-input:focus { box-shadow: var(--clay-in-deep), 0 0 0 4px var(--accent-ring); }
 .rf { font-size: 12px; color: var(--text-tertiary); margin-top: 4px; overflow-wrap: anywhere; }
 .plat-badge {
   --pc: var(--accent);
   display: inline-flex; align-items: center;
   height: 26px;
-  padding: 0 10px;
-  border-radius: 7px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 900;
-  background: #fff;
-  border: 2px solid var(--pc);
-  color: var(--pc);
+  background: color-mix(in srgb, var(--pc) 16%, #fff);
+  border: 0;
+  /* 平台色只做浅底，文字混入深梅子保证浅底上 ≥ 4.5:1 */
+  color: color-mix(in srgb, var(--pc) 40%, var(--clay-ink));
+  box-shadow: var(--clay-xs);
 }
 
 .col-actions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
@@ -557,25 +581,28 @@ function fmtTime(v) {
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .track {
   position: relative;
-  width: 40px; height: 24px;
-  border-radius: 7px;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  transition: background var(--t), border-color var(--t);
+  width: 44px; height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  border: 0;
+  box-shadow: var(--clay-in-sm);
+  transition: background var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
 .thumb {
   position: absolute;
-  top: 2px; left: 2px;
-  width: 16px; height: 16px;
-  background: #111;
-  border-radius: 5px;
-  box-shadow: none;
-  transition: transform var(--t) var(--ease-spring);
+  top: 3px; left: 3px;
+  width: 20px; height: 20px;
+  background: var(--clay-primary-grad);
+  border-radius: var(--r-pill);
+  box-shadow: var(--clay-xs);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
 }
-.switch input:checked + .track { background: #111; border-color: #111; }
-.switch input:checked + .track .thumb { background: #fff; transform: translateX(16px); }
+.switch:active .thumb { transform: scaleX(1.08) scaleY(0.9); }
+.switch input:checked + .track { background: var(--clay-primary-grad); box-shadow: var(--clay-sm); }
+.switch input:checked + .track .thumb { background: var(--clay-surface-flat); transform: translateX(18px); }
+.switch input:checked:active + .track .thumb { transform: translateX(18px) scaleX(1.08) scaleY(0.9); }
 .switch-label { font-size: 12px; color: var(--text-tertiary); font-weight: 900; min-width: 28px; }
-.switch input:checked ~ .switch-label { color: #111; }
+.switch input:checked ~ .switch-label { color: var(--text-primary); }
 .pagination {
   display: flex;
   align-items: center;
@@ -596,7 +623,7 @@ function fmtTime(v) {
   justify-content: center;
   height: 38px;
   min-width: 42px;
-  color: #111;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 900;
   letter-spacing: 0.08em;

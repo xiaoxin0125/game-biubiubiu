@@ -1,85 +1,162 @@
 /* ============================================================
-   Hanxin-inspired warm blog design system
-   Palette: cream page, white cards, amber/orange accent.
+   Claymorphism 粘土拟态设计系统
+   柔和的糖果色渐变 + 超大圆角 + 内外阴影组合 + Q弹形变物理。
+   规则来源：Claymorphism 风格规范（禁止直角、硬边缘阴影、纯黑配色；
+   按下使用 Squash & Stretch，悬停上浮，弹簧缓动）。
    ============================================================ */
 
-/* ── LIGHT (default) ─────────────────────────────────── */
+/* ── Design tokens ───────────────────────────────────── */
 :root {
-  --bg-0: #FFF7ED;
+  /* 页面与表面 */
+  --bg-0: #FFF6EC;                     /* 奶油底 */
   --bg-1: #FFFFFF;
-  --bg-2: #FFFBF5;
-  --bg-3: #FDEAD2;
+  --bg-2: #FFF7FB;                     /* 粉白 */
+  --bg-3: #F3EAFF;                     /* 淡紫 */
 
-  --text-primary:    #2B2118;
-  --text-secondary:  #6F5B47;
-  --text-tertiary:   #9A8067;
-  --text-quaternary: #C4A98F;
+  --clay-page: linear-gradient(165deg, #FFF7EC 0%, #FFE9F3 46%, #EFE8FF 100%);
+  --clay-surface: linear-gradient(160deg, #FFFFFF 0%, #FFF4F9 100%);
+  --clay-surface-flat: #FFFBFD;
+  --clay-surface-alt: linear-gradient(160deg, #FFFDF7 0%, #FFF0F6 100%);
+  --clay-inset-surface: linear-gradient(180deg, #F6EFF5 0%, #FBF4F8 100%);
+
+  /* 糖果色渐变（主色对齐 pink-300 → pink-400） */
+  --clay-pink: linear-gradient(180deg, #F9A8D4 0%, #F472B6 100%);
+  --clay-pink-soft: linear-gradient(180deg, #FFE1EF 0%, #FFD0E4 100%);
+  --clay-cream: linear-gradient(180deg, #FFF0CE 0%, #FFE3B0 100%);
+  --clay-mint: linear-gradient(180deg, #CDF3DC 0%, #AEE9C8 100%);
+  --clay-lilac: linear-gradient(180deg, #E2D8FF 0%, #CFC0FF 100%);
+  --clay-lemon: linear-gradient(180deg, #FFF6C2 0%, #FFEB9C 100%);
+  --clay-primary-grad: var(--clay-pink);
+  --clay-accent-grad: var(--clay-pink);
+
+  /* 文字：深梅子色系，白底对比度 ≥ 4.5:1 */
+  --text-primary:    #4E3348;
+  --text-secondary:  #6E5069;
+  --text-tertiary:   #866B80;
+  --text-quaternary: #8C7480;
   --text-inverted:   #FFFFFF;
+  --text-mint:       #2C6B4F;
+  --text-lilac:      #533D87;
+  --text-cream:      #7A4E19;
 
-  --border:        #F1DDC8;
-  --border-strong: #E4C7AA;
+  /* 彩色前景：把糖果色混入深梅子后的“墨色”版本，
+     用于小字号/图标，保证在浅色粘土表面上 ≥ 4.5:1（图标 ≥ 3:1）。
+     动态平台色请用 color-mix(in srgb, var(--pc) 40%, var(--clay-ink))。 */
+  --clay-ink:   #4E3348;
+  --ink-pink:   #A8527E;
+  --ink-purple: #6A4FA8;
+  --ink-green:  #2E7A52;
+  --ink-yellow: #8A5A12;
+  --ink-orange: #A85C2A;
+  --ink-blue:   #3F6FA8;
 
-  --accent:        #F59E0B;
-  --accent-hover:  #EA580C;
-  --accent-soft:   rgba(245, 158, 11, 0.14);
-  --accent-ring:   rgba(245, 158, 11, 0.26);
-  --accent-gradient: linear-gradient(135deg, #FCD34D 0%, #F59E0B 52%, #EA580C 100%);
-  --hero-gradient:   linear-gradient(135deg, #FDE68A 0%, #F59E0B 100%);
+  /* 边框：粘土风格不使用实线描边 */
+  --border: transparent;
+  --border-color: transparent;
+  --border-strong: transparent;
 
-  /* Semantic tints — Tailwind-consistent */
-  --sys-blue:    #3B82F6;
-  --sys-green:   #10B981;
-  --sys-indigo:  #6366F1;
-  --sys-mint:    #14B8A6;
-  --sys-orange:  #F97316;
-  --sys-pink:    #EC4899;
-  --sys-purple:  #A855F7;
-  --sys-red:     #EF4444;
-  --sys-teal:    #06B6D4;
-  --sys-yellow:  #EAB308;
+  /* 语义色（柔和版） */
+  --accent:       #F27EB2;
+  --accent-hover: #E85D9E;
+  --accent-soft:  rgba(248, 180, 217, 0.30);
+  --accent-ring:  rgba(248, 180, 217, 0.45);
+  --accent-gradient: var(--clay-pink);
+  --hero-gradient:   linear-gradient(135deg, #FFDDEB 0%, #E7DBFF 100%);
 
-  --success: var(--sys-green);
-  --warn:    var(--sys-orange);
-  --error:   var(--sys-red);
+  --sys-pink:   #F27EB2;
+  --sys-purple: #A98CF5;
+  --sys-green:  #5FC48F;
+  --sys-yellow: #EFC55B;
+  --sys-orange: #F0A05F;
+  --sys-blue:   #82AEF5;
 
-  --fill-1: rgba(43, 33, 24, 0.04);
-  --fill-2: rgba(43, 33, 24, 0.07);
-  --fill-3: rgba(43, 33, 24, 0.10);
+  /* 语义色：既当填充色，也当浅底上的文字色，因此比常规糖果色更深 */
+  --success: #2E7A52;
+  --warn:    #8A5717;
+  --error:   #B0455F;
 
-  --glass-bg:     rgba(255, 251, 245, 0.86);
-  --glass-bg-2:   rgba(255, 251, 245, 0.70);
-  --glass-blur:   saturate(180%) blur(20px);
-  --glass-border: rgba(241, 221, 200, 0.88);
+  --fill-1: rgba(94, 58, 84, 0.05);
+  --fill-2: rgba(94, 58, 84, 0.08);
+  --fill-3: rgba(94, 58, 84, 0.12);
 
-  --r-xs:   7px;
-  --r-sm:   7px;
-  --r-md:   7px;
-  --r-lg:   7px;
-  --r-xl:   7px;
-  --r-pill: 7px;
+  /* 圆角：粘土必须超大圆角 */
+  --r-xs:   14px;
+  --r-sm:   18px;
+  --r-md:   22px;
+  --r-lg:   28px;
+  --r-xl:   32px;
+  --r-2xl:  36px;
+  --r-pill: 999px;
 
-  --shadow-xs: 0 1px 2px rgba(86, 54, 24, 0.05);
-  --shadow-sm: 0 4px 14px rgba(86, 54, 24, 0.07);
-  --shadow-md: 0 12px 28px rgba(86, 54, 24, 0.10), 0 2px 8px rgba(86, 54, 24, 0.05);
-  --shadow-lg: 0 24px 56px rgba(86, 54, 24, 0.16), 0 8px 20px rgba(86, 54, 24, 0.08);
-  --shadow-glow:        0 10px 26px rgba(245, 158, 11, 0.24);
-  --shadow-glow-strong: 0 14px 34px rgba(245, 158, 11, 0.36);
-  --shadow-accent-sm:   0 4px 12px rgba(245, 158, 11, 0.28);
-  --shadow-focus:       0 0 0 4px var(--accent-ring);
+  /* 阴影公式：外阴影 + 内高光 + 内暗影 */
+  --clay-xs:    4px 4px 8px rgba(0, 0, 0, 0.08),
+                inset 2px 2px 4px rgba(255, 255, 255, 0.5),
+                inset -1px -1px 2px rgba(0, 0, 0, 0.05);
+  --clay-sm:    4px 4px 8px rgba(0, 0, 0, 0.08),
+                inset 3px 3px 6px rgba(255, 255, 255, 0.55),
+                inset -2px -2px 4px rgba(0, 0, 0, 0.07);
+  --clay-md:    8px 8px 16px rgba(0, 0, 0, 0.10),
+                inset 4px 4px 8px rgba(255, 255, 255, 0.40),
+                inset -2px -2px 4px rgba(0, 0, 0, 0.10);
+  --clay-lg:    12px 12px 24px rgba(0, 0, 0, 0.12),
+                inset 6px 6px 12px rgba(255, 255, 255, 0.50),
+                inset -3px -3px 6px rgba(0, 0, 0, 0.10);
+  --clay-card:  12px 12px 24px rgba(0, 0, 0, 0.10),
+                inset 6px 6px 12px rgba(255, 255, 255, 0.60),
+                inset -4px -4px 8px rgba(0, 0, 0, 0.05);
+  --clay-hover: 4px 4px 8px rgba(0, 0, 0, 0.10),
+                inset 4px 4px 8px rgba(255, 255, 255, 0.40),
+                inset -2px -2px 4px rgba(0, 0, 0, 0.10);
+  --clay-in:    inset 4px 4px 8px rgba(0, 0, 0, 0.10),
+                inset -4px -4px 8px rgba(255, 255, 255, 0.90);
+  --clay-in-sm: inset 3px 3px 6px rgba(0, 0, 0, 0.08),
+                inset -3px -3px 6px rgba(255, 255, 255, 0.85);
+  --clay-in-deep: inset 6px 6px 12px rgba(0, 0, 0, 0.14),
+                inset -4px -4px 8px rgba(255, 255, 255, 0.70);
+  /* 按压：外阴影收紧，内阴影加深 */
+  --clay-press: 2px 2px 4px rgba(0, 0, 0, 0.05),
+                inset 8px 8px 16px rgba(0, 0, 0, 0.15),
+                inset -4px -4px 8px rgba(255, 255, 255, 0.50);
+  --clay-press-sm: 1px 1px 3px rgba(0, 0, 0, 0.05),
+                inset 5px 5px 10px rgba(0, 0, 0, 0.15),
+                inset -3px -3px 6px rgba(255, 255, 255, 0.50);
+  --clay-focus: var(--clay-md), 0 0 0 4px rgba(248, 180, 217, 0.35);
 
-  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --t-fast: 0.14s;
-  --t:      0.22s;
+  --shadow-xs: var(--clay-xs);
+  --shadow-sm: var(--clay-sm);
+  --shadow-md: var(--clay-md);
+  --shadow-lg: var(--clay-lg);
+  --shadow-glow: 0 10px 26px rgba(242, 126, 178, 0.26);
+  --shadow-glow-strong: 0 14px 34px rgba(242, 126, 178, 0.36);
+  --shadow-accent-sm: 4px 4px 12px rgba(242, 126, 178, 0.28);
+  --shadow-focus: 0 0 0 4px var(--accent-ring);
 
-  --header-h: 52px;
+  /* 动效：只用弹簧缓动 */
+  --clay-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: var(--clay-ease);
+  --ease-spring: var(--clay-ease);
+  --t-fast: 0.2s;
+  --t: 0.3s;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
-               'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
-               'Segoe UI', Roboto, sans-serif;
+  /* 悬停浮起：外阴影扩大、元素上浮 */
+  --clay-lift-shadow: 10px 10px 22px rgba(0, 0, 0, 0.14),
+                      inset 5px 5px 10px rgba(255, 255, 255, 0.5),
+                      inset -3px -3px 6px rgba(0, 0, 0, 0.10);
+  /* 顶部浮条：半透明粘土表面 */
+  --clay-float-surface: linear-gradient(160deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 244, 249, 0.88) 100%);
+  --glass-blur: blur(14px) saturate(1.15);
+
+  /* 挤压形变 */
+  --clay-squash: scaleX(1.05) scaleY(0.9);
+  --clay-lift: translateY(-4px);
+
+  --header-h: 68px;
+
+  --font-sans: ui-rounded, 'SF Pro Rounded', 'Quicksand', 'Nunito',
+               'Hiragino Maru Gothic ProN', 'PingFang SC', 'Hiragino Sans GB',
+               'Microsoft YaHei', system-ui, -apple-system, sans-serif;
   --font-display: var(--font-sans);
-  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'JetBrains Mono',
-               Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
   --mono-stack: var(--font-mono);
 
   color-scheme: light;
@@ -88,28 +165,26 @@
 *, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #app { margin: 0; padding: 0; width: 100%; min-height: 100%; }
 
-/* Mobile touch behavior — disable double-tap zoom globally but keep scroll/pan.
-   Individual regions (like the virtual gamepad) override with `touch-action: none`
-   when they need to block all gestures. */
 html { touch-action: manipulation; }
 
 body {
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at top left, rgba(245, 158, 11, 0.16), transparent 28vw),
-    linear-gradient(180deg, #FFF7ED 0%, #FFFBF5 42%, #FFF7ED 100%);
+  background-color: #FFF7F1;
+  background-image:
+    radial-gradient(42vw 42vw at 8% -6%, rgba(255, 214, 196, 0.55), transparent 70%),
+    radial-gradient(38vw 38vw at 96% 4%, rgba(255, 197, 224, 0.5), transparent 72%),
+    radial-gradient(46vw 46vw at 50% 108%, rgba(214, 199, 255, 0.45), transparent 74%),
+    var(--clay-page);
+  background-attachment: fixed;
   overflow-x: hidden;
-  overscroll-behavior-y: none;          /* prevent rubber-band pull-to-refresh on iOS */
+  overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.005em;
 }
 
-/* Interactive elements — prevent iOS long-press selection / callout menu,
-   kill text selection flash on rapid taps, kill the blue tap-highlight flash. */
 button,
 .btn,
 a.btn,
@@ -125,8 +200,8 @@ a.btn,
   touch-action: manipulation;
 }
 
-a:not(.btn) { color: var(--accent); text-decoration: none; transition: color var(--t-fast) var(--ease-out); }
-a:not(.btn):hover { color: #111; }
+a:not(.btn) { color: var(--accent-hover); text-decoration: none; transition: color var(--t) var(--clay-ease); }
+a:not(.btn):hover { color: var(--text-lilac); }
 a.btn { text-decoration: none; }
 button { font-family: inherit; }
 
@@ -137,44 +212,53 @@ button { font-family: inherit; }
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 28px;
 }
-@media (max-width: 600px) { .container { padding: 0 16px; } }
+@media (max-width: 600px) { .container { padding: 0 18px; } }
 
-/* ===== Page header (shared across Gallery / Rooms / MyRoms / Admin) ===== */
+/* ===== Page header ===== */
 .page-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  padding: 32px 0 24px;
+  gap: 20px;
+  padding: 36px 0 28px;
   flex-wrap: wrap;
 }
 .page-title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   margin: 0;
   color: var(--text-primary);
-  line-height: 1.2;
+  line-height: 1.25;
 }
 .page-sub {
   color: var(--text-secondary);
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 .page-head-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 @media (max-width: 600px) {
-  .page-head { padding: 20px 0 16px; gap: 12px; }
-  .page-title { font-size: 22px; }
+  .page-head { padding: 24px 0 18px; gap: 14px; }
+  .page-title { font-size: 23px; }
   .page-sub { font-size: 13px; }
+}
+
+/* ===== 可交互元素的粘土物理 ===== */
+.btn,
+.seg-btn,
+.tab,
+.nav-item,
+.tile {
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background-color var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
 }
 
 /* ===== Button ===== */
@@ -182,208 +266,196 @@ button { font-family: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: transparent;
-  color: #111;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface);
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 800;
   cursor: pointer;
-  box-shadow: none;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s, border-color 0.2s;
+  box-shadow: var(--clay-md);
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
   user-select: none;
   white-space: nowrap;
 }
 .btn:hover:not(:disabled) {
-  color: #111;
-  background: transparent;
-  border-color: var(--border-color, #111);
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  background: var(--clay-surface-alt);
+  color: var(--text-primary);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
 }
-.btn:active { transform: translate(0, 0); box-shadow: none; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
-.btn:focus-visible { outline: none; box-shadow: 0 0 0 4px var(--accent-ring); }
+.btn:active:not(:disabled) {
+  transform: translateY(2px) var(--clay-squash);
+  box-shadow: var(--clay-press);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: var(--clay-xs); }
+.btn:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 
 .btn-primary {
-  background: #111;
-  border-color: #111;
+  background: var(--clay-primary-grad);
   color: #FFFFFF;
   font-weight: 900;
-  box-shadow: none;
+  box-shadow: var(--clay-md);
 }
 .btn-primary:hover:not(:disabled) {
+  background: var(--clay-pink-soft);
+  color: var(--text-primary);
+}
+.btn-primary:active:not(:disabled) {
+  background: var(--clay-pink);
   color: #FFFFFF;
-  background: #111;
-  border-color: #111;
-  filter: none;
-  box-shadow: 4px 4px 0 var(--border-color, #111);
 }
-.btn-primary:active {
-  filter: none;
-  border-color: #111;
-  box-shadow: none;
-  transform: translate(0, 0);
+.btn-primary:disabled { background: var(--clay-pink-soft); color: var(--text-secondary); opacity: 0.7; }
+
+.btn-ghost {
+  background: var(--clay-inset-surface);
+  color: var(--text-secondary);
+  box-shadow: var(--clay-in-sm);
 }
-.btn-primary:disabled {
-  background: #111;
-  border-color: #111;
-  box-shadow: none;
-  opacity: 0.5;
-}
+.btn-ghost:hover:not(:disabled) { background: var(--clay-surface-alt); color: var(--text-primary); box-shadow: var(--clay-sm); }
 
-.btn-ghost { background: transparent; border-color: transparent; color: #111; }
-.btn-ghost:hover:not(:disabled) { background: transparent; color: #111; }
+.btn-danger { background: linear-gradient(180deg, #FFC4D2 0%, #F79CB2 100%); color: #7A2740; }
+.btn-danger:hover:not(:disabled) { background: linear-gradient(180deg, #FFD2DD 0%, #FBAEC0 100%); color: #6C2039; }
 
-.btn-danger { background: transparent; border-color: var(--border-color, #111); color: var(--error); }
-.btn-danger:hover:not(:disabled) { background: transparent; border-color: var(--border-color, #111); color: var(--error); }
+.btn-sm { height: 36px; padding: 0 16px; font-size: 13px; box-shadow: var(--clay-sm); border-radius: var(--r-pill); }
+.btn-sm:hover:not(:disabled) { box-shadow: var(--clay-hover); }
+.btn-sm:active:not(:disabled) { box-shadow: var(--clay-press-sm); }
+.btn-icon { width: 44px; height: 44px; padding: 0; border-radius: var(--r-pill); }
+.btn-icon.btn-sm { width: 38px; height: 38px; }
+.btn-lg { height: 54px; padding: 0 30px; font-size: 15px; border-radius: var(--r-pill); box-shadow: var(--clay-lg); }
 
-.btn-sm { height: 30px; padding: 0 10px; font-size: 13px; border-radius: 7px; }
-.btn-icon { width: 34px; height: 34px; padding: 0; }
-.btn-icon.btn-sm { width: 30px; height: 30px; }
-.btn-lg { height: 44px; padding: 0 20px; font-size: 15px; border-radius: 7px; }
-
-/* ===== Input ===== */
+/* ===== Input（内凹粘土） ===== */
 .input {
   width: 100%;
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 7px;
-  border: 2px solid var(--border-color, #111);
-  background: rgba(255, 255, 255, 0.88);
-  color: #111;
+  height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--clay-inset-surface);
+  color: var(--text-primary);
   font-size: 14px;
   font-family: inherit;
+  font-weight: 600;
   outline: none;
-  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+  box-shadow: var(--clay-in);
+  transition: box-shadow var(--t) var(--clay-ease), background var(--t) var(--clay-ease);
 }
+.input::placeholder { color: var(--text-quaternary); font-weight: 500; }
 .input:focus {
-  background: #fff;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-ring);
+  background: linear-gradient(180deg, #FBF5FA 0%, #FFFFFF 100%);
+  box-shadow: var(--clay-in-deep), 0 0 0 4px rgba(248, 180, 217, 0.35);
 }
-.input::placeholder { color: var(--text-quaternary); }
+textarea.input { height: auto; padding: 14px 18px; line-height: 1.6; resize: vertical; }
 
 /* ===== Select ===== */
-select,
-.select,
-.filter-select,
-.admin-select {
+/* 原生 <select> 只剩兜底样式：站内下拉框统一用 ClaySelect 组件
+   （见 frontend/src/components/ClaySelect.vue），外观由组件自己维护，
+   这里只保证万一出现原生 select 时不会太突兀。 */
+select {
   width: var(--select-width, auto);
-  height: var(--select-height, 38px);
-  min-height: var(--select-min-height, 38px);
-  padding: var(--select-padding, 0 34px 0 12px);
-  border: var(--select-border, 2px solid var(--border-color, #111));
-  border-radius: var(--select-radius, 7px);
-  background-color: var(--select-bg, transparent);
+  height: var(--select-height, 44px);
+  min-height: var(--select-min-height, 44px);
+  padding: var(--select-padding, 0 40px 0 18px);
+  border: 0;
+  border-radius: var(--r-pill);
+  background-color: var(--select-bg, #FBF4F8);
   background-image:
-    linear-gradient(45deg, transparent 50%, var(--select-arrow-color, #111) 50%),
-    linear-gradient(135deg, var(--select-arrow-color, #111) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--select-arrow-color, var(--text-secondary)) 50%),
+    linear-gradient(135deg, var(--select-arrow-color, var(--text-secondary)) 50%, transparent 50%);
   background-position:
-    calc(100% - 18px) 50%,
-    calc(100% - 12px) 50%;
+    calc(100% - 20px) 50%,
+    calc(100% - 14px) 50%;
   background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
-  color: var(--select-color, #111);
+  color: var(--select-color, var(--text-primary));
   font-family: inherit;
   font-size: var(--select-font-size, 14px);
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1.2;
   outline: none;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  box-shadow: var(--select-shadow, none);
-  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s, color 0.2s, transform 0.2s, opacity 0.2s;
+  box-shadow: var(--select-shadow, var(--clay-md));
+  transition: box-shadow var(--t) var(--clay-ease), background-color var(--t) var(--clay-ease), color var(--t) var(--clay-ease);
+}
+/* 下拉框不做悬停位移：指针滑过就上浮会让控件在点击前移开，容易误触 */
+select:active:not(:disabled) {
+  transform: none;
+  box-shadow: var(--clay-press-sm);
 }
 select:focus,
-select:focus-visible,
-.select:focus,
-.select:focus-visible,
-.filter-select:focus,
-.filter-select:focus-visible,
-.admin-select:focus,
-.admin-select:focus-visible {
-  background-color: var(--select-focus-bg, transparent);
-  border-color: var(--select-focus-border, var(--border-color, #111));
-  color: var(--select-focus-color, #111);
-  box-shadow: var(--select-focus-shadow, 0 0 0 4px var(--accent-ring));
+select:focus-visible {
+  background-color: var(--select-focus-bg, #FDF7FB);
+  color: var(--select-focus-color, var(--text-primary));
+  box-shadow: var(--select-focus-shadow, var(--clay-focus));
 }
-select:disabled,
-.select:disabled,
-.filter-select:disabled,
-.admin-select:disabled {
+select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
-  box-shadow: none;
+  box-shadow: var(--clay-xs);
 }
-select option,
-.select option,
-.filter-select option,
-.admin-select option {
-  background: #FFFBF5;
-  color: #111;
-  font-weight: 900;
+/* 原生下拉列表：只支持纯色，统一用粘土表面色 + 梅子色文字，避免系统默认的白底蓝底 */
+select option {
+  background-color: #FFFBFD;
+  color: var(--text-primary);
+  font-weight: 700;
+  padding: 10px 14px;
 }
-select option:checked,
-.select option:checked,
-.filter-select option:checked,
-.admin-select option:checked {
-  background: #111;
-  color: #fff;
+select option:checked {
+  background-color: #FFD3E6;
+  color: var(--text-primary);
 }
-select option:hover,
-.select option:hover,
-.filter-select option:hover,
-.admin-select option:hover {
-  background: rgba(17, 17, 17, 0.08);
-  color: #111;
-}
+select option:hover { background-color: #FFE6F1; color: var(--text-primary); }
 
 .label {
   display: block;
   font-size: 13px;
-  font-weight: 900;
-  color: #111;
-  margin-bottom: 6px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
 }
 
-/* ===== Card ===== */
+/* ===== Card / Panel ===== */
 .panel-card {
-  background: rgba(255, 255, 255, 0.88);
-  border: 2px solid var(--border-color, #111);
-  border-radius: 7px;
+  background: var(--clay-surface);
+  border: 0;
+  border-radius: var(--r-2xl);
+  box-shadow: var(--clay-card);
+  padding: 26px 28px;
 }
 
-/* ===== Badge ===== */
+/* ===== Badge / pill ===== */
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 7px;
+  gap: 5px;
+  padding: 4px 14px;
+  border-radius: var(--r-pill);
   font-size: 12px;
-  font-weight: 900;
-  background: #fff;
-  border: 2px solid var(--border-color, #111);
-  color: #111;
-  line-height: 18px;
+  font-weight: 800;
+  background: var(--clay-surface-flat);
+  color: var(--text-secondary);
+  border: 0;
+  box-shadow: var(--clay-xs);
+  line-height: 1.5;
 }
-.badge-success { background: #fff; color: var(--success); }
-.badge-warn    { background: #fff; color: var(--warn); }
+.badge-success { background: var(--clay-mint); color: var(--text-mint); }
+.badge-warn    { background: var(--clay-cream); color: var(--text-cream); }
 
 /* ===== Segmented control ===== */
 .seg {
   display: inline-flex;
-  gap: 10px;
-  padding: 2px 6px 12px 2px;
-  border-radius: 0;
-  background: transparent;
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: var(--clay-in-sm);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -391,43 +463,44 @@ select option:hover,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 34px;
-  padding: 0 14px;
-  border: 2px solid var(--border-color, #111);
-  background: transparent;
-  color: #111;
+  height: 42px;
+  padding: 0 20px;
+  border: 0;
+  background: var(--clay-surface);
+  color: var(--text-secondary);
   font-family: inherit;
-  font-weight: 900;
+  font-weight: 800;
   font-size: 13px;
-  border-radius: 7px;
+  border-radius: var(--r-pill);
   cursor: pointer;
   text-decoration: none;
   line-height: 1;
-  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
+  box-shadow: var(--clay-sm);
 }
 .seg-btn:hover:not(.active) {
-  color: #111;
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--border-color, #111);
+  color: var(--text-primary);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-hover);
 }
+.seg-btn:active:not(.active) { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
 .seg-btn.active {
-  background: #111;
-  color: #fff;
-  box-shadow: none;
+  background: var(--clay-primary-grad);
+  color: #FFFFFF;
+  box-shadow: var(--clay-md);
 }
 
 /* ===== Brand logo ===== */
 .orb-brand {
   position: relative;
-  width: 34px; height: 34px;
-  border-radius: 7px;
-  background: #fff7ed;
-  color: #111;
+  width: 44px; height: 44px;
+  border-radius: var(--r-md);
+  background: var(--clay-pop, var(--clay-pink-soft));
+  color: var(--text-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: none;
+  box-shadow: var(--clay-sm);
   overflow: hidden;
 }
 .orb-brand img {
@@ -438,50 +511,116 @@ select option:hover,
 }
 
 /* ===== Scrollbar ===== */
-::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border: 2px solid transparent;
-  border-radius: 999px;
+  background: #F3C8DD;
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #EBA9C8; background-clip: content-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
-* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+* { scrollbar-width: thin; scrollbar-color: #F3C8DD transparent; }
+
+/* ===== 弹窗：内容照常滚动，但不显示右侧滚动条 =====
+   弹窗的圆角与内部列表（ROM 选择、平台宫格等）都会被系统滚动条切边，
+   因此弹窗内的滚动一律隐藏滚动条，仍可用滚轮 / 触摸 / 键盘滚动。 */
+.mask,
+.mask *,
+.is-overlay,
+.is-overlay * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.mask::-webkit-scrollbar,
+.mask *::-webkit-scrollbar,
+.is-overlay::-webkit-scrollbar,
+.is-overlay *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 
 ::selection { background: var(--accent-soft); color: var(--text-primary); }
 
 html { scroll-behavior: smooth; }
 
-.page-enter-active, .page-leave-active { transition: opacity 0.14s var(--ease-out); }
+.page-enter-active, .page-leave-active { transition: opacity var(--t) var(--clay-ease); }
 .page-enter-from, .page-leave-to { opacity: 0; }
 
+/* 允许需要关闭动效的用户关闭挤压物理 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .btn:hover:not(:disabled),
+  .seg-btn:hover:not(.active),
+  .seg-btn:active:not(.active),
+  .btn:active:not(:disabled),
+  .nav-item:hover,
+  .nav-item:active,
+  .tab:hover,
+  .tab:active,
+  .tile:hover,
+  .tile:active,
+  .row:hover,
+  .row:active,
+  .is-slot:hover,
+  .is-slot:active,
+  .stick:active,
+  .face-btn.pressed,
+  .sh-btn.pressed,
+  .sys-btn.pressed,
+  .visibility-switch:hover:not(:disabled),
+  .visibility-switch:active:not(:disabled),
+  [role="button"]:hover,
+  [role="button"]:active { transform: none !important; }
 }
 
 @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .skeleton {
-  background: linear-gradient(90deg, var(--bg-2), var(--bg-3), var(--bg-2));
+  background: linear-gradient(90deg, #FBEDF4, #F4E7FB, #FBEDF4);
   background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-  border-radius: var(--r-sm);
+  animation: shimmer 1.4s var(--clay-ease) infinite;
+  border-radius: var(--r-md);
 }
 
-.empty-state { text-align: center; padding: 48px 24px; }
-.empty-state h3 { margin: 0 0 6px; font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.empty-state p  { margin: 0 0 16px; color: var(--text-tertiary); font-size: 13px; }
+/* ===== 粘土加载指示器 =====
+   不用线性旋转：让粘土球反复挤压、回弹。 */
+@keyframes clay-pulse {
+  0%, 100% { transform: scaleX(1) scaleY(1); opacity: 0.78; }
+  50%      { transform: scaleX(0.8) scaleY(1.16); opacity: 1; }
+}
+.clay-loader,
+.spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: var(--clay-primary-grad);
+  box-shadow: var(--clay-md);
+  animation: clay-pulse 1s var(--clay-ease) infinite;
+}
+.clay-loader-sm { width: 22px; height: 22px; margin: 0; }
 
-/* ===== Emulator screen (Player only) ===== */
+@keyframes clay-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.empty-state { text-align: center; padding: 56px 28px; }
+.empty-state h3 { margin: 0 0 8px; font-size: 16px; font-weight: 800; color: var(--text-primary); }
+.empty-state p  { margin: 0 0 20px; color: var(--text-secondary); font-size: 13px; }
+
+/* ===== 模拟器屏幕：嵌入粘土面板的“屏幕” ===== */
 .crt-screen {
   position: relative;
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   overflow: hidden;
-  background: #000;
+  background: linear-gradient(180deg, #382C46 0%, #2A2138 100%);
+  box-shadow: inset 6px 6px 14px rgba(0, 0, 0, 0.4), inset -4px -4px 10px rgba(255, 255, 255, 0.06),
+              12px 12px 24px rgba(0, 0, 0, 0.12);
 }
-

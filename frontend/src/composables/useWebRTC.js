@@ -7,11 +7,6 @@
 //        exposing the incoming stream via onRemoteStream and DC msgs via
 //        onDataMessage.
 
-const DEFAULT_STUN_URLS = [
-  'stun:stun.l.google.com:19302',
-  'stun:stun.cloudflare.com:3478',
-]
-
 function splitIceUrls(value) {
   return String(value || '')
     .split(',')
@@ -53,7 +48,8 @@ function buildIceServers() {
 
   const stunUrls = splitIceUrls(runtimeValue('WEBRTC_STUN_URLS'))
   const turnUrls = splitIceUrls(runtimeValue('WEBRTC_TURN_URLS'))
-  const servers = [{ urls: stunUrls.length ? stunUrls : DEFAULT_STUN_URLS }]
+  const servers = []
+  if (stunUrls.length) servers.push({ urls: stunUrls })
 
   if (turnUrls.length) {
     const turnServer = { urls: turnUrls }
@@ -67,9 +63,11 @@ function buildIceServers() {
   return servers
 }
 
-const ICE_CONFIG = {
-  iceServers: buildIceServers(),
-  iceTransportPolicy: String(runtimeValue('WEBRTC_FORCE_RELAY')) === '1' ? 'relay' : 'all',
+function buildIceConfig() {
+  return {
+    iceServers: buildIceServers(),
+    iceTransportPolicy: String(runtimeValue('WEBRTC_FORCE_RELAY')) === '1' ? 'relay' : 'all',
+  }
 }
 
 export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange }) {
@@ -80,7 +78,7 @@ export function useWebRTC({ signal, onRemoteStream, onDataMessage, onStateChange
     let entry = peers.get(peerId)
     if (entry) return entry
 
-    const pc = new RTCPeerConnection(ICE_CONFIG)
+    const pc = new RTCPeerConnection(buildIceConfig())
     entry = { pc, dc: null }
     peers.set(peerId, entry)
 
