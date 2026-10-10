@@ -1,13 +1,13 @@
 import { RETROPAD_BUTTON_DEFS } from './buttons.js'
 import { normalizeRetroarchKey } from './keyboardKeys.js'
+import { LOCAL_PLAYER2_RUNTIME_KEYBOARD } from './keyboardProfiles.js'
 
+// 联机房间里远端玩家（P2 / P3 / P4）在 host 侧 core 配置里的键位。远端玩家用自己
+// 键盘上的 P1 映射按键，host 收到按钮后按这里的键转发给 core，所以这些键只是内部
+// 中转，玩家看不到；但它们必须彼此、以及与 host 的 P1 默认键位（含街机 / MD 变体）
+// 互不重叠，否则一个键会同时触发两名玩家。P2 用的就是单机 P2 的运行时键位。
 const REMOTE_PLAYER_KEY_LAYOUTS = {
-  2: {
-    up: 'i', down: 'k', left: 'j', right: 'l',
-    a: 'u', b: 'o', x: 'y', y: 't',
-    l: 'n', r: 'm', l2: '7', r2: '9',
-    l3: 'p', r3: 'v', start: 'h', select: 'g',
-  },
+  2: { ...LOCAL_PLAYER2_RUNTIME_KEYBOARD },
   3: {
     up: 'b', down: 'e', left: 'f', right: 'semicolon',
     a: 'minus', b: 'equal', x: 'comma', y: 'period',
@@ -15,6 +15,8 @@ const REMOTE_PLAYER_KEY_LAYOUTS = {
     l3: 'backquote', r3: 'tab', start: 'space', select: 'shift',
   },
   4: {
+    // d / 8 / 0 和新 P1 的默认（右=d、L3=8、R3=0）撞车：构建时会由下面的保留键
+    // 机制自动换成池子里的空闲键（P4 只在四人房间出现，这些键同样只是内部中转）。
     up: 'home', down: 'end', left: 'del', right: 'pagedown',
     a: 'c', b: 'd', x: 'r', y: '0',
     l: '5', r: '6', l2: '8', r2: 'backspace',

@@ -12,28 +12,52 @@
         <button :class="{ active: tab === 'gp' }" @click="tab = 'gp'">手柄</button>
       </div>
 
-      <div v-if="activeSlotCount > 1" class="is-player-tabs">
-        <button
-          v-for="slot in activeSlotCount"
-          :key="slot"
-          :class="{ active: activeSlot === slot }"
-          @click="playerTab = slot"
-        >{{ tab === 'gp' ? `手柄${slot}` : `P${slot}` }}</button>
+      <div v-if="activeTabCount > 1" class="is-player-tabs">
+        <template v-if="tab === 'kb'">
+          <button
+            v-for="slot in localPlayers"
+            :key="slot"
+            :class="{ active: activeSlot === slot }"
+            @click="playerTab = slot"
+          >P{{ slot }}</button>
+        </template>
+        <template v-else>
+          <button
+            v-for="device in deviceTabs"
+            :key="device.key"
+            :class="{ active: activeDevice?.key === device.key }"
+            :title="device.key"
+            @click="activeDeviceKey = device.key"
+          >{{ deviceTabLabel(device) }}</button>
+        </template>
       </div>
 
       <template v-if="tab === 'gp'">
         <div class="is-gp-controls">
-          <div class="is-select-field">
-            <span>手柄类型</span>
-            <ClaySelect
-              v-model="activeGamepadProfile"
-              class="is-select"
-              aria-label="手柄类型"
-              :options="gamepadProfileOptions"
-            />
+          <p class="is-gp-note">{{ gamepadNote }}</p>
+          <div v-if="!roomMode" class="is-seat-list">
+            <div v-for="seat in seatRows" :key="seat.player" class="is-select-field">
+              <span>{{ seat.label }}</span>
+              <ClaySelect
+                class="is-select"
+                :aria-label="seat.label"
+                :model-value="seatValue(seat.player)"
+                :options="seatOptions"
+                :placeholder="seatPlaceholder(seat.player)"
+                @update:model-value="(value) => setSeat(seat.player, value)"
+              />
+            </div>
           </div>
-          <p class="is-gp-note">
-            {{ gamepadBindingNote }}
+          <p v-if="gpNotice" class="is-gp-notice">{{ gpNotice }}</p>
+          <p v-else-if="!deviceTabs.length" class="is-gp-note">
+            没有检测到手柄。插上手柄后会立刻出现在上面，可以直接按键映射。
+          </p>
+          <p v-else-if="activeDevice && !activePadIsStandard" class="is-gp-note">
+            这台手柄不是浏览器标准映射（standard），默认键位可能和手柄上印的字母不一致：点某一行再按手柄上对应的键，逐键映射一次即可。
+          </p>
+          <p v-if="deviceTabs.length" class="is-gp-note">
+            测试：按住手柄上的键，对应的那一行会亮起来。
+            <template v-if="liveIndexes.length">正在按下按钮 {{ liveIndexes.join('、') }}。</template>
           </p>
         </div>
       </template>
@@ -61,19 +85,17 @@
           <template v-else>
             <button
               class="is-slot"
-              :class="{ listening: gpListening === b.key, conflict: hasConflict(b.key) }"
+              :class="{ listening: gpListening === b.key, conflict: hasConflict(b.key), live: liveButtons.has(b.key) }"
               @click="startGpListen(b.key)"
             >
-              {{ gpListening === b.key ? '按一个键…' : gamepadLabel(b.key) }}
+              {{ gpListening === b.key ? '按手柄上的键…' : gamepadLabel(b.key) }}
             </button>
           </template>
         </div>
       </section>
 
       <footer class="is-foot">
-        <button class="is-reset" @click="tab === 'kb' ? resetKeyboard(activeSlot, props.platform) : resetGamepad(activeSlot, activeGamepadProfile)">
-          重置{{ resetLabel }}
-        </button>
+        <button class="is-reset" @click="resetActive">{{ resetLabel }}</button>
         <button class="is-done" @click="$emit('close')">完成</button>
       </footer>
     </div>
@@ -82,27 +104,48 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useInputMapping, BUTTON_DEFS, effectiveLocalKeyboardForPlayer, gamepadMappingFor, GAMEPAD_PROFILE_DEFS, normalizeGamepadProfile, normalizeKeyboardEventKey } from '../composables/useInputMapping.js'
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import {
+  useInputMapping,
+  BUTTON_DEFS,
+  GAMEPAD_SEAT_AUTO,
+  GAMEPAD_SEAT_OFF,
+  deviceLabel,
+  describeConnectedDevices,
+  effectiveLocalKeyboardForPlayer,
+  isDeviceKey,
+  normalizeGamepadSeats,
+  normalizeKeyboardEventKey,
+  resolveSoloSeatPlayers,
+} from '../composables/useInputMapping.js'
 import { pcButtonsForPlatform, turboButtonsForPlatform, getPlatform } from '../constants/platforms.js'
+import { readPhysicalPads } from '../composables/input/physicalGamepads.js'
 import ClaySelect from './ClaySelect.vue'
 
 const props = defineProps({
   platform: { type: String, default: null },
   localPlayers: { type: Number, default: 1 },
-  gamepadPlayers: { type: Number, default: 2 },
-  gamepadProfileKeys: { type: Array, default: () => [] },
-  gamepadBindingNote: { type: String, default: '' },
   roomMode: { type: Boolean, default: false },
   sourceStyle: { type: Boolean, default: false },
 })
 defineEmits(['close'])
 
-const { mapping, setKeyboard, setGamepad, setGamepadProfile, resetKeyboard, resetGamepad } = useInputMapping()
+const {
+  mapping,
+  bindGamepadDevice,
+  gamepadMappingForDevice,
+  setKeyboard, setGamepad, setGamepadSeat,
+  resetKeyboard, resetGamepad,
+} = useInputMapping()
 const tab = ref('kb')
 const playerTab = ref(1)
 const listening = ref(null)     // keyboard mode: button being re-bound
 const gpListening = ref(null)   // gamepad mode: button being re-bound
+const gpNotice = ref('')
+const activeDeviceKey = ref('')
+// Gamepad objects have native getters; retain the browser snapshots without
+// turning the objects themselves into deep reactive proxies.
+const connectedPads = shallowRef([])
 
 const relevantButtons = computed(() => {
   if (!props.platform) return BUTTON_DEFS
@@ -134,46 +177,53 @@ const relevantButtons = computed(() => {
 })
 const platformName = computed(() => props.platform ? getPlatform(props.platform).displayName : null)
 const localPlayers = computed(() => Math.max(1, Math.min(2, Number(props.localPlayers) || 1)))
-const gamepadPlayers = computed(() => Math.max(1, Math.min(2, Number(props.gamepadPlayers) || 2)))
-const activeSlotCount = computed(() => tab.value === 'gp' ? gamepadPlayers.value : localPlayers.value)
-const activeSlot = computed(() => Math.max(1, Math.min(activeSlotCount.value, Number(playerTab.value) || 1)))
-const visibleGamepadProfiles = computed(() => {
-  const requested = Array.isArray(props.gamepadProfileKeys) ? props.gamepadProfileKeys : []
-  if (!requested.length) return GAMEPAD_PROFILE_DEFS
-  const byKey = new Map(GAMEPAD_PROFILE_DEFS.map((profile) => [profile.key, profile]))
-  const profiles = requested
-    .map((key) => byKey.get(String(key).toLowerCase()))
-    .filter(Boolean)
-  return profiles.length ? profiles : GAMEPAD_PROFILE_DEFS
-})
-const activeKeyboard = computed(() => effectiveLocalKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
-const activeGamepadProfile = computed({
-  get: () => {
-    const storedProfile = normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value])
-    return visibleGamepadProfiles.value.some((profile) => profile.key === storedProfile)
-      ? storedProfile
-      : visibleGamepadProfiles.value[0]?.key || storedProfile
-  },
-  set: (profile) => setGamepadProfile(activeSlot.value, profile),
-})
+const connectedDevices = computed(() => describeConnectedDevices(connectedPads.value))
+const soloAssignments = computed(() => resolveSoloSeatPlayers(connectedDevices.value, mapping.value.seats, localPlayers.value))
+// Both solo and room settings expose every connected device's own mapping.
+const deviceTabs = connectedDevices
+const activeDevice = computed(() => deviceTabs.value.find((device) => device.key === activeDeviceKey.value) || deviceTabs.value[0] || null)
+const activeTabCount = computed(() => tab.value === 'kb' ? localPlayers.value : deviceTabs.value.length)
+const activeSlot = computed(() => Math.max(1, Math.min(localPlayers.value, Number(playerTab.value) || 1)))
 
-watch([activeSlot, activeGamepadProfile], ([, profile]) => {
-  const storedProfile = normalizeGamepadProfile(mapping.value.gamepadProfiles?.[activeSlot.value])
-  if (profile && profile !== storedProfile) setGamepadProfile(activeSlot.value, profile)
-}, { immediate: true })
-const activeGamepadProfileLabel = computed(() => visibleGamepadProfiles.value.find((profile) => profile.key === activeGamepadProfile.value)?.label || '通用手柄')
-const gamepadProfileOptions = computed(() => visibleGamepadProfiles.value
-  .map((profile) => ({ value: profile.key, label: profile.label })))
-const activeGamepad = computed(() => gamepadMappingFor(mapping.value, activeSlot.value, activeGamepadProfile.value))
-const gamepadBindingNote = computed(() => {
-  if (props.gamepadBindingNote) return props.gamepadBindingNote
-  return props.roomMode
-    ? '当前配置只用于本机唯一手柄；其他手柄不会参与房间控制。'
-    : `当前配置只绑定手柄${activeSlot.value}；第 3 个及以后手柄不会参与控制。`
+const activeKeyboard = computed(() => effectiveLocalKeyboardForPlayer(mapping.value, activeSlot.value, props.platform))
+const activeGamepad = computed(() => activeDevice.value
+  ? gamepadMappingForDevice(activeDevice.value.key, activeDevice.value.position)
+  : {})
+// 浏览器标准映射（standard）下，按钮序号对应的就是手柄上印的字母/肩键名，
+// 面板上直接写出来，玩家一眼就能确认「A 行」是不是手柄的 A。
+const activePadIsStandard = computed(() => activeDevice.value?.pad?.mapping === 'standard')
+const STANDARD_BUTTON_NAMES = {
+  0: 'A', 1: 'B', 2: 'X', 3: 'Y',
+  4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT',
+  8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3',
+  12: '十字↑', 13: '十字↓', 14: '十字←', 15: '十字→',
+}
+// 手柄上正按着的键：哪一行跟着亮，就说明这个物理键映射到了哪一行。
+const liveIndexes = ref([])
+const liveButtons = ref(new Set())
+
+// Keep every pad selectable for either solo seat. setGamepadSeat enforces
+// exclusivity, so choosing the other seat's pad can change the assignment.
+const seatOptions = computed(() => [
+  { value: GAMEPAD_SEAT_AUTO, label: '自动（按连接顺序）' },
+  ...connectedDevices.value.map((device) => ({ value: device.key, label: deviceLabel(device.key) })),
+  { value: GAMEPAD_SEAT_OFF, label: '不使用手柄' },
+])
+const seatRows = computed(() => {
+  if (props.roomMode) return []
+  const rows = []
+  for (let player = 1; player <= localPlayers.value; player++) {
+    rows.push({ player, label: `P${player} 手柄` })
+  }
+  return rows
 })
+const gamepadNote = computed(() => props.roomMode
+  ? '手柄默认使用 XBOX 浏览器标准映射，PS / NS 等其他手柄可逐键手动映射。房间内所有本地手柄都作为本机 P1 输入，不受单机座位设置影响；房主控制 P1，客机只回传到已有授权席位，观战者不能控制。可切换上方设备分页分别设置映射。'
+  : '手柄默认使用 XBOX 浏览器标准映射，PS / NS 等其他手柄可逐键手动映射。默认第一个手柄控制 P1、第二个控制 P2；单个手柄默认只控制 P1，同一台手柄只能分给一个座位。可选择另一座位当前使用的手柄来调整分配。')
 const resetLabel = computed(() => {
-  if (tab.value === 'kb') return activeSlotCount.value > 1 ? `P${activeSlot.value} 键盘` : '键盘'
-  return props.roomMode ? `手柄 · ${activeGamepadProfileLabel.value}` : `手柄${activeSlot.value} ${activeGamepadProfileLabel.value}`
+  if (tab.value === 'kb') return localPlayers.value > 1 ? `重置 P${activeSlot.value} 键盘` : '重置键盘'
+  if (!activeDevice.value) return '重置手柄'
+  return `重置手柄 · ${deviceLabel(activeDevice.value.key)}`
 })
 
 const activeConflicts = computed(() => {
@@ -194,8 +244,144 @@ function hasConflict(btn) {
   return activeConflicts.value.some((buttons) => buttons.includes(btn))
 }
 
+function deviceTabLabel(device) {
+  const player = props.roomMode ? null : soloAssignments.value.get(device.key)
+  return `${deviceLabel(device.key)}${player ? ` · P${player}` : ''}`
+}
+
+function seatValue(player) {
+  const value = normalizeGamepadSeats(mapping.value.seats)[player]
+  return value || GAMEPAD_SEAT_AUTO
+}
+
+// 座位指定了一台已拔出的手柄时，选项里不会再有它，用占位文案说明而不是伪造一项。
+function seatPlaceholder(player) {
+  const value = normalizeGamepadSeats(mapping.value.seats)[player]
+  return isDeviceKey(value) ? `${deviceLabel(value)} 未连接` : '请选择'
+}
+
+function setSeat(player, value) {
+  setGamepadSeat(player, value)
+}
+
+function flashNotice(message) {
+  gpNotice.value = message
+  window.setTimeout(() => { if (gpNotice.value === message) gpNotice.value = '' }, 2600)
+}
+
+function resetActive() {
+  if (tab.value === 'kb') resetKeyboard(activeSlot.value, props.platform)
+  else if (activeDevice.value) resetGamepad(activeDevice.value.key)
+}
+
 function startListen(btn) { listening.value = btn; gpListening.value = null }
-function startGpListen(btn) { gpListening.value = btn; listening.value = null }
+function startGpListen(btn) {
+  listening.value = null
+  const device = activeDevice.value
+  if (!device) { flashNotice('没有检测到手柄，插上手柄后再按按钮映射。'); return }
+  const target = describeConnectedDevices(currentPads()).find((item) => item.key === device.key)
+  if (!target) { flashNotice('该手柄当前未连接，插上后再试。'); return }
+  // 先记下当前按住的键，避免把“点按钮时正好按着”的键当成新按下。
+  clearPressedState()
+  restorePressedState(target.pad)
+  gpListening.value = btn
+}
+
+function currentPads() {
+  // Reads the browser's real list; the emulator-facing global reader is hidden
+  // so RetroArch cannot pick the same pad up a second time.
+  return readPhysicalPads().filter((pad) => pad && pad.connected !== false)
+}
+
+let rafId = null
+let lastSignature = ''
+const seenDeviceKeys = new Set()
+const prevPressed = Object.create(null)
+
+function clearPressedState() {
+  for (const key of Object.keys(prevPressed)) delete prevPressed[key]
+}
+
+function restorePressedState(pad) {
+  for (let i = 0; i < pad.buttons.length; i++) {
+    prevPressed[`${pad.index}:${i}`] = !!pad.buttons[i].pressed
+  }
+}
+
+function syncDevices(pads) {
+  connectedPads.value = pads
+  const devices = describeConnectedDevices(pads)
+  // 旧版按玩家槽位存的映射，第一次见到设备时认领给它。
+  for (const device of devices) {
+    if (seenDeviceKeys.has(device.key)) continue
+    seenDeviceKeys.add(device.key)
+    bindGamepadDevice(device.key, device.position)
+  }
+  if (!deviceTabs.value.some((device) => device.key === activeDeviceKey.value)) {
+    activeDeviceKey.value = deviceTabs.value[0]?.key || ''
+  }
+}
+
+function pollGp() {
+  const pads = currentPads()
+  // Browsers can return new Gamepad objects every frame even when the device
+  // list is unchanged. Keep the active device and its native state current.
+  connectedPads.value = pads
+  const signature = pads.map((pad) => `${pad.index}:${pad.id}`).join('|')
+  if (signature !== lastSignature) {
+    lastSignature = signature
+    syncDevices(pads)
+  }
+  pollGpListen(pads)
+  trackLiveButtons(pads)
+  rafId = requestAnimationFrame(pollGp)
+}
+
+// 手柄分页的实时反馈：哪个物理键按下，映射到它的那一行就高亮，同时显示按钮序号。
+function trackLiveButtons(pads) {
+  const target = describeConnectedDevices(pads).find((device) => device.key === activeDevice.value?.key)
+  const held = target
+    ? Array.from(target.pad.buttons || [])
+        .map((button, index) => (button?.pressed ? index : -1))
+        .filter((index) => index >= 0)
+    : []
+  const nextIndexes = held.slice()
+  if (nextIndexes.join(',') !== liveIndexes.value.join(',')) liveIndexes.value = nextIndexes
+
+  const mapped = activeGamepad.value || {}
+  const rows = new Set(relevantButtons.value.map((row) => row.key))
+  const nextButtons = new Set()
+  for (const [btn, idx] of Object.entries(mapped)) {
+    if (!rows.has(btn)) continue
+    if (held.includes(idx)) nextButtons.add(btn)
+  }
+  if (nextButtons.size !== liveButtons.value.size || [...nextButtons].some((btn) => !liveButtons.value.has(btn))) {
+    liveButtons.value = nextButtons
+  }
+}
+
+function pollGpListen(pads) {
+  const btn = gpListening.value
+  if (!btn || !activeDevice.value) return
+  const target = describeConnectedDevices(pads).find((device) => device.key === activeDevice.value.key)
+  if (!target) {
+    gpListening.value = null
+    flashNotice('该手柄已断开连接。')
+    return
+  }
+  const pad = target.pad
+  for (let i = 0; i < pad.buttons.length; i++) {
+    const key = `${pad.index}:${i}`
+    const pressed = !!pad.buttons[i].pressed
+    if (pressed && !prevPressed[key]) {
+      setGamepad(btn, i, target.key)
+      gpListening.value = null
+      prevPressed[key] = pressed
+      return
+    }
+    prevPressed[key] = pressed
+  }
+}
 
 function onKey(e) {
   if (!listening.value) return
@@ -204,37 +390,24 @@ function onKey(e) {
   if (saved !== false) listening.value = null
 }
 
-let rafId = null
-const prevPressed = Object.create(null)
-function pollGp() {
-  if (gpListening.value) {
-    const pads = (navigator.getGamepads?.() || []).filter(Boolean)
-    const padSlot = Math.max(1, Math.min(gamepadPlayers.value, Number(activeSlot.value) || 1))
-    const pad = pads[padSlot - 1]
-    if (pad) {
-      for (let i = 0; i < pad.buttons.length; i++) {
-        const key = `${pad.index}:${i}`
-        const p = pad.buttons[i].pressed
-        if (p && !prevPressed[key]) {
-          setGamepad(gpListening.value, i, activeSlot.value, activeGamepadProfile.value)
-          gpListening.value = null
-          prevPressed[key] = p
-          break
-        }
-        prevPressed[key] = p
-      }
-    }
-  }
-  rafId = requestAnimationFrame(pollGp)
-}
 function gamepadLabel(btn) {
-  const idx = activeGamepad.value[btn]
-  return typeof idx === 'number' ? `按钮 ${idx}` : '—'
+  const idx = activeGamepad.value?.[btn]
+  if (typeof idx !== 'number') return '—'
+  const name = activePadIsStandard.value ? STANDARD_BUTTON_NAMES[idx] : ''
+  return name ? `${name}（按钮 ${idx}）` : `按钮 ${idx}`
 }
+
+// A pending binding belongs to the visible device/player and input tab only.
+// Flush synchronously so the next poll or key event cannot bind the new tab.
+watch([tab, activeSlot, () => activeDevice.value?.key, () => activeDevice.value?.pad?.index], () => {
+  listening.value = null
+  gpListening.value = null
+  clearPressedState()
+}, { flush: 'sync' })
 
 onMounted(() => {
   window.addEventListener('keydown', onKey, true)
-  rafId = requestAnimationFrame(pollGp)
+  pollGp()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey, true)
@@ -294,6 +467,7 @@ onBeforeUnmount(() => {
 .is-player-tabs { padding-top: 0; }
 .is-tabs button, .is-player-tabs button {
   flex: 1;
+  min-width: 0;
   padding: 9px 12px;
   background: var(--clay-inset-surface);
   color: var(--text-secondary);
@@ -303,6 +477,9 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   box-shadow: var(--clay-in-sm);
   transition: transform var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease), background var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease);
 }
@@ -321,6 +498,7 @@ onBeforeUnmount(() => {
   padding: 10px 18px;
   border-bottom: 0;
 }
+.is-seat-list { display: grid; gap: 8px; }
 .is-select-field {
   display: grid;
   grid-template-columns: 72px 1fr;
@@ -342,6 +520,13 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--text-tertiary);
   font-size: 11px;
+  line-height: 1.45;
+}
+.is-gp-notice {
+  margin: 0;
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 800;
   line-height: 1.45;
 }
 .is-warning {
@@ -411,6 +596,12 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, var(--warn) 18%, #fff);
   color: var(--warn);
   box-shadow: var(--clay-in-sm);
+}
+/* 手柄分页的实时反馈：这个物理键正按着，映射到它的那一行亮起来。 */
+.is-slot.live {
+  background: var(--clay-mint);
+  color: var(--ink-green);
+  box-shadow: var(--clay-sm);
 }
 
 .is-foot {
@@ -491,6 +682,7 @@ onBeforeUnmount(() => {
 .source-mode .is-player-tabs .active:focus-visible { background: var(--clay-primary-grad); color: #fff; }
 .source-mode .is-select-field { color: var(--text-primary); font-weight: 900; }
 .source-mode .is-gp-note { color: var(--text-secondary); font-weight: 700; }
+.source-mode .is-gp-notice { color: var(--warn); font-weight: 900; }
 .source-mode .is-warning {
   border: 0;
   border-radius: var(--r-md);

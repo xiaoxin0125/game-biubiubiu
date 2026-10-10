@@ -1,6 +1,9 @@
 // User-customizable keyboard + gamepad mapping per virtual retropad button.
 // Stored in localStorage, keyed by user id (guests share a single 'guest' slot).
-// Drives VirtualGamepad/useGamepads dispatch and the InputSettings UI.
+// Keyboard maps stay per player slot (P1/P2); gamepad maps are stored per
+// physical device (name + occurrence) and the seat table decides which device
+// controls which player. Drives VirtualGamepad/useGamepads dispatch and the
+// InputSettings UI.
 
 import { ref, computed, watch } from 'vue'
 import { useAuth } from './useAuth.js'
@@ -12,18 +15,30 @@ import {
 } from './input/buttons.js'
 import { normalizeKeyboardEventKey, normalizeRetroarchKey } from './input/keyboardKeys.js'
 import {
-  DEFAULT_GAMEPAD,
-  DEFAULT_GAMEPAD_PROFILE,
-  GAMEPAD_PROFILE_DEFAULTS,
-  GAMEPAD_PROFILE_DEFS,
-  clonePlayerGamepads,
-  detectGamepadProfile,
-  gamepadMappingFor,
+  GAMEPAD_DEFAULT_MAPPING,
+  GAMEPAD_LAYOUT_VERSION,
+  GAMEPAD_SEAT_AUTO,
+  GAMEPAD_SEAT_COUNT,
+  GAMEPAD_SEAT_OFF,
+  assignGamepadSeat,
+  deviceKeyFor,
+  deviceLabel,
+  deviceMappingFor,
+  deviceNameOf,
+  describeConnectedDevices,
+  extractLegacyGamepads,
+  isDefaultGamepadMapping,
+  isDeviceKey,
   isValidGamepadBinding,
-  normalizeGamepadProfile,
-  normalizePlayerGamepads,
-  normalizeSelectedGamepadProfiles,
+  legacyMappingForPosition,
+  migrateGamepadMappingDefaults,
+  normalizeDeviceGamepads,
+  normalizeGamepadMapping,
+  normalizeGamepadSeats,
+  parseDeviceKey,
+  resolveSoloSeatPlayers,
   sanitizeGamepadSave,
+  shortDeviceName,
 } from './input/gamepadProfiles.js'
 import {
   DEFAULT_KEYBOARD,
@@ -58,9 +73,11 @@ import { loadInputMapping, saveInputMapping } from './input/storage.js'
 
 export {
   BUTTON_DEFS,
-  DEFAULT_GAMEPAD_PROFILE,
   DEFAULT_PLAYER1_RUNTIME_KEYBOARD,
-  GAMEPAD_PROFILE_DEFS,
+  GAMEPAD_DEFAULT_MAPPING,
+  GAMEPAD_SEAT_AUTO,
+  GAMEPAD_SEAT_COUNT,
+  GAMEPAD_SEAT_OFF,
   P2_KEY_MAP,
   REMOTE_PLAYER_KEY_MAPS,
   RETROPAD_BUTTON_DEFS,
@@ -73,42 +90,86 @@ export {
   buildRemotePlayerKeyMaps,
   buildRemotePlayersRetroarchConfig,
   defaultPlayer1KeyboardForPlatform,
-  detectGamepadProfile,
+  deviceKeyFor,
+  deviceLabel,
+  deviceMappingFor,
+  deviceNameOf,
+  describeConnectedDevices,
   effectiveKeyboardForPlayer,
   effectiveLocalKeyboardForPlayer,
-  gamepadMappingFor,
+  isDefaultGamepadMapping,
+  isDeviceKey,
   localPlayer2RuntimeKeyboard,
-  normalizeGamepadProfile,
+  normalizeDeviceGamepads,
+  normalizeGamepadSeats,
   normalizeKeyboardEventKey,
   normalizeRetroarchKey,
+  parseDeviceKey,
+  resolveSoloSeatPlayers,
+  shortDeviceName,
 }
 
 const mapping = ref({
   keyboard: { ...DEFAULT_KEYBOARD },
   keyboardP2: { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] },
-  gamepadProfiles: {
-    1: DEFAULT_GAMEPAD_PROFILE,
-    2: DEFAULT_GAMEPAD_PROFILE,
-  },
-  gamepads: clonePlayerGamepads(),
-  gamepad: { ...DEFAULT_GAMEPAD },
+  gamepads: {},
+  seats: { 1: null, 2: null },
+  legacyGamepads: { 1: null, 2: null },
+  gamepadLayoutVersion: GAMEPAD_LAYOUT_VERSION,
 })
 let loaded = false
 
+function normalizeLegacyGamepads(stored = null) {
+  const out = { 1: null, 2: null }
+  for (let slot = 1; slot <= GAMEPAD_SEAT_COUNT; slot++) {
+    const value = stored?.[slot] ?? stored?.[String(slot)]
+    if (!value || typeof value !== 'object') continue
+    const normalized = sanitizeGamepadSave(value)
+    if (Object.keys(normalized).length) out[slot] = normalized
+  }
+  return out
+}
+
+// 只对「这次读取的存档」做一次旧默认键位迁移（标记写在存档里，跑过就不再跑）。
+function migrateStoredMappings(maps = null) {
+  const out = {}
+  for (const [key, value] of Object.entries(maps || {})) {
+    out[key] = value ? migrateGamepadMappingDefaults(value) : value
+  }
+  return out
+}
+
 function refreshForUser(userId) {
   const stored = loadInputMapping(userId)
-  const gamepadProfiles = normalizeSelectedGamepadProfiles(stored?.gamepadProfiles)
-  const gamepads = normalizePlayerGamepads(stored?.gamepads, stored?.gamepad)
-  mapping.value = {
+  const storedVersion = Number(stored?.gamepadLayoutVersion) || 0
+  const needsLayoutMigration = storedVersion < GAMEPAD_LAYOUT_VERSION
+  const gamepads = normalizeDeviceGamepads(stored?.gamepads, { preserveSparse: needsLayoutMigration })
+  // An explicitly saved legacy table is authoritative, including consumed
+  // (null) slots. Never re-extract an already adopted slot from an older field.
+  const savedLegacy = stored?.legacyGamepads
+  const legacySource = savedLegacy && typeof savedLegacy === 'object'
+    ? normalizeLegacyGamepads(savedLegacy)
+    : extractLegacyGamepads(stored)
+  const legacyGamepads = needsLayoutMigration ? migrateStoredMappings(legacySource) : legacySource
+  const next = {
     keyboard: isSavedDefaultKeyboard(stored?.keyboard)
       ? { ...DEFAULT_KEYBOARD }
       : normalizeKeyboardMapping(stored?.keyboard),
     keyboardP2: isSavedLocalPlayer2DefaultKeyboard(stored?.keyboardP2)
       ? { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] }
       : normalizeKeyboardMapping(stored?.keyboardP2, DEFAULT_LOCAL_PLAYER_KEYBOARDS[2]),
-    gamepadProfiles,
-    gamepads,
-    gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+    gamepads: normalizeDeviceGamepads(needsLayoutMigration ? migrateStoredMappings(gamepads) : gamepads),
+    seats: normalizeGamepadSeats(stored?.seats),
+    legacyGamepads,
+    gamepadLayoutVersion: Math.max(storedVersion, GAMEPAD_LAYOUT_VERSION),
+  }
+  mapping.value = next
+
+  // Persist a converted old record immediately. The version marker makes this a
+  // one-time operation; current-version custom swaps are never rewritten.
+  if (stored && needsLayoutMigration) {
+    // Storage may be unavailable/full; the loaded mapping should still work.
+    try { saveInputMapping(userId, next) } catch {}
   }
 }
 
@@ -140,41 +201,46 @@ export function useInputMapping() {
     return true
   }
 
-  function setGamepadProfile(player = 1, profile = DEFAULT_GAMEPAD_PROFILE) {
-    const slot = Number(player) === 2 ? 2 : 1
-    const normalizedProfile = normalizeGamepadProfile(profile)
-    const gamepadProfiles = {
-      ...(mapping.value.gamepadProfiles || {}),
-      [slot]: normalizedProfile,
-    }
-    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
+  // 设备首次出现时，把旧版按玩家槽位存的映射认领给它（认领后清掉那一份旧数据，
+  // 避免同一套旧映射被后来的设备重复继承）。
+  function bindGamepadDevice(deviceKey, position = 0) {
+    const key = String(deviceKey || '')
+    const slot = Number(position) === 2 ? 2 : 1
+    if (!isDeviceKey(key) || mapping.value.gamepads?.[key]) return
+    if (Number(position) !== 1 && Number(position) !== 2) return
+    const legacy = legacyMappingForPosition(mapping.value, slot)
+    if (!legacy) return
+    // 迁移已在读取旧存档时完成；认领只复制现有值，不能再次按行猜测默认值。
+    const adopted = normalizeGamepadMapping(legacy)
+    const legacyGamepads = { ...mapping.value.legacyGamepads, [slot]: null }
     mapping.value = {
       ...mapping.value,
-      gamepadProfiles,
-      gamepads,
-      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+      gamepads: { ...mapping.value.gamepads, [key]: adopted },
+      legacyGamepads,
     }
     saveInputMapping(user.value?.id, mapping.value)
   }
 
-  function setGamepad(btn, idx, player = 1, profile = null) {
-    const slot = Number(player) === 2 ? 2 : 1
-    const gamepadProfiles = normalizeSelectedGamepadProfiles(mapping.value.gamepadProfiles)
-    const activeProfile = normalizeGamepadProfile(profile || gamepadProfiles[slot])
-    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
-    const current = gamepads[slot][activeProfile]
-    const normalized = isValidGamepadBinding(idx)
-      ? (typeof idx === 'number' ? idx : Number(idx))
-      : GAMEPAD_PROFILE_DEFAULTS[activeProfile][btn]
-    gamepads[slot] = {
-      ...gamepads[slot],
-      [activeProfile]: sanitizeGamepadSave(withoutDuplicateBinding(current, btn, normalized)),
-    }
+  function gamepadMappingForDevice(deviceKey, position = 0) {
+    return deviceMappingFor(mapping.value, deviceKey, position)
+  }
+
+  function setGamepad(btn, idx, deviceKey = null) {
+    const key = String(deviceKey || '')
+    if (!isDeviceKey(key)) return false
+    const current = deviceMappingFor(mapping.value, key, 0)
+    const normalized = idx === null ? null : (isValidGamepadBinding(idx) ? Number(idx) : GAMEPAD_DEFAULT_MAPPING[btn])
+    const next = sanitizeGamepadSave(withoutDuplicateBinding(current, btn, normalized))
+    const gamepads = { ...mapping.value.gamepads, [key]: next }
+    mapping.value = { ...mapping.value, gamepads }
+    saveInputMapping(user.value?.id, mapping.value)
+    return true
+  }
+
+  function setGamepadSeat(player = 1, value = null) {
     mapping.value = {
       ...mapping.value,
-      gamepadProfiles,
-      gamepads,
-      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+      seats: assignGamepadSeat(mapping.value.seats, player, value),
     }
     saveInputMapping(user.value?.id, mapping.value)
   }
@@ -193,20 +259,12 @@ export function useInputMapping() {
     saveInputMapping(user.value?.id, mapping.value)
   }
 
-  function resetGamepad(player = 1, profile = null) {
-    const slot = Number(player) === 2 ? 2 : 1
-    const gamepadProfiles = normalizeSelectedGamepadProfiles(mapping.value.gamepadProfiles)
-    const activeProfile = normalizeGamepadProfile(profile || gamepadProfiles[slot])
-    const gamepads = normalizePlayerGamepads(mapping.value.gamepads, mapping.value.gamepad)
-    gamepads[slot] = {
-      ...gamepads[slot],
-      [activeProfile]: { ...GAMEPAD_PROFILE_DEFAULTS[activeProfile] },
-    }
+  function resetGamepad(deviceKey = null) {
+    const key = String(deviceKey || '')
+    if (!isDeviceKey(key)) return
     mapping.value = {
       ...mapping.value,
-      gamepadProfiles,
-      gamepads,
-      gamepad: { ...gamepads[1][gamepadProfiles[1]] },
+      gamepads: { ...mapping.value.gamepads, [key]: { ...GAMEPAD_DEFAULT_MAPPING } },
     }
     saveInputMapping(user.value?.id, mapping.value)
   }
@@ -216,7 +274,9 @@ export function useInputMapping() {
   return {
     mapping: computed(() => mapping.value),
     retroarchConfig,
-    setKeyboard, setGamepad, setGamepadProfile,
+    bindGamepadDevice,
+    gamepadMappingForDevice,
+    setKeyboard, setGamepad, setGamepadSeat,
     resetKeyboard, resetGamepad,
   }
 }

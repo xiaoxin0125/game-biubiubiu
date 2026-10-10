@@ -4,10 +4,34 @@
 
 import { Nostalgist } from 'nostalgist'
 import { cachedFetch } from './useBlobCache.js'
+import { installNativeGamepadGuard } from './input/physicalGamepads.js'
 
 // Sensible defaults cribbed from retroassembly's emulator-portal. Rewind stays
 // enabled, while run-ahead is disabled for heavy or audio-sensitive cores.
+//
+// Physical pads are sampled and mapped by our own useGamepads layer, which
+// presses the RetroArch keyboard binds via pressButton/releaseButton. The core
+// must not read pads itself: with every input_player*_<button>_btn / _axis set
+// to `nul`, RetroArch's rwebpad driver falls back to its autoconfig binds
+// (input_driver.c: `bind_joykey != NO_BTN ? bind_joykey : autobind_joykey`), so
+// one physical press would reach the core twice, using RetroArch's own layout
+// (built-in EMSCRIPTEN profile: a=1, b=0, x=3, y=2) — P1 A+B presses, swapped
+// A/B and X/Y, and one pad driving two players.
+//
+// `input_joypad_driver = null` is the documented way to disable pad polling, but
+// RetroArch 1.22.2 declares the null driver with a NULL init and
+// input_joypad_init_driver() then falls back to the first working driver
+// (rwebpad), so it is kept only for builds that do honour it. The enforced part
+// is turning autodetection off plus hiding pads from the page-level reader in
+// input/physicalGamepads.js — both are re-applied after the caller config, see
+// buildRetroarchConfig below.
+const NATIVE_GAMEPAD_DISABLED = {
+  input_joypad_driver: 'null',
+  input_autodetect_enable: false,
+}
+
 const DEFAULT_RETROARCH_CONFIG = {
+  ...NATIVE_GAMEPAD_DISABLED,
   fastforward_ratio: 10,
   input_max_users: 4,
   input_libretro_device_p1: 1,
@@ -44,7 +68,7 @@ function localCoreFile(core, ext) {
   }
 }
 
-function defaultRetroarchConfigForCore(core) {
+export function defaultRetroarchConfigForCore(core) {
   const config = RUN_AHEAD_DISABLED_CORES.has(core)
     ? {
         ...DEFAULT_RETROARCH_CONFIG,
@@ -59,6 +83,18 @@ function defaultRetroarchConfigForCore(core) {
   }
 
   return config
+}
+
+/**
+ * Final RetroArch config handed to Nostalgist: core defaults, then caller
+ * overrides, then the native-gamepad switches pinned back off so a caller can
+ * never re-open the duplicate input path.
+ */
+export function buildRetroarchConfig(core, callerConfig = {}) {
+  const config = { ...defaultRetroarchConfigForCore(core), ...(callerConfig || {}) }
+  // A `null` or `undefined` override would leave Retropad's own driver active,
+  // so the disable switches are written last, unconditionally.
+  return { ...config, ...NATIVE_GAMEPAD_DISABLED }
 }
 
 /**
@@ -100,11 +136,19 @@ export async function prepareEmulator({
       }
     : core
 
+  // Per-core defaults (run-ahead, rewind) are keyed by name, also when the
+  // caller hands over a prepared core object.
+  const coreName = typeof core === 'string' ? core : core?.name
+
+  // The core reads pads straight from the browser; hide them so RetroArch's
+  // autoconfig path cannot replay every press (see physicalGamepads.js).
+  installNativeGamepadGuard()
+
   const options = {
     core: localCore,
     rom: resolvedRom,
     respondToGlobalEvents: true,
-    retroarchConfig: { ...defaultRetroarchConfigForCore(core), ...retroarchConfig },
+    retroarchConfig: buildRetroarchConfig(coreName, retroarchConfig),
     retroarchCoreConfig,
     resolveCoreJs:   (c) => localCoreFile(c, 'js'),
     resolveCoreWasm: (c) => localCoreFile(c, 'wasm'),

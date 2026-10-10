@@ -160,9 +160,6 @@
       v-if="showInput && !isTouchLayout"
       :platform="romMeta?.platform"
       :local-players="1"
-      :gamepad-players="1"
-      :gamepad-profile-keys="roomGamepadProfileKeys"
-      gamepad-binding-note="当前配置用于本机控制手柄；左摇杆和十字键都可控制方向，输入会按房间座位发送给主机。"
       room-mode
       @close="closeInputSettings"
     />
@@ -255,7 +252,6 @@ const {
 
 const roomCode = (props.code || route.params.code || route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = true
-const roomGamepadProfileKeys = ['ps4', 'xbox', 'generic']
 const roomHostInputConfigSnapshot = ref(null)
 const { currentTurboTargets, turboTargetForButton } = useRoomTurboTargets({
   romMeta: { get value() { return romMeta.value } },

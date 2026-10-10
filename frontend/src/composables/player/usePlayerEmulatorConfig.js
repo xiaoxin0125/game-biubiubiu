@@ -75,7 +75,6 @@ export function usePlayerEmulatorConfig({
     if (usesArcadeNetplayInputConfig.value) {
       const base = roomHostInputConfigSnapshot.value || buildPlayerRetroarchConfig(mapping.value, platformButtons, {
         runtimeKeyboard: player1RuntimeKeyboard.value,
-        includeNativeGamepad: false,
       })
       return buildArcadeNetplayRemoteKeyMaps({
         maxPlayers: activeMaxPlayers.value,
@@ -91,7 +90,7 @@ export function usePlayerEmulatorConfig({
   const retroarchConfig = computed(() => {
     const platformButtons = currentPlatformButtons.value
     const runtimeKeyboard = player1RuntimeKeyboard.value
-    const base = buildPlayerRetroarchConfig(mapping.value, platformButtons, { runtimeKeyboard, includeNativeGamepad: false })
+    const base = buildPlayerRetroarchConfig(mapping.value, platformButtons, { runtimeKeyboard })
     if (!isRoomMode) {
       return {
         ...base,

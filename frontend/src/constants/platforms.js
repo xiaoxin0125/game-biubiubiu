@@ -24,6 +24,7 @@ const withTurbo = (buttons) => [...buttons]
 const NES_PC_TURBO_BUTTONS = Object.freeze({ x: 'a', y: 'b' })
 const NES_PLATFORM_IDS = new Set(['nes', 'famicom', 'fds'])
 
+// 键盘用的行：FC/NES 系列在电脑上多出 x/y 两行（连发 A / 连发 B）。
 export function pcButtonsForPlatform(id) {
   return NES_PLATFORM_IDS.has(id) ? withTurbo(BTN_NES_PC) : getPlatform(id).buttons
 }
@@ -259,8 +260,12 @@ const BUTTON_LABELS = {
   // PlayStation — retropad_a → ◯, retropad_b → ✕ (matches physical layout)
   psx:       { a: '◯', b: '✕', x: '△', y: '□', l: 'L1', r: 'R1', l2: 'L2', r2: 'R2' },
 
-  // NES/SNES/GB/GBC/GBA/FC/SFC/FDS intentionally unlisted → they already ship
-  // as A/B (+X/Y/L/R for SFC/SNES/GBA) which is the native hardware labeling.
+  // NES/SNES/GB/GBC/GBA/FC/SFC/FDS ship as A/B (+X/Y/L/R for SFC/SNES/GBA),
+  // which is the native hardware labeling. FC/NES 系列在 PC 上多出 X/Y 两行，
+  // 它们是 core 的「连发 A / 连发 B」，这里把标签写明，避免玩家以为 X/Y 是普通按键。
+  nes:       { x: '连发A', y: '连发B' },
+  famicom:   { x: '连发A', y: '连发B' },
+  fds:       { x: '连发A', y: '连发B' },
 }
 for (const [id, p] of Object.entries(platforms)) {
   p.buttonLabels = BUTTON_LABELS[id] || null

@@ -11,6 +11,26 @@ import {
 import { dispatchKeyboardEvent } from '../../dispatchKeyboardEvent.js'
 import { useGamepads } from '../../useGamepads.js'
 
+// Room physical pads always use the local P1 dispatch path. The argument is
+// the existing room authorization/seat result, not the literal emulator seat.
+export function resolveRoomPhysicalGamepadPlayer(roomPlayer) {
+  return roomPlayer ? 1 : null
+}
+
+// Guests keep the existing forwarding function, which applies authorization
+// and sends to the guest's assigned room seat. A denied guest is consumed so
+// it cannot fall through to a local host/emulator dispatch.
+export function interceptRoomPhysicalGamepad(action, button, {
+  isRoomMode = false,
+  isHost = false,
+  roomPlayer = null,
+  forwardGuest = null,
+} = {}) {
+  if (!isRoomMode || isHost) return false
+  if (roomPlayer) forwardGuest?.(action, button)
+  return true
+}
+
 export function useRoomPlayerInput({
   mapping,
   romMeta,
@@ -138,14 +158,25 @@ export function useRoomPlayerInput({
     if (isRoomMode && isHostMode.value) return hostButtonInterceptor(action, button)
     return false
   }
-  const resolveGamepadPlayer = (slot = 1) => slot === 1 ? roomGamepadPlayer() : null
+  // Physical pads use the direct button route on the host. Keep the existing
+  // interceptor above for the virtual pad and keyboard paths.
+  const physicalGamepadButtonInterceptor = (action, button) => interceptRoomPhysicalGamepad(action, button, {
+    isRoomMode,
+    isHost: isHostMode.value,
+    roomPlayer: roomGamepadPlayer(),
+    forwardGuest: guestButtonInterceptor,
+  })
+  // Every local pad shares logical P1, independently of the solo seat table.
+  // roomGamepadPlayer supplies only the existing room permission/seat gate;
+  // guestButtonInterceptor still forwards to the guest's authorized room seat.
+  const resolveGamepadPlayer = () => resolveRoomPhysicalGamepadPlayer(roomGamepadPlayer())
 
   useGamepads({
     mapping,
-    onButton: gamepadButtonInterceptor,
+    enabled: computed(() => !showInput.value),
+    onButton: physicalGamepadButtonInterceptor,
     pressButton: (button, player = 1) => pressLocalButton(button, player),
     releaseButton: (button, player = 1) => releaseLocalButton(button, player),
-    maxLocalPlayers: computed(() => 1),
     playerResolver: resolveGamepadPlayer,
     platformButtons: currentPlatformButtons,
     platform: computed(() => romMeta.value?.platform || null),
