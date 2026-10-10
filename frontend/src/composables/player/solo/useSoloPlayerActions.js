@@ -42,10 +42,6 @@ export function useSoloPlayerActions({
     }
   }
 
-  function onFullscreen() {
-    portalRef.value?.toggleFullscreen()
-  }
-
   function goBack() {
     router.push('/')
   }
@@ -63,7 +59,6 @@ export function useSoloPlayerActions({
     onInputConfigReloaded,
     onReload,
     reloadPage,
-    onFullscreen,
     goBack,
     switchVersion,
   }

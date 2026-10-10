@@ -1,5 +1,10 @@
 <template>
-  <div class="player-page" @contextmenu.prevent>
+  <div
+    class="player-page"
+    :class="{ 'is-touch-layout': isTouchLayout, 'is-pseudo-fullscreen': isPseudoFullscreen, 'is-forced-landscape': isForcedLandscape, 'is-zoomed': isZoomed }"
+    ref="playerRootRef"
+    @contextmenu.prevent
+  >
     <GameOverlay
       :title="displayName"
       :platform="overlayPlatformInfo"
@@ -8,6 +13,7 @@
       :can-reload="canReload"
       :can-cheat="canCheat"
       :show-keys="!isTouchLayout"
+      :show-fullscreen="!isTouchLayout"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
@@ -70,6 +76,13 @@
           <p class="emu-loading-sub">{{ loadingSub }}</p>
           <button v-if="loadingSlow" class="btn btn-sm emu-loading-retry" @click="reloadPage">长时间未加载，点此刷新</button>
         </div>
+
+        <!-- 手机端全屏按钮：画面左上角，全屏后同样停在左上角用于退出 -->
+        <FullscreenButton
+          v-if="isTouchLayout || isFullscreen"
+          :active="isFullscreen"
+          @toggle="onFullscreen"
+        />
       </div>
     </div>
 
@@ -87,6 +100,7 @@
     <VirtualGamepad
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
+      :landscape-rotate="isForcedLandscape"
       :press-button="pressSoloGamepadButton"
       :release-button="releaseSoloGamepadButton"
     />
@@ -115,6 +129,9 @@
       @toggle="toggleCheat"
       @clear="clearCheats"
     />
+
+    <!-- 手机端排查卡死：地址后加 ?perf=1 才出现 -->
+    <pre v-if="perfActive" class="perf-hud">{{ perfStats }}</pre>
   </div>
 </template>
 
@@ -129,6 +146,9 @@ import { useCheats } from '../composables/player/useCheats.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
+import { useFullscreen } from '../composables/useFullscreen.js'
+import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
+import { usePerfOverlay } from '../composables/usePerfOverlay.js'
 import { useLocalPlayerInput } from '../composables/player/solo/useLocalPlayerInput.js'
 import { useSoloPlayerActions } from '../composables/player/solo/useSoloPlayerActions.js'
 import { useSoloPlayerLifecycle } from '../composables/player/solo/useSoloPlayerLifecycle.js'
@@ -137,6 +157,7 @@ import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
+import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
 import InputSettings from '../components/InputSettings.vue'
 
 const props = defineProps({
@@ -150,6 +171,7 @@ const isRoomMode = false
 const soloPeer = ref({ isHost: true })
 const roomHostInputConfigSnapshot = ref(null)
 const portalRef = ref(null)
+const playerRootRef = ref(null)
 const booted = ref(false)
 
 const {
@@ -277,7 +299,6 @@ const {
   onInputConfigReloaded,
   onReload,
   reloadPage,
-  onFullscreen,
   goBack,
   switchVersion,
   reloading,
@@ -289,6 +310,28 @@ const {
   booted,
   markBooted,
   showToast,
+})
+
+// 全屏对象是整个播放页：虚拟手柄、顶部工具条都在里面，全屏后手柄不会丢。
+// 横屏锁定失败（iOS 等）时用 toast 提示用户手动横屏。
+const { isFullscreen, isPseudoFullscreen, isForcedLandscape, toggleFullscreen } = useFullscreen({
+  target: () => playerRootRef.value,
+  onNotice: (message) => showToast(message),
+})
+
+function onFullscreen() {
+  toggleFullscreen()
+}
+
+// 手机端：防止连点按钮 / 双指同时按手柄被浏览器当成缩放手势（放大了就回不去）
+const { isZoomed } = useTouchZoomGuard({
+  target: () => playerRootRef.value,
+  onZoomed: () => showToast('画面被放大了，双指捏合可还原', 3600),
+})
+
+// 排查手机端卡死用：地址后加 ?perf=1 才显示性能浮层
+const { active: perfActive, stats: perfStats } = usePerfOverlay({
+  enabled: typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf'),
 })
 
 const canReload = computed(() => !!rom.value && booted.value && !reloading.value)
@@ -307,6 +350,7 @@ useSoloPlayerLifecycle({
   startSlowLoadingTimer,
   stopKeyboardTurboLoops,
   goBack,
+  isPseudoFullscreen,
 })
 </script>
 

@@ -624,3 +624,117 @@ html { scroll-behavior: smooth; }
   box-shadow: inset 6px 6px 14px rgba(0, 0, 0, 0.4), inset -4px -4px 10px rgba(255, 255, 255, 0.06),
               12px 12px 24px rgba(0, 0, 0, 0.12);
 }
+
+/* ===== 播放页全屏 =====
+   全屏的元素是整个 .player-page（虚拟手柄就在里面），所以在原生全屏、
+   iOS / 微信 WebView 的 CSS 伪全屏下，手柄都不会被切到全屏层外面去。
+   触屏设备全屏时隐藏顶部工具条，把整块屏幕让给画面，退出全屏靠画面左上角
+   的悬浮按钮。 */
+.player-page.is-pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  z-index: 500;
+}
+.player-page.is-touch-layout:fullscreen .player-bar,
+.player-page.is-touch-layout:-webkit-full-screen .player-bar,
+.player-page.is-touch-layout.is-pseudo-fullscreen .player-bar {
+  display: none;
+}
+/* 全屏时画面顶到屏幕边缘，去掉圆角 */
+.player-page:fullscreen .crt-screen,
+.player-page:-webkit-full-screen .crt-screen,
+.player-page.is-pseudo-fullscreen .crt-screen {
+  border-radius: 0;
+}
+/* 全屏时画面铺满整块屏幕：去掉播放页内边距、宽度上限和圆角 */
+.player-page:fullscreen .emu-area,
+.player-page:-webkit-full-screen .emu-area,
+.player-page.is-pseudo-fullscreen .emu-area {
+  padding: 0;
+}
+.player-page:fullscreen .emu-frame,
+.player-page:-webkit-full-screen .emu-frame,
+.player-page.is-pseudo-fullscreen .emu-frame {
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+}
+
+/* 浏览器不肯锁方向时（iOS Safari / 微信 WebView / 桌面模拟），把整页顺时针
+   旋转 90° 自己变成横版：本地宽 = 屏幕高、本地高 = 屏幕宽，
+   translateX(100vw) 把旋转后的盒子推回屏幕内正好铺满。
+   页面里的虚拟手柄、悬浮全屏按钮一起旋转，于是它们在用户横持手机的视角里
+   依然位于底部 / 左上角。类名写两遍是为了盖过页面组件 scoped 样式里的
+   position: relative 与 height: 100dvh（分属两个样式表，顺序不保证）。 */
+.player-page.is-forced-landscape.is-forced-landscape {
+  position: fixed;
+  inset: auto;
+  top: 0;
+  left: 0;
+  width: 100vh;
+  height: 100vw;
+  transform-origin: top left;
+  transform: translateX(100vw) rotate(90deg);
+  z-index: 500;
+}
+@supports (height: 100dvw) {
+  .player-page.is-forced-landscape.is-forced-landscape {
+    width: 100dvh;
+    height: 100dvw;
+    transform: translateX(100dvw) rotate(90deg);
+  }
+}
+.player-page.is-touch-layout.is-forced-landscape .player-bar { display: none; }
+
+/* ===== 手机端禁止「按快了画面被放大」 =====
+   iOS Safari 会忽略 viewport 里的 user-scalable=no / maximum-scale，
+   所以只能用 CSS + 手势事件兜住：
+   1) manipulation：整页关掉双击缩放（按钮连点再快也不会被当成双击放大）；
+   2) none：游戏画面、虚拟手柄区域连双指捏合也屏蔽，避免两个拇指同时按手柄
+      时被当成捏合手势；
+   3) is-zoomed：万一还是被放大了，把 2) 放开，用户能立刻捏合缩回去。 */
+.player-page { touch-action: manipulation; }
+.player-page .player-bar,
+.player-page .player-bar button { touch-action: manipulation; }
+.player-page .emu-area,
+.player-page .emu-frame,
+.player-page .portal,
+.player-page .guest-view,
+.player-page .vpad,
+.player-page .stick,
+.player-page .face-wrap,
+.player-page .face-btn,
+.player-page .sh-btn,
+.player-page .sys-btn { touch-action: none; }
+.player-page.is-zoomed .emu-area,
+.player-page.is-zoomed .emu-frame,
+.player-page.is-zoomed .portal,
+.player-page.is-zoomed .guest-view,
+.player-page.is-zoomed .vpad,
+.player-page.is-zoomed .stick,
+.player-page.is-zoomed .face-wrap,
+.player-page.is-zoomed .face-btn,
+.player-page.is-zoomed .sh-btn,
+.player-page.is-zoomed .sys-btn { touch-action: manipulation; }
+
+/* ===== 手机端性能浮层（?perf=1）=====
+   只用于排查卡死，正常游戏不会出现。固定在左上角、不参与布局，
+   页面被 CSS 旋转成横版时跟着一起转。 */
+.perf-hud {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(8px + env(safe-area-inset-left));
+  z-index: 9999;
+  margin: 0;
+  padding: 8px 10px;
+  max-width: 78vw;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #8ef58e;
+  font-family: var(--mono-stack);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  pointer-events: none;
+}

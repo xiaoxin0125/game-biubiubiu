@@ -1,12 +1,14 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { hasTouchScreen, isTouchDeviceLayout } from '../touchLayout.js'
 
 export function usePlayerViewport() {
   const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
   const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 768)
-  const hasTouchInput = typeof window !== 'undefined'
-    && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+  const hasTouchInput = hasTouchScreen()
 
-  const isTouchLayout = computed(() => hasTouchInput && viewportWidth.value < 900)
+  // 触屏布局按「短边」判定：手机横屏后宽度会超过 900，但短边仍是 400 左右，
+  // 所以横屏时依旧是移动端布局（虚拟手柄、隐藏键鼠设置）。
+  const isTouchLayout = computed(() => isTouchDeviceLayout(viewportWidth.value, viewportHeight.value))
   const shouldSuggestRotate = computed(() => viewportWidth.value < 768 && viewportHeight.value > viewportWidth.value)
 
   function updateViewportSize() {

@@ -55,10 +55,6 @@ export function useRoomPlayerActions({
     }
   }
 
-  function onFullscreen() {
-    portalRef.value?.toggleFullscreen()
-  }
-
   function goBack() {
     router.push('/rooms')
   }
@@ -76,7 +72,6 @@ export function useRoomPlayerActions({
     onInputConfigReloaded,
     onReload,
     reloadPage,
-    onFullscreen,
     goBack,
     switchVersion,
   }

@@ -231,9 +231,9 @@ for (const [id, p] of Object.entries(platforms)) {
 // Per-platform face-button label overrides. The internal retropad keys
 // (a/b/x/y/l/r/l2/r2) never change — we just relabel what the user sees so
 // arcade shows "A B C D" (Neo Geo convention) instead of the confusing
-// "A B X Y", Genesis shows "A B C X Y Z", PlayStation uses the symbols etc.
-// Platforms not listed use the generic A/B/X/Y which is already correct for
-// SNES/SFC/GB/GBC/GBA/NES families.
+// "A B X Y", Mega Drive shows "X Y Z / A B C", PlayStation uses the symbols
+// etc. Platforms not listed use the generic A/B/X/Y which is already correct
+// for SNES/SFC/GB/GBC/GBA/NES families.
 const BUTTON_LABELS = {
   // Arcade — FBNeo retropad→Neo Geo mapping is NOT one-to-one:
   //   retropad a → game's B,  retropad b → game's A
@@ -242,10 +242,15 @@ const BUTTON_LABELS = {
   // aren't surprised by "A" triggering B.
   arcade:    { a: 'B', b: 'A', x: 'D', y: 'C', l: 'E', r: 'F' },
 
-  // Sega Genesis / Mega Drive — genesis_plus_gx core maps retropad:
-  //   b→A, a→B, y→C, x→Y, l→X, r→Z   (retropad_b is the "primary" action)
-  megadrive: { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z' },
-  genesis:   { a: 'B', b: 'A', x: 'Y', y: 'C', l: 'X', r: 'Z' },
+  // Sega Genesis / Mega Drive — genesis_plus_gx and picodrive both declare the
+  // same retropad mapping (see the cores' retro_input_descriptor tables):
+  //   b→B, a→C, y→A, x→Y, l→X, r→Z, select→Mode
+  // i.e. retropad buttons map by PHYSICAL POSITION on the pad, not by letter:
+  // retro y is where MD "A" sits, retro b where MD "B" sits, retro a where MD
+  // "C" sits. Labeling a→'B' / b→'A' (what we had) made the on-screen "A" fire
+  // the game's B and so on.
+  megadrive: { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
+  genesis:   { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
 
   // Sega Master System / Game Gear — retropad_b is Button 1 (primary)
   sms:       { a: '2', b: '1' },

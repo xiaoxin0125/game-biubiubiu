@@ -257,16 +257,6 @@ export function useEmulator() {
     }
   }
 
-  async function toggleFullscreen() {
-    const el = wrapperRef.value
-    if (!el) return
-    if (document.fullscreenElement) {
-      await document.exitFullscreen?.()
-    } else {
-      await el.requestFullscreen?.()
-    }
-  }
-
   async function destroy() {
     ++bootGeneration
     const inst = instance.value
@@ -300,7 +290,6 @@ export function useEmulator() {
     releaseButton,
     canvas,
     captureAudioStream,
-    toggleFullscreen,
     destroy,
   }
 }

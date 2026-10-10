@@ -7,6 +7,15 @@ import { broadcastRoomClosed, updateGuestPlayPermissions } from '../room-hub.js'
 import { audit } from '../audit.js'
 import { STUN_SETTING_KEY, normalizeStunUrls } from '../webrtc-settings.js'
 import {
+  TURN_URLS_KEY,
+  TURN_USERNAME_KEY,
+  TURN_CREDENTIAL_KEY,
+  normalizeTurnUrls,
+  normalizeTurnUsername,
+  normalizeTurnCredential,
+} from '../webrtc-settings.js'
+import { testStunUrls, probeTurnServer, probeTurnWithCredentials } from '../stun-test.js'
+import {
   REMOTE_UPLOAD_THRESHOLD_BYTES,
   REMOTE_TOKEN_KEY,
   REMOTE_URL_KEY,
@@ -18,7 +27,7 @@ import {
 // Keys exposed to anonymous clients
 const PUBLIC_KEYS = new Set(['siteTitle', 'siteSubtitle', 'netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled'])
 // Keys admins are allowed to write
-const WRITABLE_KEYS = new Set([...PUBLIC_KEYS, STUN_SETTING_KEY, REMOTE_URL_KEY, REMOTE_TOKEN_KEY])
+const WRITABLE_KEYS = new Set([...PUBLIC_KEYS, STUN_SETTING_KEY, TURN_URLS_KEY, TURN_USERNAME_KEY, TURN_CREDENTIAL_KEY, REMOTE_URL_KEY, REMOTE_TOKEN_KEY])
 
 const DEFAULTS = {
   siteTitle: 'Games Online',
@@ -31,6 +40,10 @@ const DEFAULTS = {
   userUploadEnabled: '1',
   // Empty means no STUN server; admins can configure it after deployment.
   [STUN_SETTING_KEY]: '',
+  // TURN 中继同样在后台配置；环境变量只作为兜底（见 runtime-config.js）
+  [TURN_URLS_KEY]: '',
+  [TURN_USERNAME_KEY]: '',
+  [TURN_CREDENTIAL_KEY]: '',
   // Optional remote storage for large ROMs (see /www/wwwroot/rom-upload).
   [REMOTE_URL_KEY]: '',
   [REMOTE_TOKEN_KEY]: '',
@@ -106,6 +119,90 @@ adminSettingsRoutes.post('/test-remote', async (c) => {
   }
 })
 
+// 测试 STUN：默认用已保存的配置；带上 stunUrls 时先测表单里还没保存的值。
+// 这是一个真实的 STUN Binding 探测（UDP/TCP），能区分网络不通、端口没监听和服务器正常。
+adminSettingsRoutes.post('/test-stun', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  let value
+  if (body && typeof body === 'object' && Object.hasOwn(body, 'stunUrls')) {
+    const raw = Array.isArray(body.stunUrls) ? body.stunUrls.join(',') : String(body.stunUrls ?? '')
+    try {
+      // 地址格式先用和保存时同一套规则校验一遍
+      value = normalizeStunUrls(raw)
+    } catch (error) {
+      return c.json({ ok: false, error: error.message })
+    }
+  } else {
+    value = await getSetting(STUN_SETTING_KEY, '')
+  }
+  if (!value) {
+    return c.json({ ok: false, error: '还没有填写 STUN 地址' })
+  }
+  try {
+    const result = await testStunUrls(value.split(','))
+    await audit(c, {
+      action: 'admin.settings.test-stun',
+      targetType: 'settings',
+      metadata: { urls: result.probes.map((probe) => probe.url), okCount: result.okCount },
+    })
+    return c.json(result)
+  } catch (error) {
+    return c.json({ ok: false, error: error.message })
+  }
+})
+
+// 测试 TURN 中继：默认用后台保存的配置（没有则退回环境变量）。
+// 填了用户名/密码时会做一次带鉴权的 Allocate，真的分配一个中继端口；
+// 没填则只发不带凭据的 Allocate，401/438 即表示中继可用。
+adminSettingsRoutes.post('/test-turn', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const hasOverride = body && typeof body === 'object' && Object.hasOwn(body, 'turnUrls')
+  let urlsValue
+  let username
+  let credential
+  if (hasOverride) {
+    try {
+      urlsValue = normalizeTurnUrls(Array.isArray(body.turnUrls) ? body.turnUrls.join(',') : String(body.turnUrls ?? ''))
+      username = normalizeTurnUsername(body.turnUsername ?? '')
+      credential = normalizeTurnCredential(body.turnCredential ?? '')
+    } catch (error) {
+      return c.json({ ok: false, error: error.message })
+    }
+  } else {
+    const all = await getAll()
+    urlsValue = all[TURN_URLS_KEY] || String(process.env.VITE_WEBRTC_TURN_URLS || '')
+    username = all[TURN_USERNAME_KEY] || String(process.env.VITE_WEBRTC_TURN_USERNAME || '')
+    credential = all[TURN_CREDENTIAL_KEY] || String(process.env.VITE_WEBRTC_TURN_CREDENTIAL || '')
+  }
+
+  const list = [...new Set(String(urlsValue || '').split(/[,\r\n]+/).map((item) => item.trim()).filter(Boolean))]
+  if (!list.length) return c.json({ ok: false, error: '还没有填写 TURN 地址' })
+
+  const authenticated = !!username && !!credential
+  const probes = []
+  for (const url of list) {
+    if (authenticated) {
+      probes.push(await probeTurnWithCredentials(url, { username, credential }))
+    } else {
+      probes.push(await probeTurnServer(url))
+    }
+  }
+  const okCount = probes.filter((item) => item.ok).length
+  await audit(c, {
+    action: 'admin.settings.test-turn',
+    targetType: 'settings',
+    metadata: { urls: probes.map((probe) => probe.url), okCount, authenticated },
+  })
+  return c.json({
+    ok: okCount > 0,
+    probes,
+    okCount,
+    failCount: probes.length - okCount,
+    authenticated,
+    summary: okCount === probes.length ? `${probes.length} 个 TURN 地址全部可用` : `${probes.length} 个地址中 ${okCount} 个可用`,
+  })
+})
+
 adminSettingsRoutes.patch('/', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: '格式不正确' }, 400)
@@ -116,6 +213,24 @@ adminSettingsRoutes.patch('/', async (c) => {
     if (k === STUN_SETTING_KEY) {
       try {
         val = normalizeStunUrls(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === TURN_URLS_KEY) {
+      try {
+        val = normalizeTurnUrls(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === TURN_USERNAME_KEY) {
+      try {
+        val = normalizeTurnUsername(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === TURN_CREDENTIAL_KEY) {
+      try {
+        val = normalizeTurnCredential(v)
       } catch (error) {
         return c.json({ error: error.message }, 400)
       }

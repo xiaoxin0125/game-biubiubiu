@@ -19,11 +19,13 @@ const PLATFORM_DEFAULT_KEYBOARDS = {
   },
   megadrive: {
     ...DEFAULT_KEYBOARD,
-    b: 'z', a: 'x', y: 'c', x: 'b', l: 'u', r: 'i',
+    // Mirror the pad: A/S/D = MD X/Y/Z (top row), Z/X/C = MD A/B/C (bottom).
+    // retropad keys per core mapping: y=A, b=B, a=C, l=X, x=Y, r=Z.
+    a: 'c', b: 'x', y: 'z', x: 's', l: 'a', r: 'd',
   },
   genesis: {
     ...DEFAULT_KEYBOARD,
-    b: 'z', a: 'x', y: 'c', x: 'b', l: 'u', r: 'i',
+    a: 'c', b: 'x', y: 'z', x: 's', l: 'a', r: 'd',
   },
 }
 

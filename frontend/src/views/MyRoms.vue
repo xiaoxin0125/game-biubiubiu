@@ -87,7 +87,7 @@
               <span class="plat-badge" :style="{ '--pc': platformColor(rom.platform) }">{{ platformLabel(rom.platform) }}</span>
               <span v-if="rom.storage === 'remote'" class="meta-chip" title="文件存放在远端存储服务器">远端</span>
               <span class="meta-chip">{{ fmtSize(rom.fileSize) }}</span>
-              <span class="meta-chip">{{ fmtTime(rom.createdAt) }}</span>
+              <span class="meta-chip">{{ formatServerTime(rom.createdAt) }}</span>
               <label class="switch" :title="rom.isPublic ? '公开' : '私密'">
                 <input type="checkbox" :checked="rom.isPublic" @change="togglePublic(rom, $event.target.checked)" />
                 <span class="track"><span class="thumb"></span></span>
@@ -148,7 +148,7 @@
           <div class="rom-entry-meta">
             <span class="plat-badge" :style="{ '--pc': platformColor(rom.platform) }">{{ platformLabel(rom.platform) }}</span>
             <span class="meta-chip">{{ fmtSize(rom.fileSize) }}</span>
-            <span class="meta-chip">删除 {{ fmtTime(rom.updatedAt) }}</span>
+            <span class="meta-chip">删除 {{ formatServerTime(rom.updatedAt) }}</span>
             <div class="col-actions">
               <button class="btn btn-sm btn-primary" @click="restore(rom)">恢复</button>
               <button class="btn btn-sm btn-danger" @click="purge(rom)">永久删除</button>
@@ -167,6 +167,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { getPlatform } from '../constants/platforms.js'
+import { formatServerTime } from '../composables/formatTime.js'
 import UploadDialog from '../components/UploadDialog.vue'
 import ClaySelect from '../components/ClaySelect.vue'
 import RomCover from '../components/RomCover.vue'
@@ -341,19 +342,6 @@ function fmtSize(b) {
   if (b < 1024) return b + ' B'
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
   return (b / 1024 / 1024).toFixed(1) + ' MB'
-}
-function fmtTime(v) {
-  if (v == null) return '—'
-  const d = typeof v === 'number' ? new Date(v * 1000) : new Date(v)
-  if (Number.isNaN(d.getTime())) return '—'
-  const now = new Date()
-  const sameYear = d.getFullYear() === now.getFullYear()
-  return d.toLocaleString('zh-CN', {
-    year: sameYear ? undefined : 'numeric',
-    month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-    hour12: false,
-  })
 }
 </script>
 

@@ -23,7 +23,23 @@ function maxPlayersForPlatformCore(platformId, core) {
 }
 
 export function buildPlatformCoreConfig({ platform, core, players = 1 } = {}) {
-  return buildPlatformNetplayCoreConfig({ platform, core, players })
+  return {
+    ...buildPlatformCoreOptions({ platform, core }),
+    ...buildPlatformNetplayCoreConfig({ platform, core, players }),
+  }
+}
+
+// Core options that a platform needs regardless of player count. PicoDrive
+// defaults to a 3-button pad, which makes X/Y/Z unreachable no matter what the
+// player presses; force the 6-button pad where the hardware had one. SMS/GG
+// keep the default (their pads are 2-button).
+const PLATFORM_CORE_OPTIONS = {
+  megadrive: { picodrive: { picodrive_input1: '6 button pad', picodrive_input2: '6 button pad' } },
+  genesis:   { picodrive: { picodrive_input1: '6 button pad', picodrive_input2: '6 button pad' } },
+}
+
+export function buildPlatformCoreOptions({ platform, core } = {}) {
+  return PLATFORM_CORE_OPTIONS[platform]?.[core] || {}
 }
 
 const PLATFORM_NETPLAY_CORE_CONFIG = {

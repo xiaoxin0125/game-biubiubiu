@@ -8,6 +8,7 @@
 |---|---|
 | `games-online.service` | systemd 服务单元，运行 Node.js 后端（只监听 `127.0.0.1:3000`） |
 | `nginx/extension-app.conf` | 宝塔站点的 `/api` 反向代理与前端路由回退配置 |
+| `STUN.md` | 在独立服务器（或主站本机）上部署 STUN 服务的完整步骤 |
 
 前端由 Nginx 直接托管构建产物 `frontend/dist`，后端只处理 `/api`（含联机 WebSocket `/api/rooms/:code/ws`）。
 
@@ -79,6 +80,7 @@ curl -fsS https://xbw.ppxin.com/api/health
 ## 注意事项
 
 - 站点根目录是 `frontend/dist`，宝塔申请、续签 HTTPS 证书时会把校验文件写到 `frontend/dist/.well-known/acme-challenge`，该目录由 root 创建。`frontend/vite.config.js` 已设置 `emptyOutDir: false`，构建脚本只清理 vite 自己生成的 `dist/assets` 和 `dist/index.html`，因此证书目录不会导致构建失败。
-- STUN 不再通过环境变量下发，改为后台“站点设置”中填写，保存在数据库里，保存后无需重新打包。TURN 仍通过 `VITE_WEBRTC_*` 环境变量配置。
+- STUN 不再通过环境变量下发，改为后台“站点设置”中填写，保存在数据库里，保存后无需重新打包。保存前可以点「测试 STUN 服务器」：后端会向填写的地址发真实 STUN 请求（UDP/TCP）并报告延迟与出口地址，浏览器侧再做一次 ICE 采集自检。TURN 同样是后台「站点设置 → TURN 中继」里的地址 + 用户名 + 密码优先，环境变量 `VITE_WEBRTC_TURN_*` 只作兜底；点「测试 TURN 中继」时若填了凭据会真的分配一次中继端口。在另一台服务器上自建 STUN 服务的方法见 `deploy/STUN.md`。
+- 数据库里的时间统一按 `Asia/Shanghai`（+08:00）读写：`server/db/index.js` 建连接时会话时区钉在 `+08:00`，`server/db/schema.js` 也用自定义 timestamp 类型做同样的换算（见 `server/db/timezone.js`）。服务器的系统时区或 `TZ` 与它不一致时，列表里显示的时间不会跟着偏，但 MySQL 里已有的历史数据需按同一时区理解。
 - `.env` 中的 `NODE_ENV=production` 会使写请求校验 Origin。`CSRF_ALLOWED_ORIGINS` 必须包含浏览器实际访问的地址。
 - 站点已经启用 HTTPS 强制跳转，所以写入 `CSRF_ALLOWED_ORIGINS` 的地址必须是 `https://xbw.ppxin.com`。

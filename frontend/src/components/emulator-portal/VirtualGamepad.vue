@@ -95,11 +95,15 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { getPlatform } from '../../constants/platforms.js'
+import { isTouchDeviceLayout } from '../../composables/touchLayout.js'
 import { useInputMapping, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from '../../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../../composables/dispatchKeyboardEvent.js'
 
 const props = defineProps({
   platform: { type: String, default: null },
+  // 整页被 CSS 顺时针旋转 90°（强制横屏）时，指针位移要换算回页面本地坐标，
+  // 摇杆才会跟着手指走、方向才对得上用户视角。
+  landscapeRotate: { type: Boolean, default: false },
   // Optional callback: guest mode forwards the button over the DataChannel
   // instead of dispatching a local key. Return true to swallow the default.
   buttonInterceptor: { type: Function, default: null },
@@ -116,9 +120,9 @@ const stickActive = ref(false)
 const stickKnob = reactive({ x: 0, y: 0 })
 let dpadPointerId = null
 
-// Show on touch devices OR narrow viewports
-const hasTouch = typeof window !== 'undefined'
-  && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+// Show on touch devices in both orientations. The old check compared
+// `innerWidth < 900`, which hid the pad as soon as a phone rotated to
+// landscape (many Android phones report 900+ px there). See touchLayout.js.
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0)
 const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
 function onResize() {
@@ -135,7 +139,7 @@ onBeforeUnmount(() => {
 })
 
 const landscape = computed(() => viewportWidth.value > viewportHeight.value)
-const enabled = computed(() => hasTouch && viewportWidth.value < 900)
+const enabled = computed(() => isTouchDeviceLayout(viewportWidth.value, viewportHeight.value))
 
 const platButtons = computed(() => {
   if (!props.platform) return null
@@ -171,11 +175,14 @@ const FACE_LAYOUTS = {
   snes:   { keys: ['x', 'y', 'a', 'b'],   colors: { x: '#82AEF5', y: '#5FC48F', a: '#C4526F', b: '#EFC55B' } },
   // PlayStation — △绿 □粉 ✕蓝 ◯红
   ps:     { keys: ['y', 'x', 'a', 'b'],   colors: { y: '#5FC48F', x: '#FF2D92', a: '#C4526F', b: '#82AEF5' } },
-  // Mega Drive / Genesis 6-button cabinet — 2×3 grid A B C (top) / X Y Z
-  // (bottom). retropad→label: b='A' a='B' y='C' l='X' x='Y' r='Z'.
-  md:     { keys: ['b', 'a', 'y', 'l', 'x', 'r'],
-            colors: { b: '#5FC48F', a: '#82AEF5', y: '#C4526F',
-                      l: '#EFC55B', x: '#F0A05F', r: '#AF52DE' } },
+  // Mega Drive / Genesis 6-button pad — matches the real controller: X Y Z on
+  // the top row, A B C on the bottom row (2×3). Core mapping (genesis_plus_gx
+  // and picodrive agree, per their retro_input_descriptor tables):
+  //   retropad y→A, b→B, a→C, l→X, x→Y, r→Z.
+  // Listed in on-screen reading order (top-left → bottom-right).
+  md:     { keys: ['l', 'x', 'r', 'y', 'b', 'a'],
+            colors: { l: '#EFC55B', x: '#F0A05F', r: '#AF52DE',
+                      y: '#C4526F', b: '#5FC48F', a: '#82AEF5' } },
   // Master System / Game Gear — 2 buttons: 1 蓝 2 红
   sms:    { keys: ['b', 'a'],             colors: { b: '#82AEF5', a: '#C4526F' } },
   // Arcade face buttons use A/B/C/D; retropad L/R are exposed below as E/F
@@ -436,6 +443,13 @@ function processPointer(e) {
   const cy = rect.top + rect.height / 2
   let dx = e.clientX - cx
   let dy = e.clientY - cy
+  // 整页顺时针转了 90°：屏幕 +x 是页面本地 +y，屏幕 +y 是页面本地 -x。
+  // 换算后半径、方向、摇杆偏移都在同一套（用户视角的）坐标里算。
+  if (props.landscapeRotate) {
+    const physX = dx
+    dx = dy
+    dy = -physX
+  }
   const r = Math.min(rect.width, rect.height) / 2
   const dist = Math.hypot(dx, dy)
   // Clamp knob position to the stick radius so it never leaves the base.
@@ -679,25 +693,25 @@ function onDpadEnd(e) {
 .face-arcade .fbtn-y { grid-area: arcC; }   /* label "C" */
 .face-arcade .fbtn-x { grid-area: arcD; }   /* label "D" */
 
-/* Mega Drive 6-button cabinet — top row A B C, bottom row X Y Z.
-   retropad→label mapping: b='A' a='B' y='C' l='X' x='Y' r='Z'. */
+/* Mega Drive 6-button pad — hardware layout: X Y Z on top, A B C below.
+   retropad→label: l='X' x='Y' r='Z' (top) / y='A' b='B' a='C' (bottom). */
 .face-md {
   width: 186px;
   height: 124px;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: 1fr 1fr;
   grid-template-areas:
-    "a b c"
-    "x y z";
+    "x y z"
+    "a b c";
   gap: 6px;
 }
 .face-md .face-btn { width: 48px; height: 48px; font-size: 15px; }
-.face-md .fbtn-b { grid-area: a; }   /* 'A' */
-.face-md .fbtn-a { grid-area: b; }   /* 'B' */
-.face-md .fbtn-y { grid-area: c; }   /* 'C' */
 .face-md .fbtn-l { grid-area: x; }   /* 'X' */
 .face-md .fbtn-x { grid-area: y; }   /* 'Y' */
 .face-md .fbtn-r { grid-area: z; }   /* 'Z' */
+.face-md .fbtn-y { grid-area: a; }   /* 'A' */
+.face-md .fbtn-b { grid-area: b; }   /* 'B' */
+.face-md .fbtn-a { grid-area: c; }   /* 'C' */
 
 /* Master System / Game Gear — 2 buttons horizontal: 1 2 */
 .face-sms {

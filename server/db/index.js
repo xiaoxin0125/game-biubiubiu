@@ -7,10 +7,22 @@ import { resolve } from 'node:path'
 import bcrypt from 'bcryptjs'
 import * as schema from './schema.js'
 import { users } from './schema.js'
+import { DB_TIMEZONE } from './timezone.js'
 
 const DATABASE_URL = process.env.DATABASE_URL || 'mysql://games:games@127.0.0.1:3306/games_online'
 
-export const pool = mysql.createPool(DATABASE_URL)
+// 连接时区必须显式指定：mysql2 默认的 'local' 取决于进程 TZ，和数据库里存的
+// 时区一旦不一致，裸查询拿到的 Date 就会整体偏 8 小时。见 ./timezone.js。
+export const pool = mysql.createPool({ uri: DATABASE_URL, timezone: DB_TIMEZONE })
+
+// 让 MySQL 会话也用同一个时区，这样列的默认值 DEFAULT (now()) 和 TIMESTAMP 的
+// 换算都与 drizzle 侧的映射一致，不再依赖服务器或进程的环境。
+pool.on('connection', (connection) => {
+  connection.query(`SET time_zone = '${DB_TIMEZONE}'`, (err) => {
+    if (err) console.warn('[db] failed to pin session time_zone:', err.message)
+  })
+})
+
 export const db = drizzle(pool, { schema, mode: 'default', casing: 'snake_case' })
 
 const MIGRATIONS_FOLDER = resolve(import.meta.dirname || './server/db', 'migrations')

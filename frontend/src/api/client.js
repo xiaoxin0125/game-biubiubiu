@@ -94,6 +94,8 @@ export const api = {
   adminSettings: () => request('/api/admin/settings'),
   adminUpdateSettings: (patch) => request('/api/admin/settings', { method: 'PATCH', body: patch }),
   adminTestRemote: (payload) => request('/api/admin/settings/test-remote', { method: 'POST', body: payload || {} }),
+  adminTestStun: (payload) => request('/api/admin/settings/test-stun', { method: 'POST', body: payload || {} }),
+  adminTestTurn: (payload) => request('/api/admin/settings/test-turn', { method: 'POST', body: payload || {} }),
 
   // admin
   adminUsers: () => request('/api/admin/users'),

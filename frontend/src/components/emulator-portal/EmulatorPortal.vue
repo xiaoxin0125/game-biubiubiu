@@ -31,7 +31,6 @@ const {
   releaseButton,
   canvas,
   captureAudioStream,
-  toggleFullscreen,
   destroy,
 } = useEmulator()
 
@@ -90,7 +89,6 @@ defineExpose({
   coreSupportsCheats,
   pressButton,
   releaseButton,
-  toggleFullscreen,
   captureAudioStream,
   destroy,
   get canvas() { return canvas() },

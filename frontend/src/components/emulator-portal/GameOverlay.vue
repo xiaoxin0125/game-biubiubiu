@@ -31,7 +31,7 @@
     <button v-if="showKeys" class="bar-btn bar-btn-keys" @click="$emit('keys')" aria-label="按键设置" title="按键设置">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>
     </button>
-    <button v-if="canFullscreen" class="bar-btn bar-btn-accent" @click="$emit('fullscreen')" aria-label="全屏">
+    <button v-if="canFullscreen && showFullscreen" class="bar-btn bar-btn-accent" @click="$emit('fullscreen')" aria-label="全屏">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
       <span class="bar-btn-label">全屏</span>
     </button>
@@ -47,6 +47,8 @@ defineProps({
   canReload: { type: Boolean, default: false },
   canCheat: { type: Boolean, default: false },
   showKeys: { type: Boolean, default: true },
+  // 触屏设备改用画面左上角的悬浮全屏按钮，工具条上这颗就收起来
+  showFullscreen: { type: Boolean, default: true },
 })
 defineEmits(['back', 'fullscreen', 'keys', 'save-state', 'load-state', 'reload', 'cheats'])
 

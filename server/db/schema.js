@@ -4,20 +4,34 @@ import {
   text,
   int,
   boolean,
-  timestamp,
   index,
   uniqueIndex,
   primaryKey,
   bigint,
+  customType,
 } from 'drizzle-orm/mysql-core'
+import { sql } from 'drizzle-orm'
+import { formatDbTime, parseDbTime } from './timezone.js'
 
 export const STATUS = Object.freeze({
   deleted: 0,
   normal: 1,
 })
 
-const ts = (name) => timestamp(name).notNull().defaultNow()
-const tsNullable = (name) => timestamp(name)
+// drizzle 内置的 timestamp() 把 MySQL 的值当 UTC 处理：读的时候给字符串补
+// "+0000"，写的时候用 toISOString()。但列的默认值是 DEFAULT (now())，用的是
+// MySQL 会话时区（+08:00）。为了不出现「同一列两种钟」，这里在读写两个方向都按
+// 数据库使用的时区换算（见 server/db/timezone.js）。
+const dbTimestamp = customType({
+  dataType() {
+    return 'timestamp'
+  },
+  fromDriver: parseDbTime,
+  toDriver: formatDbTime,
+})
+
+const ts = (name) => dbTimestamp(name).notNull().default(sql`(now())`)
+const tsNullable = (name) => dbTimestamp(name)
 
 export const settings = mysqlTable('settings', {
   key: varchar('key', { length: 64 }).primaryKey(),
@@ -58,7 +72,7 @@ export const sessions = mysqlTable('sessions', {
   token: varchar('token', { length: 128 }).notNull().unique(),
   ip: varchar('ip', { length: 64 }),
   userAgent: varchar('user_agent', { length: 512 }),
-  expiresAt: timestamp('expires_at').notNull(),
+  expiresAt: dbTimestamp('expires_at').notNull(),
   lastActivityAt: ts('last_activity_at').$onUpdateFn(() => new Date()),
   createdAt: ts('created_at'),
 }, (t) => [

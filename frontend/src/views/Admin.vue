@@ -72,7 +72,40 @@
           <label class="label" for="webrtc-stun-urls">STUN 服务器（可选）</label>
           <textarea id="webrtc-stun-urls" v-model.trim="form.webrtcStunUrls" class="input" rows="3" maxlength="2000" placeholder="留空即可部署；后续填写 stun:主机:端口，多个地址用逗号或换行分隔"></textarea>
           <p class="field-hint">STUN 用于联机时发现公网地址。默认留空，不影响网站部署和单机游玩。保存后无需重新打包，其他玩家刷新页面后生效；跨网络联机可能还需要 TURN 中继。</p>
+          <div class="remote-test">
+            <button class="btn" type="button" :disabled="testingStun" @click="testStun">
+              {{ testingStun ? '测试中…' : '测试 STUN 服务器' }}
+            </button>
+            <span class="field-hint stun-test-note">完整要求：云安全组、系统防火墙、宝塔都要放行 3478/udp（stuns: 则放行 5349/tcp）</span>
+          </div>
+          <p v-if="stunTestResult" class="remote-test-result stun-test-result" :class="{ ok: stunTestResult.ok }">{{ stunTestResult.text }}</p>
         </div>
+      </div>
+
+      <div class="site-block">
+        <h3 class="site-block-title">TURN 中继（可选）</h3>
+        <div class="field">
+          <label class="label" for="webrtc-turn-urls">TURN 服务器地址</label>
+          <textarea id="webrtc-turn-urls" v-model.trim="form.webrtcTurnUrls" class="input" rows="2" maxlength="2000" placeholder="留空即不启用中继；填写 turn:主机:端口?transport=udp,turn:主机:端口?transport=tcp"></textarea>
+          <p class="field-hint">只有双方网络无法直连（对称 NAT、公司/校园网）时才会用到中继，能直连的玩家不受影响。地址填 TURN 服务所在机器的公网地址，端口和中继端口窗口都要在安全组放行。</p>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="webrtc-turn-username">TURN 用户名</label>
+            <input id="webrtc-turn-username" v-model.trim="form.webrtcTurnUsername" class="input" maxlength="128" placeholder="和 TURN 服务器上的 user= 一致" />
+          </div>
+          <div class="field">
+            <label class="label" for="webrtc-turn-credential">TURN 密码</label>
+            <input id="webrtc-turn-credential" v-model.trim="form.webrtcTurnCredential" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和 TURN 服务器上的密码一致" />
+          </div>
+        </div>
+        <div class="remote-test">
+          <button class="btn" type="button" :disabled="testingTurn" @click="testTurn">
+            {{ testingTurn ? '测试中…' : '测试 TURN 中继' }}
+          </button>
+          <span class="field-hint stun-test-note">没填用户名/密码时只检查端口是否可达；填了会真的分配一次中继端口</span>
+        </div>
+        <p v-if="turnTestResult" class="remote-test-result stun-test-result" :class="{ ok: turnTestResult.ok }">{{ turnTestResult.text }}</p>
       </div>
 
       <div class="site-block">
@@ -168,7 +201,7 @@
               {{ u.role === 'admin' ? '管理员' : '用户' }}
             </span>
           </div>
-          <div class="muted">{{ fmtTime(u.createdAt) }}</div>
+          <div class="muted">{{ formatServerDateTime(u.createdAt) }}</div>
           <div class="actions">
             <template v-if="u.id !== me.id">
               <button class="btn btn-sm" @click="toggleRole(u)">
@@ -222,7 +255,7 @@
               <span v-if="r.storage === 'remote'" class="meta-chip chip-remote" title="文件存放在远端存储服务器">远端</span>
               <span v-if="r.parentRomId" class="meta-chip">{{ r.versionLabel || '变体' }}</span>
               <span class="meta-chip">@{{ r.owner?.username || '—' }}</span>
-              <span class="meta-chip time-chip">{{ fmtTime(r.createdAt) }}</span>
+              <span class="meta-chip time-chip">{{ formatServerDateTime(r.createdAt) }}</span>
             </div>
 
             <div class="admin-rom-settings">
@@ -354,6 +387,8 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useSettings } from '../composables/useSettings.js'
+import { formatServerDateTime } from '../composables/formatTime.js'
+import { testStunIce } from '../composables/useIceGatheringTest.js'
 import { getPlatform } from '../constants/platforms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import UploadDialog from '../components/UploadDialog.vue'
@@ -374,6 +409,9 @@ const form = reactive({
   guestPlayEnabled: false,
   userUploadEnabled: true,
   webrtcStunUrls: '',
+  webrtcTurnUrls: '',
+  webrtcTurnUsername: '',
+  webrtcTurnCredential: '',
   remoteUploadUrl: '',
   remoteUploadToken: '',
 })
@@ -381,6 +419,10 @@ const savingSite = ref(false)
 const siteSaved = ref(false)
 const testingRemote = ref(false)
 const remoteTestResult = ref(null)
+const testingStun = ref(false)
+const stunTestResult = ref(null)
+const testingTurn = ref(false)
+const turnTestResult = ref(null)
 
 const users = ref([])
 const roms = ref([])
@@ -460,10 +502,84 @@ onMounted(async () => {
     form.guestPlayEnabled = s.guestPlayEnabled === '1'
     form.userUploadEnabled = s.userUploadEnabled !== '0'
     form.webrtcStunUrls = s.webrtcStunUrls || ''
+    form.webrtcTurnUrls = s.webrtcTurnUrls || ''
+    form.webrtcTurnUsername = s.webrtcTurnUsername || ''
+    form.webrtcTurnCredential = s.webrtcTurnCredential || ''
     form.remoteUploadUrl = s.remoteUploadUrl || ''
     form.remoteUploadToken = s.remoteUploadToken || ''
   } catch {}
 })
+
+// 测试 STUN：先让后端发真实 STUN 请求（能确定服务器本身是否可用），
+// 再用当前浏览器按同样地址做一次 ICE 采集（确认配置能被浏览器接受）。
+async function testStun() {
+  testingStun.value = true
+  stunTestResult.value = null
+  try {
+    const listed = form.webrtcStunUrls.split(/[,\r\n]+/).map((url) => url.trim()).filter(Boolean)
+    const server = await api.adminTestStun({ stunUrls: form.webrtcStunUrls })
+    const probes = Array.isArray(server?.probes) ? server.probes : []
+
+    // 服务端探测一句话结论 + 每个地址的详情
+    const lines = []
+    if (server?.ok) lines.push(`服务器探测：${server.summary}${server.averageLatencyMs != null ? `，平均 ${server.averageLatencyMs}ms` : ''}`)
+    for (const probe of probes) {
+      const target = `${probe.url}（${probe.transport || 'UDP'}）`
+      if (probe.ok) {
+        lines.push(`✓ ${target} ${probe.latencyMs}ms · 解析到 ${probe.resolved} · 出口地址 ${probe.mapped}`)
+      } else {
+        lines.push(`✗ ${target} ${probe.error}`)
+      }
+    }
+    if (!lines.length) lines.push(`服务器探测失败：${server?.error || '后端没有返回结果'}`)
+
+    // 浏览器侧：本机能否按这份配置采集到 ICE 候选
+    const ice = await testStunIce(listed)
+    lines.push(ice.ok
+      ? `本机浏览器：ICE 采集正常（${ice.candidates} 个候选地址）`
+      : `本机浏览器：${ice.error}`)
+
+    stunTestResult.value = { ok: !!server?.ok, text: lines.join('\n') }
+  } catch (err) {
+    stunTestResult.value = { ok: false, text: err?.message || '测试失败' }
+  } finally {
+    testingStun.value = false
+  }
+}
+
+// 测试 TURN 中继：用表单里的地址/用户名/密码直接测（未保存也能测）。
+// 填了凭据 → 真的分配一次中继端口；没填 → 只判断中继端口是否可达（401/438 即正常）。
+async function testTurn() {
+  testingTurn.value = true
+  turnTestResult.value = null
+  try {
+    const res = await api.adminTestTurn({
+      turnUrls: form.webrtcTurnUrls,
+      turnUsername: form.webrtcTurnUsername,
+      turnCredential: form.webrtcTurnCredential,
+    })
+    const probes = Array.isArray(res?.probes) ? res.probes : []
+    const lines = []
+    for (const probe of probes) {
+      const target = `${probe.url}（${probe.transport || 'UDP'}）`
+      if (probe.ok) {
+        const extra = probe.relay
+          ? ` · 中继地址 ${probe.relay}${probe.mapped ? ` · 出口 ${probe.mapped}` : ''}`
+          : ` · ${probe.note || '可用'}${probe.realm ? ` · realm=${probe.realm}` : ''}`
+        lines.push(`✓ ${target} ${probe.latencyMs}ms${extra}`)
+      } else {
+        lines.push(`✗ ${target} ${probe.error}`)
+      }
+    }
+    if (!lines.length) lines.push(res?.error || '后端没有返回结果')
+    if (res?.authenticated === false && res?.ok) lines.push('提示：没填 TURN 用户名/密码，本次只验证了端口可达；填入后才能真正验证中继分配')
+    turnTestResult.value = { ok: !!res?.ok, text: lines.join('\n') }
+  } catch (err) {
+    turnTestResult.value = { ok: false, text: err?.message || '测试失败' }
+  } finally {
+    testingTurn.value = false
+  }
+}
 
 // 用当前表单里的地址/密钥测试远端服务，未保存的值也能先测
 async function testRemote() {
@@ -501,15 +617,24 @@ async function saveSite() {
       guestPlayEnabled: form.guestPlayEnabled,
       userUploadEnabled: form.userUploadEnabled,
       webrtcStunUrls: form.webrtcStunUrls,
+      webrtcTurnUrls: form.webrtcTurnUrls,
+      webrtcTurnUsername: form.webrtcTurnUsername,
+      webrtcTurnCredential: form.webrtcTurnCredential,
       remoteUploadUrl: form.remoteUploadUrl,
       remoteUploadToken: form.remoteUploadToken,
     })
     form.webrtcStunUrls = next.webrtcStunUrls || ''
+    form.webrtcTurnUrls = next.webrtcTurnUrls || ''
+    form.webrtcTurnUsername = next.webrtcTurnUsername || ''
+    form.webrtcTurnCredential = next.webrtcTurnCredential || ''
     form.remoteUploadUrl = next.remoteUploadUrl || ''
     form.remoteUploadToken = next.remoteUploadToken || ''
     window.__APP_CONFIG__ = Object.freeze({
       ...window.__APP_CONFIG__,
       WEBRTC_STUN_URLS: form.webrtcStunUrls,
+      WEBRTC_TURN_URLS: form.webrtcTurnUrls,
+      WEBRTC_TURN_USERNAME: form.webrtcTurnUsername,
+      WEBRTC_TURN_CREDENTIAL: form.webrtcTurnCredential,
     })
     updateLocal({
       siteTitle: next.siteTitle,
@@ -657,12 +782,6 @@ function fmtSize(b) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
   return (b / 1024 / 1024).toFixed(1) + ' MB'
 }
-function fmtTime(v) {
-  if (v == null) return '—'
-  const d = typeof v === 'number' ? new Date(v * 1000) : new Date(v)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('zh-CN', { hour12: false })
-}
 </script>
 
 <style scoped>
@@ -779,6 +898,14 @@ function fmtTime(v) {
   line-height: 1.5;
 }
 .remote-test-result.ok { color: var(--success); }
+
+/* STUN 测试：每个地址一行结果 */
+.stun-test-result {
+  margin-top: 10px;
+  white-space: pre-line;
+  font-weight: 700;
+}
+.stun-test-note { margin: 0; }
 
 .toggle-grid {
   display: grid;
