@@ -9,23 +9,25 @@
         </div>
       </div>
       <div class="hero-art" aria-hidden="true">
-        <div class="hero-art-card hero-art-card-main">
-          <div class="hero-art-screen">
-            <span class="hero-art-pixel"></span>
-            <span class="hero-art-pixel"></span>
-            <span class="hero-art-pixel"></span>
+        <div class="hero-art-inner">
+          <div class="hero-art-card hero-art-card-main">
+            <div class="hero-art-screen">
+              <span class="hero-art-pixel"></span>
+              <span class="hero-art-pixel"></span>
+              <span class="hero-art-pixel"></span>
+            </div>
+            <div class="hero-art-controls">
+              <span class="hero-art-dpad"></span>
+              <span class="hero-art-dots">
+                <span class="hero-art-dot"></span>
+                <span class="hero-art-dot hero-art-dot-alt"></span>
+              </span>
+            </div>
           </div>
-          <div class="hero-art-controls">
-            <span class="hero-art-dpad"></span>
-            <span class="hero-art-dots">
-              <span class="hero-art-dot"></span>
-              <span class="hero-art-dot hero-art-dot-alt"></span>
-            </span>
-          </div>
+          <div class="hero-art-card hero-art-card-mini">ROM</div>
+          <div class="hero-art-spark hero-art-spark-a"></div>
+          <div class="hero-art-spark hero-art-spark-b"></div>
         </div>
-        <div class="hero-art-card hero-art-card-mini">ROM</div>
-        <div class="hero-art-spark hero-art-spark-a"></div>
-        <div class="hero-art-spark hero-art-spark-b"></div>
       </div>
       <div class="hero-actions">
         <div class="search blog-search">
@@ -341,9 +343,19 @@ function onVersionPicked(v) {
   align-self: center;
   justify-self: end;
   position: relative;
+  /* 内部按 236×190 绘制，外层只保留缩放后的占位尺寸 */
+  width: calc(236px * var(--art-scale, 1));
+  height: calc(190px * var(--art-scale, 1));
+  pointer-events: none;
+}
+.hero-art-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 236px;
   height: 190px;
-  pointer-events: none;
+  transform: scale(var(--art-scale, 1));
+  transform-origin: top left;
 }
 .hero-art-card {
   position: absolute;
@@ -736,16 +748,35 @@ function onVersionPicked(v) {
     margin-top: 18px;
     padding: 24px;
     min-height: auto;
-    grid-template-columns: minmax(0, 1fr);
+    /* 标题一行放左侧、插画留在右上角，搜索与按钮的整行铺满 */
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "profile"
-      "actions";
-    column-gap: 0;
+      "profile art"
+      "actions actions";
+    row-gap: 20px;
+    column-gap: 12px;
   }
+  .blog-hero h1 { font-size: 26px; }
   .hero-profile { align-items: flex-start; max-width: none; }
-  .hero-art { display: none; }
-  .hero-actions { align-items: stretch; }
-  .search { flex: 1 1 100%; min-width: 0; }
+  .hero-art { --art-scale: 0.42; align-self: start; }
+  .hero-actions {
+    align-items: stretch;
+    flex-wrap: nowrap;
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+  .blog-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+  .hero-actions .action-tab {
+    flex: 0 0 auto;
+    height: 42px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
   .rom-card-grid { grid-template-columns: 1fr; gap: 16px; }
   .rom-card {
     min-height: 76px;
@@ -759,6 +790,8 @@ function onVersionPicked(v) {
 }
 @media (max-width: 480px) {
   .blog-hero { padding: 20px; border-radius: var(--r-lg); }
+  .blog-hero h1 { font-size: 24px; }
+  .hero-art { --art-scale: 0.34; }
   .hero-profile { flex-direction: column; gap: 14px; }
 }
 </style>

@@ -15,7 +15,11 @@ declare(strict_types=1);
  */
 
 const ROM_UPLOAD_SERVICE = 'rom-upload';
-const ROM_UPLOAD_VERSION = '1.0.0-php';
+const ROM_UPLOAD_VERSION = '1.1.0-php';
+// 直连签名参数（与 Node 版、主站保持一致）
+const ROM_UPLOAD_DIRECT_PURPOSE = 'download';
+const ROM_UPLOAD_DIRECT_TTL_SEC = 600;
+const ROM_UPLOAD_DIRECT_SKEW_SEC = 60;
 const ROM_UPLOAD_DEFAULT_MAX_BYTES = 209715200; // 200MB
 const ROM_UPLOAD_MIN_TOKEN_LENGTH = 16;
 const ROM_UPLOAD_FILE_ID_PATTERN = '/^[a-f0-9]{32}$/';
@@ -40,6 +44,7 @@ function load_config(): array
         'token' => $token,
         'dataDir' => $dataDir !== '' ? rtrim($dataDir, '/') : __DIR__ . '/data',
         'maxFileBytes' => $maxFileBytes > 0 ? $maxFileBytes : ROM_UPLOAD_DEFAULT_MAX_BYTES,
+        'downloadSecret' => trim((string)($file['downloadSecret'] ?? getenv('DOWNLOAD_SECRET') ?: '')),
         'configPath' => $path,
     ];
 }
@@ -318,7 +323,7 @@ function handle_upload(array $cfg): void
     json_response(201, array_merge(['ok' => true], $meta));
 }
 
-function handle_file(array $cfg, string $id, bool $withBody, bool $headOnly): void
+function handle_file(array $cfg, string $id, bool $withBody, bool $headOnly, bool $cors = false): void
 {
     if (!preg_match(ROM_UPLOAD_FILE_ID_PATTERN, $id)) {
         json_response(400, ['error' => 'id 非法'], $headOnly);
@@ -336,6 +341,12 @@ function handle_file(array $cfg, string $id, bool $withBody, bool $headOnly): vo
     header('X-Content-Type-Options: nosniff');
     header('X-Robots-Tag: noindex');
     header('X-Rom-Sha256: ' . ($meta['sha256'] ?? ''));
+    if ($cors) {
+        // 错误响应也要带 CORS：前端才能读到真实状态码并触发回退。
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length, Content-Disposition');
+        header('Cross-Origin-Resource-Policy: cross-origin');
+    }
     header("Content-Disposition: inline; filename*=UTF-8''" . rawurlencode((string)($meta['name'] ?? ($id . '.bin'))));
 
     $range = parse_range((string)($_SERVER['HTTP_RANGE'] ?? ''), $size);
@@ -411,6 +422,53 @@ function script_base_dir(): string
     return '';
 }
 
+
+// ── 浏览器直连签名 ──────────────────────────────────────────────────────
+// 与 Node 版、主站 server/remote-storage.js 的算法必须完全一致：
+//   sig = HMAC-SHA256(secret, 'download.<文件id>.<exp>')
+
+// 校验签名；返回 ['ok' => bool, 'error' => string, 'status' => int]。
+function rom_upload_verify_signature(array $cfg, string $id, string $exp, string $sig, ?int $now = null): array
+{
+    if (!preg_match(ROM_UPLOAD_FILE_ID_PATTERN, $id)) {
+        return ['ok' => false, 'error' => 'id 非法', 'status' => 400];
+    }
+    $rawExp = trim($exp);
+    if (!preg_match('/^\d{9,12}$/', $rawExp)) {
+        return ['ok' => false, 'error' => 'exp 非法', 'status' => 403];
+    }
+    $nowSec = $now ?? time();
+    $expiry = (int)$rawExp;
+    if ($expiry < $nowSec - ROM_UPLOAD_DIRECT_SKEW_SEC) {
+        return ['ok' => false, 'error' => '链接已过期', 'status' => 403];
+    }
+    if ($expiry > $nowSec + ROM_UPLOAD_DIRECT_TTL_SEC + ROM_UPLOAD_DIRECT_SKEW_SEC) {
+        return ['ok' => false, 'error' => '过期时间过长', 'status' => 403];
+    }
+    $secret = (string)($cfg['downloadSecret'] ?? '') !== '' ? (string)$cfg['downloadSecret'] : (string)$cfg['token'];
+    $expected = hash_hmac('sha256', ROM_UPLOAD_DIRECT_PURPOSE . '.' . $id . '.' . $rawExp, $secret);
+    $provided = strtolower(trim($sig));
+    if ($provided === '' || !hash_equals($expected, $provided)) {
+        return ['ok' => false, 'error' => '签名不匹配', 'status' => 403];
+    }
+    return ['ok' => true, 'error' => '', 'status' => 200];
+}
+
+// 浏览器直连下载入口：不带 X-Token，凭签名只读这一个文件。
+function handle_signed(array $cfg, string $id, string $exp, string $sig, bool $withBody, bool $headOnly): void
+{
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
+    header('Access-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length, Content-Disposition');
+    header('Cross-Origin-Resource-Policy: cross-origin');
+
+    $check = rom_upload_verify_signature($cfg, $id, $exp, $sig);
+    if (!$check['ok']) {
+        json_response((int)$check['status'], ['error' => $check['error']], $headOnly);
+    }
+    handle_file($cfg, $id, $withBody, $headOnly, true);
+}
+
 // ── 入口 ────────────────────────────────────────────────────────────────
 $config = load_config();
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
@@ -444,6 +502,25 @@ if ($config['token'] === '' || strlen($config['token']) < ROM_UPLOAD_MIN_TOKEN_L
         'ok' => false,
         'error' => 'token 未配置或长度不足 ' . ROM_UPLOAD_MIN_TOKEN_LENGTH . ' 位（' . $config['configPath'] . '）',
     ], $headOnly);
+}
+
+// 签名下载入口要在 token 校验之前处理：它本来就不带 X-Token。
+if (preg_match('#^/signed/([^/]+)$#', $path, $signedMatches)
+    && ($method === 'GET' || $headOnly || $method === 'OPTIONS')) {
+    if ($method === 'OPTIONS') {
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Methods: GET, HEAD, OPTIONS');
+        http_response_code(204);
+        exit;
+    }
+    handle_signed(
+        $config,
+        $signedMatches[1],
+        (string)($_GET['exp'] ?? ''),
+        (string)($_GET['sig'] ?? ''),
+        !$headOnly,
+        $headOnly
+    );
 }
 
 if (!token_matches($config['token'], (string)($_SERVER['HTTP_X_TOKEN'] ?? ''))) {

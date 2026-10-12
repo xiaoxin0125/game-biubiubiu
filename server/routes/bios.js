@@ -3,6 +3,7 @@ import { existsSync, statSync, createReadStream, readdirSync } from 'node:fs'
 import { resolve, join, extname } from 'node:path'
 import { stream } from 'hono/streaming'
 import { currentUser } from '../middleware/auth.js'
+import { entityTagFor, ifNoneMatchMatches } from '../http-utils.js'
 
 const BIOS_DIR = resolve(process.env.BIOS_DIR || 'data/bios')
 
@@ -27,9 +28,15 @@ biosRoutes.get('/:platform/:file', async (c) => {
   if (!existsSync(full)) return c.text('not found', 404)
 
   const st = statSync(full)
-  // No caching — every request re-downloads. Simpler, no stale-cache headaches
-  // when swapping BIOS files on disk. ~5 MB per arcade boot is cheap locally.
-  c.header('Cache-Control', 'no-store')
+  // 每次开局都重下 1.8–2.2 MB 的 BIOS 是纯浪费：这里改成条件请求。
+  // private 是因为内容只有登录用户能读，不能进共享缓存；no-cache 表示"可以用
+  // 本地副本，但每次都要先问一下"——文件没变就是 304，只回响应头。
+  const etag = entityTagFor(st.size, st.mtimeMs)
+  c.header('Cache-Control', 'private, no-cache')
+  c.header('ETag', etag)
+  if (ifNoneMatchMatches(c.req.header('if-none-match'), etag)) {
+    return c.body(null, 304)
+  }
   c.header('Content-Type', contentTypeFor(file))
   c.header('Content-Length', String(st.size))
   return stream(c, async (s) => {

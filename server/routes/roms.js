@@ -16,7 +16,7 @@ import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-rom
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
 import { listRomCheats } from '../rom-cheats.js'
-import { remoteDelete, remoteOpenFile, remoteUpload, REMOTE_UPLOAD_THRESHOLD_BYTES, remoteStorageConfig } from '../remote-storage.js'
+import { remoteDelete, remoteOpenFile, remoteUpload, REMOTE_UPLOAD_THRESHOLD_BYTES, remoteStorageConfig, buildRemoteDownloadUrl } from '../remote-storage.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const LEGACY_UPLOAD_ROOTS = [
@@ -824,9 +824,18 @@ async function serveRomFile(c) {
     return c.json({ error: 'forbidden' }, 403)
   }
 
-  // Remote-stored ROMs are streamed back through this server so the shared
-  // token of the rom-upload service never reaches the browser.
+  // Remote-stored ROMs: by default they are streamed back through this server so
+  // the shared token of the rom-upload service never reaches the browser. When
+  // the admin enables direct download, the browser is sent to a short-lived
+  // signed URL instead and this server's uplink no longer carries the file.
   if (rom.storage === 'remote') {
+    const directUrl = await buildRemoteDownloadUrl(rom.remoteFileId)
+    if (directUrl) {
+      // 签名地址是一次性的，不能让中间缓存留下副本。
+      c.header('Cache-Control', 'private, no-store')
+      return c.redirect(directUrl, 302)
+    }
+
     let remote
     try {
       remote = await remoteOpenFile(rom.remoteFileId, c.req.header('range'))

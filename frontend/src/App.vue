@@ -12,20 +12,37 @@
       <span>MADE BY</span>
       <a class="footer-author" href="https://www.hxino.com/" target="_blank" rel="noopener noreferrer">XIAOXIN</a>
       <span class="dot">·</span>
-      <span class="mono">v{{ appVersion }}</span>
+      <button
+        type="button"
+        class="footer-version mono"
+        :title="`查看 v${appVersion} 的更新内容`"
+        aria-haspopup="dialog"
+        :aria-expanded="changelogOpen"
+        @click="changelogOpen = true"
+      >
+        <svg class="footer-version-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h10" />
+        </svg>
+        <span>v{{ appVersion }}</span>
+      </button>
     </footer>
+
+    <ChangelogDialog v-if="changelogOpen" :current-version="appVersion" @close="changelogOpen = false" />
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
+import ChangelogDialog from './components/ChangelogDialog.vue'
 
 const route = useRoute()
 const showChrome = computed(() => !route.meta?.fullscreen)
 // 构建时由 vite.config.js 的 define 注入，值与 package.json、镜像标签一致
 const appVersion = __APP_VERSION__
+
+const changelogOpen = ref(false)
 </script>
 
 <style>
@@ -71,4 +88,32 @@ const appVersion = __APP_VERSION__
   letter-spacing: 0.1em;
   color: var(--text-secondary);
 }
+/* 版本号本身就是「查看更新日志」的入口：外形做成和作者署名一样的粘土药丸 */
+.app-footer .footer-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--clay-surface);
+  box-shadow: var(--clay-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease), color var(--t-fast) var(--clay-ease);
+}
+.app-footer .footer-version:hover {
+  color: var(--text-primary);
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-hover);
+}
+.app-footer .footer-version:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+.app-footer .footer-version:focus-visible { outline: none; box-shadow: var(--clay-focus); }
+.app-footer .footer-version-icon { opacity: 0.6; transition: opacity var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease); }
+.app-footer .footer-version:hover .footer-version-icon { opacity: 1; color: var(--accent); }
 </style>

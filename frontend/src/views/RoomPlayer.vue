@@ -55,11 +55,12 @@
              the waiting-guest view instead — starting the emulator for a
              future guest wastes cores + triggers an unmount race. -->
         <EmulatorPortal
-          v-if="rom && biosReady && isHostMode"
+          v-if="portalActive"
           ref="portalRef"
           :core="activeCore"
           :rom="rom"
           :bios="bios"
+          :progress="loadProgress"
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
           @booted="onBooted"
@@ -94,23 +95,23 @@
         <div v-else-if="fatalError" class="emu-error">
           <div class="error-card">
             <p>{{ fatalError }}</p>
-            <button class="btn btn-primary" @click="goBack">返回列表</button>
+            <div class="error-actions">
+              <button class="btn btn-primary" @click="goBack">返回列表</button>
+              <button class="btn" @click="reloadPage">重新加载</button>
+            </div>
           </div>
         </div>
 
-        <div v-else class="emu-loading">
-          <div class="loading-stack">
-            <div class="loading-glow"></div>
-            <div class="spinner"></div>
-          </div>
-          <p class="emu-loading-title">
-            <span class="dot" style="--i:0"></span><span class="dot" style="--i:1"></span><span class="dot" style="--i:2"></span>
-            INSERT COIN
-          </p>
-          <p class="emu-loading-game">{{ displayName }}</p>
-          <p class="emu-loading-sub">{{ loadingSub }}</p>
-          <button v-if="loadingSlow" class="btn btn-sm emu-loading-retry" @click="reloadPage">长时间未加载，点此刷新</button>
-        </div>
+        <!-- 房主/单机加载面板：核心下载与初始化全程可见。客人不下载本地资源，
+             等待画面由 guest-view 负责，所以这里用 guestViewActive 排除。 -->
+        <ResourceLoadingOverlay
+          v-if="showLoadOverlay"
+          :title="displayName"
+          :progress="loadProgress"
+          :hint="loadingSub"
+          :slow="loadingSlow"
+          @retry="reloadPage"
+        />
 
         <!-- 手机端全屏按钮：画面左上角，全屏后同样停在左上角用于退出 -->
         <FullscreenButton
@@ -185,11 +186,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
+import { useResourceLoadProgress } from '../composables/player/useResourceLoadProgress.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
 import { useCheats } from '../composables/player/useCheats.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
@@ -211,6 +213,7 @@ import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
 import RoomPanel from '../components/emulator-portal/RoomPanel.vue'
+import ResourceLoadingOverlay from '../components/emulator-portal/ResourceLoadingOverlay.vue'
 import InputSettings from '../components/InputSettings.vue'
 import { coreDisplayName } from '../constants/cores.js'
 
@@ -249,6 +252,9 @@ const {
   start: startViewport,
   stop: stopViewport,
 } = usePlayerViewport()
+
+// 资源加载进度：房主这一侧才真正下载核心/ROM/BIOS，进度只对它有意义。
+const loadProgress = useResourceLoadProgress()
 
 const roomCode = (props.code || route.params.code || route.query.room || '').toString().toUpperCase() || null
 const isRoomMode = true
@@ -326,6 +332,7 @@ const {
   roomCode,
   localPeer: signalMe,
   reportError: setFatalError,
+  progress: loadProgress,
 })
 
 const {
@@ -367,6 +374,19 @@ const showCheats = ref(false)
 // 模拟器只跑在房主一侧，重载与金手指都只对房主开放。
 const canControlEmulator = computed(() => isHostMode.value === true && !!rom.value && booted.value)
 const canCheat = computed(() => canControlEmulator.value)
+
+// 模拟器组件挂载条件：房主 + ROM/BIOS 就绪（核心下载就在组件内部发起）。
+const portalActive = computed(() => isHostMode.value === true && !!rom.value && biosReady.value)
+// 客人（以及还没确定角色的访客）看的是主机画面，不该出现"本地资源"进度。
+const guestViewActive = computed(() => isRoomMode && isHostMode.value !== true)
+// 加载面板显示规则：没启动成功就一直显示；错误发生在模拟器挂载之前时让位给错误卡片。
+const showLoadOverlay = computed(() =>
+  !booted.value && !guestViewActive.value && !(fatalError.value && !portalActive.value))
+
+// 核心一选定就登记任务，界面先知道要下几个文件、共多大。
+watch([activeCore, isHostMode], ([core, host]) => {
+  if (core && host === true) loadProgress.registerCoreTasks(core)
+})
 
 const { onSaveState, onLoadState } = useSaveState({
   romMeta,
@@ -612,7 +632,7 @@ useRoomPlayerLifecycle({
 .unmute-chip:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
 .unmute-chip:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 
-.emu-error, .emu-loading {
+.emu-error {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
@@ -624,94 +644,7 @@ useRoomPlayerLifecycle({
   padding: 24px;
   text-align: center;
 }
-/* Faint CRT scanlines on the loading screen — on-brand for an arcade loader. */
-.emu-loading::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0) 0px,
-    rgba(255, 255, 255, 0) 2px,
-    rgba(255, 255, 255, 0.035) 2px,
-    rgba(255, 255, 255, 0.035) 3px
-  );
-  pointer-events: none;
-}
 
-.loading-stack { position: relative; width: 40px; height: 40px; margin-bottom: 4px; }
-.loading-glow {
-  position: absolute;
-  inset: -14px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 65%);
-  filter: blur(6px);
-  animation: glow-pulse 1.8s var(--clay-ease) infinite;
-}
-@keyframes glow-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(0.92); }
-  50%      { opacity: 1;   transform: scale(1.1);  }
-}
-
-.emu-loading-title {
-  margin: 0;
-  color: #F7F1F6;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-variant-numeric: tabular-nums;
-  animation: coin-blink 1.6s var(--clay-ease) infinite;
-}
-@keyframes coin-blink {
-  0%, 50%, 100% { opacity: 1; }
-  60%, 90%      { opacity: 0.45; }
-}
-.emu-loading-title .dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: #A98CF5;
-  box-shadow: 0 0 6px var(--accent);
-  animation: dot-bounce 1.2s var(--clay-ease) infinite;
-  animation-delay: calc(var(--i) * 140ms);
-}
-@keyframes dot-bounce {
-  0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
-  40%           { transform: scale(1);   opacity: 1;   }
-}
-
-.emu-loading-game {
-  margin: 0;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.emu-loading-sub {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
-  max-width: 300px;
-  line-height: 1.55;
-  letter-spacing: 0.01em;
-}
-.emu-loading-retry {
-  margin-top: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #F7F1F6;
-  border-color: rgba(255, 255, 255, 0.18);
-  position: relative; z-index: 1;
-}
-.emu-loading-retry:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
 .error-card {
   text-align: center;
   padding: 28px 36px;
@@ -723,6 +656,7 @@ useRoomPlayerLifecycle({
   box-shadow: var(--clay-md);
 }
 .error-card p { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px; line-height: 1.5; font-weight: 700; }
+.error-actions { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 
 .spinner {
   position: relative;

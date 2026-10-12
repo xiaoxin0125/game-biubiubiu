@@ -1,7 +1,7 @@
-# Apache：所有请求交给 index.php，并保护 data 目录
+# Apache：所有请求交给 index.php，并保护 data 目录与配置文件
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(data|files|meta)(/|$) - [F,L]
+    RewriteRule ^(data|files|meta|config\.json|config\.example\.json)(/|$) - [F,L]
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^ index.php [QSA,L]

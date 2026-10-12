@@ -44,11 +44,12 @@
     <div class="emu-area">
       <div class="emu-frame">
         <EmulatorPortal
-          v-if="rom && biosReady"
+          v-if="portalActive"
           ref="portalRef"
           :core="activeCore"
           :rom="rom"
           :bios="bios"
+          :progress="loadProgress"
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
           @booted="onBooted"
@@ -59,23 +60,23 @@
         <div v-else-if="fatalError" class="emu-error">
           <div class="error-card">
             <p>{{ fatalError }}</p>
-            <button class="btn btn-primary" @click="goBack">返回列表</button>
+            <div class="error-actions">
+              <button class="btn btn-primary" @click="goBack">返回列表</button>
+              <button class="btn" @click="reloadPage">重新加载</button>
+            </div>
           </div>
         </div>
 
-        <div v-else class="emu-loading">
-          <div class="loading-stack">
-            <div class="loading-glow"></div>
-            <div class="spinner"></div>
-          </div>
-          <p class="emu-loading-title">
-            <span class="dot" style="--i:0"></span><span class="dot" style="--i:1"></span><span class="dot" style="--i:2"></span>
-            INSERT COIN
-          </p>
-          <p class="emu-loading-game">{{ displayName }}</p>
-          <p class="emu-loading-sub">{{ loadingSub }}</p>
-          <button v-if="loadingSlow" class="btn btn-sm emu-loading-retry" @click="reloadPage">长时间未加载，点此刷新</button>
-        </div>
+        <!-- 加载面板独立于模拟器组件是否挂载：核心还在下载、模拟器还在初始化时
+             它都盖在画面上，直到游戏真的跑起来才消失。 -->
+        <ResourceLoadingOverlay
+          v-if="showLoadOverlay"
+          :title="displayName"
+          :progress="loadProgress"
+          :hint="loadingSub"
+          :slow="loadingSlow"
+          @retry="reloadPage"
+        />
 
         <!-- 手机端全屏按钮：画面左上角，全屏后同样停在左上角用于退出 -->
         <FullscreenButton
@@ -134,11 +135,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
+import { useResourceLoadProgress } from '../composables/player/useResourceLoadProgress.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
 import { useCheats } from '../composables/player/useCheats.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
@@ -156,6 +158,7 @@ import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
+import ResourceLoadingOverlay from '../components/emulator-portal/ResourceLoadingOverlay.vue'
 import InputSettings from '../components/InputSettings.vue'
 
 const props = defineProps({
@@ -195,6 +198,9 @@ const {
   stop: stopViewport,
 } = usePlayerViewport()
 
+// 资源加载进度：贯穿"读取游戏信息 → 载入核心/ROM/BIOS → 校验 → 初始化模拟器"。
+const loadProgress = useResourceLoadProgress()
+
 const {
   romMeta,
   roomInfo,
@@ -214,6 +220,7 @@ const {
   roomCode: null,
   localPeer: soloPeer,
   reportError: setFatalError,
+  progress: loadProgress,
 })
 
 const {
@@ -243,6 +250,18 @@ const displayName = computed(() => romMeta.value?.title || '加载中…')
 const isGuestMode = computed(() => false)
 const canCheat = computed(() => !!rom.value && booted.value)
 const showCheats = ref(false)
+
+// 模拟器组件挂载条件（核心下载就是在它内部发起的）。
+const portalActive = computed(() => !!rom.value && biosReady.value)
+// 加载面板的显示规则：还没启动成功就一直显示；只有在"错误发生在模拟器挂载
+// 之前"（例如 ROM 未找到）时才让位给错误卡片，避免两层遮罩互相覆盖。
+const showLoadOverlay = computed(() => !booted.value && !(fatalError.value && !portalActive.value))
+
+// 核心任务在选定核心后就登记：界面先知道"要下几个文件、总共多大"，
+// 之后下载的字节进度会更新同一批任务。
+watch(activeCore, (core) => {
+  if (core) loadProgress.registerCoreTasks(core)
+}, { immediate: true })
 
 const { onSaveState, onLoadState } = useSaveState({
   romMeta,
@@ -387,7 +406,7 @@ useSoloPlayerLifecycle({
 }
 .emu-frame { width: 100%; height: 100%; min-width: 0; min-height: 0; position: relative; overflow: hidden; }
 
-.emu-error, .emu-loading {
+.emu-error {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
@@ -399,93 +418,7 @@ useSoloPlayerLifecycle({
   padding: 24px;
   text-align: center;
 }
-.emu-loading::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0) 0px,
-    rgba(255, 255, 255, 0) 2px,
-    rgba(255, 255, 255, 0.035) 2px,
-    rgba(255, 255, 255, 0.035) 3px
-  );
-  pointer-events: none;
-}
 
-.loading-stack { position: relative; width: 40px; height: 40px; margin-bottom: 4px; }
-.loading-glow {
-  position: absolute;
-  inset: -14px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 65%);
-  filter: blur(6px);
-  animation: glow-pulse 1.8s var(--clay-ease) infinite;
-}
-@keyframes glow-pulse {
-  0%, 100% { opacity: 0.5; transform: scale(0.92); }
-  50%      { opacity: 1;   transform: scale(1.1);  }
-}
-
-.emu-loading-title {
-  margin: 0;
-  color: #F7F1F6;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-variant-numeric: tabular-nums;
-  animation: coin-blink 1.6s var(--clay-ease) infinite;
-}
-@keyframes coin-blink {
-  0%, 50%, 100% { opacity: 1; }
-  60%, 90%      { opacity: 0.45; }
-}
-.emu-loading-title .dot {
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: #A98CF5;
-  box-shadow: 0 0 6px var(--accent);
-  animation: dot-bounce 1.2s var(--clay-ease) infinite;
-  animation-delay: calc(var(--i) * 140ms);
-}
-@keyframes dot-bounce {
-  0%, 80%, 100% { transform: scale(0.4); opacity: 0.4; }
-  40%           { transform: scale(1);   opacity: 1;   }
-}
-
-.emu-loading-game {
-  margin: 0;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.emu-loading-sub {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 12px;
-  max-width: 300px;
-  line-height: 1.55;
-  letter-spacing: 0.01em;
-}
-.emu-loading-retry {
-  margin-top: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #F7F1F6;
-  border-color: rgba(255, 255, 255, 0.18);
-  position: relative; z-index: 1;
-}
-.emu-loading-retry:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
 .error-card {
   text-align: center;
   padding: 28px 36px;
@@ -497,17 +430,7 @@ useSoloPlayerLifecycle({
   box-shadow: var(--clay-md);
 }
 .error-card p { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px; line-height: 1.5; font-weight: 700; }
-
-.spinner {
-  position: relative;
-  width: 38px; height: 38px;
-  margin: 0 auto 4px;
-  border-radius: 50%;
-  background: var(--clay-primary-grad);
-  box-shadow: var(--clay-md), 0 0 22px color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: clay-pulse 1s var(--clay-ease) infinite;
-  z-index: 1;
-}
+.error-actions { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 
 /* GameOverlay 自带粘土样式，这里只做页面级微调（条形更紧凑、上浮更明显）。 */
 .player-page :deep(.player-bar) {

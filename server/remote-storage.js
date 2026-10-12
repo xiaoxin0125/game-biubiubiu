@@ -8,12 +8,23 @@
  * 配置在后台「站点设置 → 远端存储」里（settings 表：remoteUploadUrl / remoteUploadToken）。
  */
 
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { db } from './db/index.js'
 import { settings } from './db/schema.js'
 
 export const REMOTE_URL_KEY = 'remoteUploadUrl'
 export const REMOTE_TOKEN_KEY = 'remoteUploadToken'
+// 浏览器直连下载用的地址与签名密钥：和上传地址/上传密钥分开，泄漏面更小。
+export const REMOTE_DOWNLOAD_URL_KEY = 'remoteDownloadUrl'
+export const REMOTE_DOWNLOAD_SECRET_KEY = 'remoteDownloadSecret'
+export const ROM_DIRECT_ENABLED_KEY = 'romDirectEnabled'
+
+// 直连签名的有效期：够一次大 ROM 下载完成，又不至于变成一个长期公开链接。
+export const DIRECT_URL_TTL_SEC = 600
+export const DIRECT_URL_PURPOSE = 'download'
+// 允许的对表误差，只用于吸收服务器之间的秒级漂移。
+export const DIRECT_URL_CLOCK_SKEW_SEC = 60
 
 // 超过这个体积的 ROM 才在界面上提供「上传到远端服务器」的选项。
 export const REMOTE_UPLOAD_THRESHOLD_BYTES = 3 * 1024 * 1024
@@ -49,6 +60,68 @@ export function normalizeRemoteToken(value) {
   return token
 }
 
+/**
+ * 浏览器直连下载的地址。和上传地址不同，这个地址必须能被玩家的浏览器打开，
+ * 因此生产环境要求 https：站点本身是 https，跨域加载 http 资源会被浏览器拦掉。
+ */
+export function normalizeRemoteDownloadUrl(value, { allowInsecure = false } = {}) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  let parsed
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error('下载地址必须是 https://主机 形式')
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('下载地址只支持 http / https')
+  }
+  if (parsed.protocol === 'http:' && !allowInsecure) {
+    throw new Error('下载地址必须使用 https：https 页面无法跨域下载 http 资源')
+  }
+  if (!parsed.hostname) throw new Error('下载地址缺少主机名')
+  if (parsed.search || parsed.hash) throw new Error('下载地址不能带查询参数或锚点')
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/+$/, '')}`
+}
+
+export function normalizeRemoteDownloadSecret(value) {
+  const secret = String(value ?? '').trim()
+  if (!secret) return ''
+  if (secret.length < 16) throw new Error('下载签名密钥至少需要 16 位')
+  if (secret.length > 256) throw new Error('下载签名密钥过长')
+  return secret
+}
+
+/**
+ * 直连下载的签名。签名内容绑定"用途 + 文件 id + 过期时间"：
+ *   sig = HMAC-SHA256(secret, `${purpose}.${fileId}.${exp}`)
+ * 远端只读该 id、且能过期，所以即使链接被转发出去，影响也有限。
+ */
+export function signRemoteDownloadUrl({ secret, fileId, exp, purpose = DIRECT_URL_PURPOSE }) {
+  return createHmac('sha256', String(secret)).update(`${purpose}.${fileId}.${exp}`).digest('hex')
+}
+
+export function verifyRemoteDownloadUrl({
+  secret,
+  fileId,
+  exp,
+  sig,
+  purpose = DIRECT_URL_PURPOSE,
+  now = Date.now(),
+}) {
+  const nowSec = Math.floor(now / 1000)
+  const expiry = Number(exp)
+  if (!Number.isFinite(expiry)) return { ok: false, error: 'exp 非法' }
+  if (expiry < nowSec - DIRECT_URL_CLOCK_SKEW_SEC) return { ok: false, error: '链接已过期' }
+  if (expiry > nowSec + DIRECT_URL_TTL_SEC + DIRECT_URL_CLOCK_SKEW_SEC) return { ok: false, error: '过期时间过长' }
+  const expected = signRemoteDownloadUrl({ secret, fileId, exp: expiry, purpose })
+  const provided = String(sig || '').toLowerCase()
+  const a = Buffer.from(expected)
+  const b = Buffer.from(provided)
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return { ok: false, error: '签名不匹配' }
+  return { ok: true }
+}
+
 // 直接读取 settings 表，避免和 routes/settings.js 形成循环依赖
 async function readSetting(key) {
   const row = (await db.select().from(settings).where(eq(settings.key, key)).limit(1))[0]
@@ -61,6 +134,39 @@ export async function remoteStorageConfig() {
     readSetting(REMOTE_TOKEN_KEY),
   ])
   return { url: String(url || '').trim(), token: String(token || '').trim(), configured: !!url && !!token }
+}
+
+/**
+ * 浏览器直连下载的配置。`enabled` 是后台开关，`configured` 表示地址+密钥都齐。
+ * 只有两个条件同时成立，主站才会 302 到远端，否则继续走本机代理回源。
+ */
+export async function remoteDownloadConfig() {
+  const [url, secret, enabled] = await Promise.all([
+    readSetting(REMOTE_DOWNLOAD_URL_KEY),
+    readSetting(REMOTE_DOWNLOAD_SECRET_KEY),
+    readSetting(ROM_DIRECT_ENABLED_KEY),
+  ])
+  const trimmedUrl = String(url || '').trim().replace(/\/+$/, '')
+  const trimmedSecret = String(secret || '').trim()
+  return {
+    url: trimmedUrl,
+    secret: trimmedSecret,
+    enabled: String(enabled || '') === '1',
+    configured: !!trimmedUrl && !!trimmedSecret,
+  }
+}
+
+/**
+ * 生成一个短期直连下载地址；未开启直连或没配置时返回 null（调用方继续走代理）。
+ */
+export async function buildRemoteDownloadUrl(remoteFileId, { ttlSec = DIRECT_URL_TTL_SEC } = {}) {
+  if (!remoteFileId) return null
+  const config = await remoteDownloadConfig()
+  if (!config.enabled || !config.configured) return null
+  const exp = Math.floor(Date.now() / 1000) + ttlSec
+  const sig = signRemoteDownloadUrl({ secret: config.secret, fileId: remoteFileId, exp })
+  // purpose 不进 URL：远端用固定用途字符串校验，避免客户端参与决定签名内容。
+  return `${config.url}/signed/${encodeURIComponent(remoteFileId)}?exp=${exp}&sig=${sig}`
 }
 
 function joinUrl(base, path) {

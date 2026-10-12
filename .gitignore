@@ -15,6 +15,11 @@
 /data/app.db-wal
 /data/uploads/
 /data/saves/
+# 核心发布构建产物（deploy/build-cores.mjs 生成）与预压缩副本：体积大且可再生
+/data/cores-dist/
+/data/cores/*.gz
+# 数据目录里的临时打包文件（手动备份 / 迁移时生成，体积大且可再造）
+/data/*.tar.gz
 
 # Build artifacts and dependencies
 /frontend/dist/

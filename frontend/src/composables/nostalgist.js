@@ -3,8 +3,8 @@
 // pattern so the caller can mount the generated canvas before the emulator runs.
 
 import { Nostalgist } from 'nostalgist'
-import { cachedFetch } from './useBlobCache.js'
 import { installNativeGamepadGuard } from './input/physicalGamepads.js'
+import { loadCoreAsset } from './player/useCoreAssets.js'
 
 // Sensible defaults cribbed from retroassembly's emulator-portal. Rewind stays
 // enabled, while run-ahead is disabled for heavy or audio-sensitive cores.
@@ -61,10 +61,15 @@ const SYNC_SENSITIVE_CORES = new Set([
   'mgba2',
 ])
 
-function localCoreFile(core, ext) {
+/**
+ * 核心文件的取回方式交给 useCoreAssets：发布清单里带着体积与 sha256，远端不
+ * 可用时回退本机同版本文件。`fileName` 必须保持 `<core>_libretro.<ext>`：核心
+ * 自己按这个名字认文件，我们的磁盘文件名不带 _libretro 只影响 URL。
+ */
+function localCoreFile(core, ext, progress = null) {
   return {
     fileName: `${core}_libretro.${ext}`,
-    fileContent: cachedFetch(`/api/cores/${core}_libretro.${ext}`),
+    fileContent: loadCoreAsset({ core, ext, progress }),
   }
 }
 
@@ -110,6 +115,7 @@ export function buildRetroarchConfig(core, callerConfig = {}) {
  * @param {Object} [opts.retroarchConfig]
  * @param {Object} [opts.retroarchCoreConfig]
  * @param {string} [opts.shader]
+ * @param {Object} [opts.progress] 资源加载进度会话（见 useResourceLoadProgress）
  */
 export async function prepareEmulator({
   core,
@@ -120,6 +126,7 @@ export async function prepareEmulator({
   retroarchConfig = {},
   retroarchCoreConfig = {},
   shader,
+  progress = null,
 }) {
   // Normalize legacy arguments. When `rom` isn't passed, fall back to
   // romUrl/romFileName; otherwise pass `rom` through (Nostalgist accepts
@@ -131,8 +138,8 @@ export async function prepareEmulator({
   const localCore = typeof core === 'string'
     ? {
         name: core,
-        js: localCoreFile(core, 'js'),
-        wasm: localCoreFile(core, 'wasm'),
+        js: localCoreFile(core, 'js', progress),
+        wasm: localCoreFile(core, 'wasm', progress),
       }
     : core
 
@@ -150,8 +157,8 @@ export async function prepareEmulator({
     respondToGlobalEvents: true,
     retroarchConfig: buildRetroarchConfig(coreName, retroarchConfig),
     retroarchCoreConfig,
-    resolveCoreJs:   (c) => localCoreFile(c, 'js'),
-    resolveCoreWasm: (c) => localCoreFile(c, 'wasm'),
+    resolveCoreJs:   (c) => localCoreFile(c, 'js', progress),
+    resolveCoreWasm: (c) => localCoreFile(c, 'wasm', progress),
   }
   if (bios?.length) options.bios = bios
   if (shader) options.shader = shader

@@ -48,16 +48,23 @@
 
     <nav class="seg admin-seg">
       <button class="seg-btn" :class="{ active: tab === 'site' }" @click="tab = 'site'">站点</button>
+      <button class="seg-btn" :class="{ active: tab === 'remote' }" @click="tab = 'remote'">远端</button>
       <button class="seg-btn" :class="{ active: tab === 'users' }" @click="tab = 'users'">用户</button>
       <button class="seg-btn" :class="{ active: tab === 'roms' }" @click="tab = 'roms'">ROM</button>
       <button class="seg-btn" :class="{ active: tab === 'bios' }" @click="tab = 'bios'">BIOS</button>
     </nav>
 
-    <section v-if="tab === 'site'" class="panel-card panel panel-site">
+    <section v-if="tab === 'site'" class="panel-card panel panel-site site-settings">
       <h2 class="panel-title">站点设置</h2>
 
       <div class="site-block">
-        <h3 class="site-block-title">基本信息</h3>
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">01</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">基本信息</h3>
+            <p class="site-block-desc">设置网站对外显示的名称和副标题。</p>
+          </div>
+        </div>
         <div class="site-fields">
           <div class="field">
             <label class="label" for="site-title">网站名称</label>
@@ -68,75 +75,16 @@
             <input id="site-subtitle" v-model.trim="form.siteSubtitle" class="input" maxlength="80" />
           </div>
         </div>
-        <div class="field">
-          <label class="label" for="webrtc-stun-urls">STUN 服务器（可选）</label>
-          <textarea id="webrtc-stun-urls" v-model.trim="form.webrtcStunUrls" class="input" rows="3" maxlength="2000" placeholder="留空即可部署；后续填写 stun:主机:端口，多个地址用逗号或换行分隔"></textarea>
-          <p class="field-hint">STUN 用于联机时发现公网地址。默认留空，不影响网站部署和单机游玩。保存后无需重新打包，其他玩家刷新页面后生效；跨网络联机可能还需要 TURN 中继。</p>
-          <div class="remote-test">
-            <button class="btn" type="button" :disabled="testingStun" @click="testStun">
-              {{ testingStun ? '测试中…' : '测试 STUN 服务器' }}
-            </button>
-            <span class="field-hint stun-test-note">完整要求：云安全组、系统防火墙、宝塔都要放行 3478/udp（stuns: 则放行 5349/tcp）</span>
-          </div>
-          <p v-if="stunTestResult" class="remote-test-result stun-test-result" :class="{ ok: stunTestResult.ok }">{{ stunTestResult.text }}</p>
-        </div>
       </div>
 
       <div class="site-block">
-        <h3 class="site-block-title">TURN 中继（可选）</h3>
-        <div class="field">
-          <label class="label" for="webrtc-turn-urls">TURN 服务器地址</label>
-          <textarea id="webrtc-turn-urls" v-model.trim="form.webrtcTurnUrls" class="input" rows="2" maxlength="2000" placeholder="留空即不启用中继；填写 turn:主机:端口?transport=udp,turn:主机:端口?transport=tcp"></textarea>
-          <p class="field-hint">只有双方网络无法直连（对称 NAT、公司/校园网）时才会用到中继，能直连的玩家不受影响。地址填 TURN 服务所在机器的公网地址，端口和中继端口窗口都要在安全组放行。</p>
-        </div>
-        <div class="site-fields">
-          <div class="field">
-            <label class="label" for="webrtc-turn-username">TURN 用户名</label>
-            <input id="webrtc-turn-username" v-model.trim="form.webrtcTurnUsername" class="input" maxlength="128" placeholder="和 TURN 服务器上的 user= 一致" />
-          </div>
-          <div class="field">
-            <label class="label" for="webrtc-turn-credential">TURN 密码</label>
-            <input id="webrtc-turn-credential" v-model.trim="form.webrtcTurnCredential" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和 TURN 服务器上的密码一致" />
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">02</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">功能开关</h3>
+            <p class="site-block-desc">控制用户能否联机、试玩和上传 ROM。</p>
           </div>
         </div>
-        <div class="remote-test">
-          <button class="btn" type="button" :disabled="testingTurn" @click="testTurn">
-            {{ testingTurn ? '测试中…' : '测试 TURN 中继' }}
-          </button>
-          <span class="field-hint stun-test-note">没填用户名/密码时只检查端口是否可达；填了会真的分配一次中继端口</span>
-        </div>
-        <p v-if="turnTestResult" class="remote-test-result stun-test-result" :class="{ ok: turnTestResult.ok }">{{ turnTestResult.text }}</p>
-      </div>
-
-      <div class="site-block">
-        <h3 class="site-block-title">远端存储（大 ROM）</h3>
-        <div class="field">
-          <label class="label" for="remote-url">远端服务地址</label>
-          <input id="remote-url" v-model.trim="form.remoteUploadUrl" class="input" maxlength="200" placeholder="http://127.0.0.1:8790 或 http://另一台服务器:8790" />
-          <p class="field-hint">超过 3MB 的 ROM 可以选择转存到这台服务器，上传与播放都由主站带密钥转发，密钥不会下发到浏览器。远端服务代码在 <code>/www/wwwroot/rom-upload</code>，详见该目录的 README。</p>
-        </div>
-        <div class="site-fields">
-          <div class="field">
-            <label class="label" for="remote-token">远端密钥</label>
-            <input id="remote-token" v-model.trim="form.remoteUploadToken" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和远端 config.json 里的 token 一致" />
-          </div>
-          <div class="field">
-            <label class="label">连接测试</label>
-            <div class="remote-test">
-              <button class="btn" type="button" :disabled="testingRemote" @click="testRemote">
-                {{ testingRemote ? '测试中…' : '测试连接' }}
-              </button>
-              <span v-if="remoteTestResult" class="remote-test-result" :class="{ ok: remoteTestResult.ok }">
-                {{ remoteTestResult.text }}
-              </span>
-            </div>
-          </div>
-        </div>
-        <p class="field-hint">远端是否可用只看「地址 + 密钥」是否都已保存：都填好后，上传 ROM 时超过 3MB 就会出现「上传到远端服务器」开关。</p>
-      </div>
-
-      <div class="site-block">
-        <h3 class="site-block-title">功能开关</h3>
         <div class="toggle-grid">
           <label class="toggle-row">
             <div class="toggle-text">
@@ -170,6 +118,182 @@
               <span class="sw-track"><span class="sw-thumb"></span></span>
             </div>
           </label>
+        </div>
+      </div>
+
+      <div class="site-actions">
+        <div class="site-status">
+          <Transition name="saved">
+            <span v-if="siteSaved" class="saved">已保存</span>
+          </Transition>
+        </div>
+        <button class="btn btn-primary site-save" :disabled="savingSite" @click="saveSite">
+          {{ savingSite ? '保存中…' : '保存' }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="tab === 'remote'" class="panel-card panel panel-site remote-settings">
+      <h2 class="panel-title">远端设置</h2>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">01</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">STUN 服务器（可选）</h3>
+            <p class="site-block-desc">帮助浏览器发现公网地址，改善跨网络联机的连接成功率。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="webrtc-stun-urls">STUN 服务器地址</label>
+          <textarea id="webrtc-stun-urls" v-model.trim="form.webrtcStunUrls" class="input" rows="3" maxlength="2000" placeholder="留空即可部署；后续填写 stun:主机:端口，多个地址用逗号或换行分隔"></textarea>
+          <p class="field-hint">STUN 用于联机时发现公网地址。默认留空，不影响网站部署和单机游玩。保存后无需重新打包，其他玩家刷新页面后生效；跨网络联机可能还需要 TURN 中继。</p>
+          <div class="remote-test">
+            <button class="btn" type="button" :disabled="testingStun" @click="testStun">
+              {{ testingStun ? '测试中…' : '测试 STUN 服务器' }}
+            </button>
+            <span class="field-hint stun-test-note">完整要求：云安全组、系统防火墙、宝塔都要放行 3478/udp（stuns: 则放行 5349/tcp）</span>
+          </div>
+          <p v-if="stunTestResult" class="remote-test-result stun-test-result" :class="{ ok: stunTestResult.ok }">{{ stunTestResult.text }}</p>
+        </div>
+      </div>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">02</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">TURN 中继（可选）</h3>
+            <p class="site-block-desc">为无法直接连通的玩家提供中继通道。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="webrtc-turn-urls">TURN 服务器地址</label>
+          <textarea id="webrtc-turn-urls" v-model.trim="form.webrtcTurnUrls" class="input" rows="2" maxlength="2000" placeholder="留空即不启用中继；填写 turn:主机:端口?transport=udp,turn:主机:端口?transport=tcp"></textarea>
+          <p class="field-hint">只有双方网络无法直连（对称 NAT、公司/校园网）时才会用到中继，能直连的玩家不受影响。地址填 TURN 服务所在机器的公网地址，端口和中继端口窗口都要在安全组放行。</p>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="webrtc-turn-username">TURN 用户名</label>
+            <input id="webrtc-turn-username" v-model.trim="form.webrtcTurnUsername" class="input" maxlength="128" placeholder="和 TURN 服务器上的 user= 一致" />
+          </div>
+          <div class="field">
+            <label class="label" for="webrtc-turn-credential">TURN 密码</label>
+            <input id="webrtc-turn-credential" v-model.trim="form.webrtcTurnCredential" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和 TURN 服务器上的密码一致" />
+          </div>
+        </div>
+        <div class="remote-test">
+          <button class="btn" type="button" :disabled="testingTurn" @click="testTurn">
+            {{ testingTurn ? '测试中…' : '测试 TURN 中继' }}
+          </button>
+          <span class="field-hint stun-test-note">没填用户名/密码时只检查端口是否可达；填了会真的分配一次中继端口</span>
+        </div>
+        <p v-if="turnTestResult" class="remote-test-result stun-test-result" :class="{ ok: turnTestResult.ok }">{{ turnTestResult.text }}</p>
+      </div>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">03</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">远端存储（大 ROM）</h3>
+            <p class="site-block-desc">将大体积 ROM 交给独立存储服务，减少本站磁盘和带宽压力。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label class="label" for="remote-url">远端服务地址</label>
+          <input id="remote-url" v-model.trim="form.remoteUploadUrl" class="input" maxlength="200" placeholder="http://127.0.0.1:8790 或 http://另一台服务器:8790" />
+          <p class="field-hint">超过 3MB 的 ROM 可以选择转存到这台服务器，上传与播放都由主站带密钥转发，密钥不会下发到浏览器。远端服务代码在 <code>/www/wwwroot/rom-upload</code>，详见该目录的 README。</p>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="remote-token">远端密钥</label>
+            <input id="remote-token" v-model.trim="form.remoteUploadToken" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和远端 config.json 里的 token 一致" />
+          </div>
+          <div class="field">
+            <label class="label">连接测试</label>
+            <div class="remote-test">
+              <button class="btn" type="button" :disabled="testingRemote" @click="testRemote">
+                {{ testingRemote ? '测试中…' : '测试连接' }}
+              </button>
+              <span v-if="remoteTestResult" class="remote-test-result" :class="{ ok: remoteTestResult.ok }">
+                {{ remoteTestResult.text }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <p class="field-hint">远端是否可用只看「地址 + 密钥」是否都已保存：都填好后，上传 ROM 时超过 3MB 就会出现「上传到远端服务器」开关。</p>
+      </div>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">04</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">下载地址（浏览器直连）</h3>
+            <p class="site-block-desc">让玩家的浏览器直接从远端下载 ROM，减少本站出口流量。</p>
+          </div>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="remote-download-url">远端下载地址</label>
+            <input id="remote-download-url" v-model.trim="form.remoteDownloadUrl" class="input" maxlength="200" placeholder="https://rom.example.com" />
+          </div>
+          <div class="field">
+            <label class="label" for="remote-download-secret">下载签名密钥</label>
+            <input id="remote-download-secret" v-model.trim="form.remoteDownloadSecret" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和远端 DOWNLOAD_SECRET 一致" />
+          </div>
+        </div>
+        <label class="toggle-row">
+          <div class="toggle-text">
+            <div class="tr-t">ROM 由浏览器直连远端下载</div>
+            <div class="tr-s">开启后，主站在校验权限后返回 302，文件不再经过本站出口；关闭或未配置时仍由本站带密钥转发</div>
+          </div>
+          <div class="toggle-sw">
+            <input type="checkbox" v-model="form.romDirectEnabled" />
+            <span class="sw-track"><span class="sw-thumb"></span></span>
+          </div>
+        </label>
+        <p class="field-hint">下载地址必须能被玩家的浏览器打开（HTTPS）。上传密钥和下载密钥是两个独立的凭据，冒号后面不要填错。</p>
+      </div>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">05</span>
+          <div class="site-block-heading">
+            <h3 class="site-block-title">核心资源（远端托管）</h3>
+            <p class="site-block-desc">从独立资源服务器加载模拟器核心，降低本站静态资源带宽消耗。</p>
+          </div>
+        </div>
+        <label class="toggle-row">
+          <div class="toggle-text">
+            <div class="tr-t">启用远端核心托管</div>
+            <div class="tr-s">开启后，模拟器核心（js/wasm，合计约 100MB）由下面的资源服务器直供，不再占用本站出口带宽；关闭或地址不可用时自动回到本站 <code>/api/cores</code></div>
+          </div>
+          <div class="toggle-sw">
+            <input type="checkbox" v-model="form.coresRemoteEnabled" />
+            <span class="sw-track"><span class="sw-thumb"></span></span>
+          </div>
+        </label>
+        <div class="field">
+          <label class="label" for="cores-base-url">远端核心地址</label>
+          <input id="cores-base-url" v-model.trim="form.coresBaseUrl" class="input" maxlength="200" placeholder="https://cores.example.com/releases" />
+          <p class="field-hint">
+            必须能被玩家的浏览器打开（HTTPS，且该站要允许跨域读取）。每一版核心按「发布版本 + 文件名」取地址，
+            版本号由文件内容生成，所以换地址不会重复下载，也不会出现新旧核心混用。
+            发布方式：<code>node deploy/build-cores.mjs</code> → <code>deploy/sync-cores.sh</code>。
+            地址和上面的开关分开保存：开关关着也能先把地址存下来、随时可改，等测通了再打开开关；
+            关闭时忽略环境变量里的旧值，立刻回到本站 <code>/api/cores</code>。
+          </p>
+        </div>
+        <div class="field">
+          <label class="label">连通性测试</label>
+          <div class="remote-test">
+            <button class="btn" type="button" :disabled="testingCores" @click="testCores">
+              {{ testingCores ? '测试中…' : '测试远端核心' }}
+            </button>
+            <span v-if="coresTestResult" class="remote-test-result" :class="{ ok: coresTestResult.ok }">
+              {{ coresTestResult.text }}
+            </span>
+          </div>
+          <p class="field-hint">用当前浏览器直接访问远端：验证 HTTPS/跨域、发布版本是否对得上、核心文件与 gzip 预压缩副本是否就绪。改完地址先测一次再保存。</p>
         </div>
       </div>
 
@@ -414,6 +538,11 @@ const form = reactive({
   webrtcTurnCredential: '',
   remoteUploadUrl: '',
   remoteUploadToken: '',
+  remoteDownloadUrl: '',
+  remoteDownloadSecret: '',
+  romDirectEnabled: false,
+  coresRemoteEnabled: false,
+  coresBaseUrl: '',
 })
 const savingSite = ref(false)
 const siteSaved = ref(false)
@@ -423,6 +552,8 @@ const testingStun = ref(false)
 const stunTestResult = ref(null)
 const testingTurn = ref(false)
 const turnTestResult = ref(null)
+const testingCores = ref(false)
+const coresTestResult = ref(null)
 
 const users = ref([])
 const roms = ref([])
@@ -507,6 +638,16 @@ onMounted(async () => {
     form.webrtcTurnCredential = s.webrtcTurnCredential || ''
     form.remoteUploadUrl = s.remoteUploadUrl || ''
     form.remoteUploadToken = s.remoteUploadToken || ''
+    form.remoteDownloadUrl = s.remoteDownloadUrl || ''
+    form.remoteDownloadSecret = s.remoteDownloadSecret || ''
+    form.romDirectEnabled = s.romDirectEnabled === '1'
+    // 远端核心：地址与开关是两个独立设置。老数据只有地址（没有开关字段）时按
+    // 地址推断：有地址 = 开启，none 或空 = 关闭。
+    const savedCoresBaseUrl = String(s.coresBaseUrl || '')
+    const coresEnabledRaw = String(s.coresRemoteEnabled ?? '').trim()
+    const legacyCoresEnabled = !!savedCoresBaseUrl && savedCoresBaseUrl !== 'none'
+    form.coresBaseUrl = legacyCoresEnabled ? savedCoresBaseUrl : ''
+    form.coresRemoteEnabled = coresEnabledRaw === '1' ? true : coresEnabledRaw === '0' ? false : legacyCoresEnabled
   } catch {}
 })
 
@@ -606,9 +747,94 @@ async function testRemote() {
   }
 }
 
+// 测试远端核心资源：必须用浏览器实测。HTTPS、跨域许可、证书这些问题只有浏览器
+// 视角才能发现——服务端探测一直通，前端却可能因为 CORS 拿不到一个字节。
+async function testCores() {
+  testingCores.value = true
+  coresTestResult.value = null
+  try {
+    const base = String(form.coresBaseUrl || '').trim().replace(/\/+$/, '')
+    if (!base) {
+      coresTestResult.value = { ok: false, text: '还没填远端核心地址' }
+      return
+    }
+
+    // 本站当前的发布版本：远端必须和它一致，否则浏览器会一直回退到本机。
+    const manifestRes = await fetch('/api/cores/manifest', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    const manifest = await manifestRes.json().catch(() => null)
+    const release = manifest?.release || ''
+    const lines = []
+    if (!release) {
+      lines.push('本站还没有发布版本：先在服务器上执行 node deploy/build-cores.mjs')
+    }
+
+    let versionMatches = false
+    let fileOk = false
+    let remoteFiles = null
+    if (release) {
+      const res = await fetch(`${base}/${release}/manifest.json`, { cache: 'no-store' })
+      const body = await res.json().catch(() => null)
+      remoteFiles = body?.files || null
+      lines.push(`公开发布清单：HTTP ${res.status}`)
+      if (body?.release === release) {
+        versionMatches = true
+        lines.push(`版本一致：${release}，${Object.keys(remoteFiles || {}).length} 个文件`)
+      } else if (body?.release) {
+        lines.push(`版本不一致：远端 ${body.release}，本站 ${release}（远端需要重新同步）`)
+      } else {
+        lines.push('远端没有可读的 manifest.json：目录结构或同步有问题')
+      }
+
+      const sample = Object.keys(remoteFiles || {}).find((name) => name.endsWith('.wasm'))
+      if (sample) {
+        const head = await fetch(`${base}/${release}/${sample}`, { method: 'HEAD' })
+        fileOk = head.ok
+        const parts = [`HTTP ${head.status}`, head.headers.get('content-type') || 'content-type ?']
+        const encoding = head.headers.get('content-encoding')
+        const length = Number(head.headers.get('content-length'))
+        if (encoding) parts.push(`content-encoding: ${encoding}`)
+        const meta = remoteFiles?.[sample]
+        if (Number.isFinite(length)) {
+          if (encoding && meta?.gzipSize && Math.abs(length - meta.gzipSize) <= 64) {
+            parts.push(`命中 gzip 预压缩副本（${fmtSize(length)}）`)
+          } else if (meta?.size && length === meta.size) {
+            parts.push(`按未压缩直出（${fmtSize(length)}，建议开启 gzip_static）`)
+          } else {
+            parts.push(fmtSize(length))
+          }
+        }
+        lines.push(`${sample}：${parts.join(' · ')}`)
+      } else {
+        lines.push('清单里没有 .wasm 文件，无法抽样检查')
+      }
+    }
+
+    coresTestResult.value = { ok: versionMatches && fileOk, text: lines.join('\n') }
+  } catch (err) {
+    // 跨域被拦时 fetch 只会抛 TypeError，这里把常见原因写清楚，省得去猜。
+    coresTestResult.value = {
+      ok: false,
+      text: `浏览器访问失败：${err?.message || err}\n常见原因：地址不是 HTTPS、证书不被信任、资源站没有返回 Access-Control-Allow-Origin，或被 HSTS 强制升级。`,
+    }
+  } finally {
+    testingCores.value = false
+  }
+}
+
 async function saveSite() {
   savingSite.value = true
   siteSaved.value = false
+  // 地址与开关分开保存：地址随时可以填、可以改（开关关着也照存），开关只决定这份
+  // 地址是否投入使用。关闭时存 0，压过环境变量里的旧值；下次要用直接打开开关即可。
+  const coresBaseUrl = String(form.coresBaseUrl || '').trim()
+  if (form.coresRemoteEnabled && !coresBaseUrl) {
+    savingSite.value = false
+    alert('开启远端核心托管需要先填写远端核心地址')
+    return
+  }
   try {
     const next = await api.adminUpdateSettings({
       siteTitle: form.siteTitle,
@@ -622,6 +848,11 @@ async function saveSite() {
       webrtcTurnCredential: form.webrtcTurnCredential,
       remoteUploadUrl: form.remoteUploadUrl,
       remoteUploadToken: form.remoteUploadToken,
+      remoteDownloadUrl: form.remoteDownloadUrl,
+      remoteDownloadSecret: form.remoteDownloadSecret,
+      romDirectEnabled: form.romDirectEnabled,
+      coresBaseUrl,
+      coresRemoteEnabled: form.coresRemoteEnabled ? '1' : '0',
     })
     form.webrtcStunUrls = next.webrtcStunUrls || ''
     form.webrtcTurnUrls = next.webrtcTurnUrls || ''
@@ -629,12 +860,22 @@ async function saveSite() {
     form.webrtcTurnCredential = next.webrtcTurnCredential || ''
     form.remoteUploadUrl = next.remoteUploadUrl || ''
     form.remoteUploadToken = next.remoteUploadToken || ''
+    form.remoteDownloadUrl = next.remoteDownloadUrl || ''
+    form.remoteDownloadSecret = next.remoteDownloadSecret || ''
+    form.romDirectEnabled = next.romDirectEnabled === '1'
+    const nextCoresBaseUrl = String(next.coresBaseUrl || '')
+    const nextCoresFlag = String(next.coresRemoteEnabled ?? '').trim()
+    const nextLegacyCoresEnabled = !!nextCoresBaseUrl && nextCoresBaseUrl !== 'none'
+    form.coresBaseUrl = nextLegacyCoresEnabled ? nextCoresBaseUrl : ''
+    form.coresRemoteEnabled = nextCoresFlag === '1' ? true : nextCoresFlag === '0' ? false : nextLegacyCoresEnabled
     window.__APP_CONFIG__ = Object.freeze({
       ...window.__APP_CONFIG__,
       WEBRTC_STUN_URLS: form.webrtcStunUrls,
       WEBRTC_TURN_URLS: form.webrtcTurnUrls,
       WEBRTC_TURN_USERNAME: form.webrtcTurnUsername,
       WEBRTC_TURN_CREDENTIAL: form.webrtcTurnCredential,
+      // 核心地址改了以后，新打开/刷新的页面直接生效（当前页面已经取过核心）。
+      CORES_BASE_URL: form.coresRemoteEnabled ? form.coresBaseUrl : '',
     })
     updateLocal({
       siteTitle: next.siteTitle,
@@ -836,7 +1077,8 @@ function fmtSize(b) {
   line-height: 1.15;
 }
 
-.admin-seg { margin-bottom: 20px; }
+.admin-seg { max-width: 100%; margin-bottom: 20px; }
+.admin-seg .seg-btn { flex-shrink: 0; white-space: nowrap; }
 
 .panel {
   padding: 24px;
@@ -857,23 +1099,79 @@ function fmtSize(b) {
 }
 .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 16px; }
 
-/* 站点设置：按“基本信息 / 功能开关”分区排布，保存按钮固定在面板最下方整行 */
-.panel-site { padding: 26px 26px 22px; }
-.panel-site .panel-title { margin-bottom: 18px; }
-.site-block + .site-block { margin-top: 24px; }
-.site-block-title {
-  margin: 0 0 12px;
-  font-size: 13px;
+/* 站点与远端设置：每个功能独立成分组，标题、说明、字段各自有明确层级 */
+.panel-site { padding: 28px; }
+.panel-site .panel-title {
+  margin: 0 0 20px;
+  font-size: 18px;
+  line-height: 1.3;
+}
+.site-block {
+  margin: 0;
+  padding: 22px 22px 24px;
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: var(--clay-in-sm);
+}
+.site-block + .site-block { margin-top: 18px; }
+.site-block-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  background: linear-gradient(90deg, rgba(78, 51, 72, 0.14), rgba(78, 51, 72, 0)) 0 100% / 100% 1px no-repeat;
+}
+.site-block-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--clay-lilac);
+  color: var(--text-lilac);
+  box-shadow: var(--clay-xs);
+  font-family: var(--mono-stack);
+  font-size: 11px;
   font-weight: 900;
-  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+.site-block-heading { min-width: 0; flex: 1; }
+.site-block-title {
+  margin: 1px 0 3px;
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 900;
+  color: var(--text-primary);
+}
+.site-block-desc {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .site-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  margin-bottom: 16px;
+  margin: 0;
 }
 .site-block .field { margin: 0; max-width: none; }
+.site-block .label {
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+.site-block .field + .site-fields,
+.site-block .site-fields + .field,
+.site-block > .field + .field { margin-top: 18px; }
+.site-block > .toggle-row + .field,
+.site-block > .site-fields + .toggle-row { margin-top: 18px; }
 .field-hint {
   margin: 8px 2px 0;
   color: var(--text-tertiary);
@@ -889,8 +1187,10 @@ function fmtSize(b) {
   font-size: 11px;
 }
 
-/* 远端存储：测试按钮 + 结果 */
+/* 远端测试：按钮是动作，说明和结果保持在同一行但不抢标题层级 */
 .remote-test { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 44px; }
+.site-block > .remote-test,
+.site-block .field > .remote-test { margin-top: 16px; }
 .remote-test-result {
   font-size: 12px;
   font-weight: 800;
@@ -910,14 +1210,14 @@ function fmtSize(b) {
 .toggle-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   margin: 0;
-  min-height: 88px;
-  padding: 16px 18px;
-  background: var(--clay-surface);
+  min-height: 78px;
+  padding: 15px 16px;
+  background: rgba(255, 255, 255, 0.72);
   border: 0;
   border-radius: var(--r-lg);
   cursor: pointer;
@@ -951,10 +1251,16 @@ function fmtSize(b) {
 .toggle-sw input:checked + .sw-track { background: var(--clay-primary-grad); box-shadow: var(--clay-sm); }
 .toggle-sw input:checked + .sw-track .sw-thumb { background: var(--clay-surface-flat); transform: translateX(18px); }
 .toggle-row:active .toggle-sw input:checked + .sw-track .sw-thumb { transform: translateX(18px) scaleX(1.08) scaleY(0.9); }
-.tr-t { font-size: 14px; font-weight: 900; color: var(--text-primary); }
-.tr-s { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.tr-t { font-size: 13px; line-height: 1.35; font-weight: 900; color: var(--text-primary); }
+.tr-s { font-size: 11.5px; line-height: 1.5; color: var(--text-tertiary); margin-top: 4px; }
 
-.site-actions { display: flex; flex-direction: column; margin-top: 26px; }
+.site-actions {
+  display: flex;
+  flex-direction: column;
+  margin-top: 22px;
+  padding-top: 18px;
+  background: linear-gradient(90deg, rgba(78, 51, 72, 0.12), rgba(78, 51, 72, 0)) 0 0 / 100% 1px no-repeat;
+}
 .site-status { display: flex; align-items: center; justify-content: center; min-height: 22px; }
 .site-save { width: 100%; height: 48px; font-size: 15px; }
 .saved { color: var(--success); font-size: 13px; font-weight: 900; }
@@ -1338,6 +1644,11 @@ function fmtSize(b) {
 }
 
 @media (max-width: 900px) {
+  .panel-site { padding: 20px 16px 18px; }
+  .site-block { padding: 18px 16px 20px; }
+  .site-block-head { gap: 10px; margin-bottom: 16px; padding-bottom: 14px; }
+  .site-block-index { flex-basis: 30px; width: 30px; height: 30px; }
+  .site-block-title { font-size: 15px; }
   .site-fields { grid-template-columns: minmax(0, 1fr); }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
   .rom-toolbar { grid-template-columns: 1fr; }

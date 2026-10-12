@@ -92,7 +92,7 @@ export function useEmulator() {
     } catch {}
   }
 
-  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader }) {
+  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader, progress = null }) {
     if (!wrapperRef.value) throw new Error('wrapper not mounted')
     if (instance.value) return instance.value
     const generation = ++bootGeneration
@@ -104,7 +104,10 @@ export function useEmulator() {
       const romInput = rom !== undefined
         ? rom
         : (romFileName ? { fileName: romFileName, fileContent: romUrl } : romUrl)
-      const emu = await prepareEmulator({ core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader })
+      // 阶段只由真实事件驱动：核心/ROM 的字节进度由各自的下载回调汇报，这里
+      // 只标记"开始取资源"和"资源齐了，开始初始化模拟器"。
+      progress?.setStage('resources')
+      const emu = await prepareEmulator({ core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader, progress })
 
       // Re-check mount: prepareEmulator is async (seconds), the component may
       // have been torn down while we waited (e.g. guest role arrived and the
@@ -122,6 +125,7 @@ export function useEmulator() {
       canvas.classList.add('portal-canvas')
       wrapperRef.value.append(canvas)
 
+      progress?.setStage('emulator')
       try { globalThis.navigator.mediaDevices.getUserMedia = null } catch {}
       try { await emu.start() }
       finally { try { globalThis.navigator.mediaDevices.getUserMedia = originalGetUserMedia } catch {} }
@@ -137,9 +141,11 @@ export function useEmulator() {
       attachWakeLockListeners()
       await acquireWakeLock()
 
+      progress?.setStage('ready')
       return emu
     } catch (err) {
       error.value = err
+      progress?.setStage('failed')
       throw err
     } finally {
       if (generation === bootGeneration) booting.value = false

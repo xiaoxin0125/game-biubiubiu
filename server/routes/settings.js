@@ -19,15 +19,34 @@ import {
   REMOTE_UPLOAD_THRESHOLD_BYTES,
   REMOTE_TOKEN_KEY,
   REMOTE_URL_KEY,
+  REMOTE_DOWNLOAD_URL_KEY,
+  REMOTE_DOWNLOAD_SECRET_KEY,
+  ROM_DIRECT_ENABLED_KEY,
   normalizeRemoteToken,
   normalizeRemoteUrl,
+  normalizeRemoteDownloadUrl,
+  normalizeRemoteDownloadSecret,
   remoteHealth,
 } from '../remote-storage.js'
+import { CORES_BASE_URL_KEY, CORES_REMOTE_ENABLED_KEY, normalizeCoresBaseUrl, normalizeCoresRemoteEnabled } from '../cores-release.js'
 
 // Keys exposed to anonymous clients
 const PUBLIC_KEYS = new Set(['siteTitle', 'siteSubtitle', 'netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled'])
 // Keys admins are allowed to write
-const WRITABLE_KEYS = new Set([...PUBLIC_KEYS, STUN_SETTING_KEY, TURN_URLS_KEY, TURN_USERNAME_KEY, TURN_CREDENTIAL_KEY, REMOTE_URL_KEY, REMOTE_TOKEN_KEY])
+const WRITABLE_KEYS = new Set([
+  ...PUBLIC_KEYS,
+  STUN_SETTING_KEY,
+  TURN_URLS_KEY,
+  TURN_USERNAME_KEY,
+  TURN_CREDENTIAL_KEY,
+  REMOTE_URL_KEY,
+  REMOTE_TOKEN_KEY,
+  REMOTE_DOWNLOAD_URL_KEY,
+  REMOTE_DOWNLOAD_SECRET_KEY,
+  ROM_DIRECT_ENABLED_KEY,
+  CORES_BASE_URL_KEY,
+  CORES_REMOTE_ENABLED_KEY,
+])
 
 const DEFAULTS = {
   siteTitle: 'Games Online',
@@ -47,6 +66,15 @@ const DEFAULTS = {
   // Optional remote storage for large ROMs (see /www/wwwroot/rom-upload).
   [REMOTE_URL_KEY]: '',
   [REMOTE_TOKEN_KEY]: '',
+  // 浏览器直连下载（302 到短期签名地址）：默认关闭，先走本机代理确保可用。
+  [REMOTE_DOWNLOAD_URL_KEY]: '',
+  [REMOTE_DOWNLOAD_SECRET_KEY]: '',
+  [ROM_DIRECT_ENABLED_KEY]: '0',
+  // 核心资源基地址（远端资源服务器）：空 = 没保存过地址，none = 老数据里的"强制本机"。
+  [CORES_BASE_URL_KEY]: '',
+  // 核心资源启用开关：'1' 开、'0' 关、'' 老数据（按地址推断）。地址与开关分开存，
+  // 这样填好地址可以先保存、测通再打开，不必重填。
+  [CORES_REMOTE_ENABLED_KEY]: '',
 }
 
 // --- Low-level helpers (reused by other server modules) ---
@@ -243,6 +271,30 @@ adminSettingsRoutes.patch('/', async (c) => {
     } else if (k === REMOTE_TOKEN_KEY) {
       try {
         val = normalizeRemoteToken(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === REMOTE_DOWNLOAD_URL_KEY) {
+      try {
+        val = normalizeRemoteDownloadUrl(v, { allowInsecure: process.env.NODE_ENV !== 'production' })
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === REMOTE_DOWNLOAD_SECRET_KEY) {
+      try {
+        val = normalizeRemoteDownloadSecret(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === CORES_BASE_URL_KEY) {
+      try {
+        val = normalizeCoresBaseUrl(v, { allowInsecure: process.env.NODE_ENV !== 'production' })
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === CORES_REMOTE_ENABLED_KEY) {
+      try {
+        val = normalizeCoresRemoteEnabled(v)
       } catch (error) {
         return c.json({ error: error.message }, 400)
       }

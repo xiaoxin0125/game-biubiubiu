@@ -5,7 +5,7 @@
 #   2) 网站 → 设置 → 伪静态，粘贴下面【伪静态】部分；
 #   3) 网站 → 设置 → 配置文件，在 server { } 里补上【server 内】的几行
 #      （client_max_body_size 与 fastcgi 超时；宝塔默认 1m/60s，大 ROM 会传不上去）；
-#   4) 数据目录禁止外部访问：把【server 内】的 location ^~ /data/ 一起加上。
+#   4) 数据目录与 config.json 禁止外部访问：把【server 内】的两行一起加上。
 #
 # 注意：不要在面板里重复添加 location ~ \.php$，宝塔已经 include 了 PHP 配置；
 # 需要改超时的话，既可以在 server {} 里写 fastcgi_read_timeout（对下面所有 location 生效），
@@ -16,6 +16,10 @@
 # fastcgi_read_timeout 600s;
 # fastcgi_send_timeout 600s;
 # location ^~ /data/ { deny all; }
+# 配置文件里有 token 与 downloadSecret：被当成静态文件发出去就等于泄露密钥。
+# 更彻底的做法是把配置放到站点目录之外，用环境变量 ROM_UPLOAD_CONFIG 指过去。
+# location = /config.json { return 404; }
+# location = /config.example.json { return 404; }
 
 # ── 伪静态（宝塔「伪静态」文本框） ─────────────────────────────────────
 location / {

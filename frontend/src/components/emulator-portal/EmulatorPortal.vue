@@ -16,6 +16,8 @@ const props = defineProps({
   bios: { type: Array, default: () => [] },
   retroarchConfig: { type: Object, default: () => ({}) },
   retroarchCoreConfig: { type: Object, default: () => ({}) },
+  // 资源加载进度会话（可选）：核心下载与启动阶段都会往它上面汇报状态。
+  progress: { type: Object, default: null },
 })
 const emit = defineEmits(['booted', 'error', 'config-reloaded'])
 
@@ -47,6 +49,7 @@ async function start() {
       bios: props.bios,
       retroarchConfig: props.retroarchConfig,
       retroarchCoreConfig: props.retroarchCoreConfig,
+      progress: props.progress,
     })
     if (lastCheatList.length) syncCheats(lastCheatList)
     emit('booted')
