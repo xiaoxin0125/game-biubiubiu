@@ -14,6 +14,7 @@
       :can-cheat="canCheat"
       :show-keys="!isTouchLayout"
       :show-fullscreen="!isTouchLayout"
+      :show-actions="showBarActions"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
@@ -23,23 +24,8 @@
       @cheats="showCheats = true"
     >
       <template #extras>
-        <!-- Version switcher: only when this game has multi-version siblings -->
-        <div v-if="canShowVersionSwitch && siblings.length > 1" class="ver-switch" @click.stop>
-          <button class="ver-btn" @click="versionMenuOpen = !versionMenuOpen">
-            <span class="ver-cur">{{ currentVersionLabel }}</span>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          <div v-if="versionMenuOpen" class="ver-menu">
-            <button
-              v-for="v in siblings"
-              :key="v.id"
-              class="ver-item"
-              :class="{ active: v.id === romMeta?.id }"
-              @click="switchVersion(v)"
-            >{{ v.id === (romMeta?.parentRomId ?? romMeta?.id) ? '原版' : (v.versionLabel || '变体') }}</button>
-          </div>
-        </div>
-
+        <!-- 房间里的玩家列表 / 房间面板入口：顶部工具条的最末端。
+             房间内不再提供 ROM 版本选择。 -->
         <button v-if="isRoomMode" class="room-chip" :class="{ active: showRoom }" @click="showRoom = !showRoom" title="房间">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span class="chip-count">{{ Object.keys(signalPeers).length }}</span>
@@ -47,7 +33,9 @@
       </template>
     </GameOverlay>
 
-    <div class="emu-area">
+    <div class="emu-area" :style="{ '--side-actions-w': sideColumnWidth }">
+      <!-- 右侧按钮列的等宽占位：左右对称，画面（crt-screen）才会停在页面正中 -->
+      <div v-if="actionsPlacement === 'side'" class="emu-side-spacer" aria-hidden="true"></div>
       <div class="emu-frame">
         <!-- Host / solo: real Nostalgist emulator.
              Only render when we KNOW we're solo or the host. If we're in a
@@ -119,7 +107,46 @@
           :active="isFullscreen"
           @toggle="onFullscreen"
         />
+
+        <!-- 手机端：保存 / 读档 / 重置 / 金手指与「按键透明度」按钮同侧（画面右上角），
+             竖屏横排，横屏与全屏改成竖排（房间内只有房主能看到这几颗） -->
+        <GameActionButtons
+          v-if="actionsPlacement === 'mobile'"
+          variant="mobile"
+          :vertical="actionsVertical"
+          :fullscreen="isFullscreen"
+          :can-save="canSaveState"
+          :can-reload="canReload"
+          :can-cheat="canCheat"
+          @save-state="onSaveState"
+          @load-state="onLoadState"
+          @reload="onReload"
+          @cheats="showCheats = true"
+        />
+
+        <!-- 手机端「按键透明度」按钮：画面右上角，和左上角的全屏按钮分居两侧 -->
+        <VirtualGamepadOpacityButton
+          v-if="actionsPlacement === 'mobile'"
+          :dimmed="vpadDimmed"
+          :fullscreen="isFullscreen"
+          @toggle="toggleVpadDimmed"
+        />
       </div>
+
+      <!-- PC 宽屏：同一组按钮改成图文按钮放在画面右侧，一行两个 -->
+      <GameActionButtons
+        v-if="actionsPlacement === 'side'"
+        variant="side"
+        :can-save="canSaveState"
+        :can-reload="canReload"
+        :can-cheat="canCheat"
+        :show-keys="!isTouchLayout"
+        @save-state="onSaveState"
+        @load-state="onLoadState"
+        @reload="onReload"
+        @cheats="showCheats = true"
+        @keys="openInputSettings"
+      />
     </div>
 
     <Transition name="hint">
@@ -138,6 +165,7 @@
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
       :landscape-rotate="isForcedLandscape"
+      :dimmed="vpadDimmed"
       :button-interceptor="gamepadButtonInterceptor"
       :press-button="pressLocalButton"
       :release-button="releaseLocalButton"
@@ -197,6 +225,8 @@ import { useCheats } from '../composables/player/useCheats.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
+import { usePlayerActionsPlacement } from '../composables/player/usePlayerActionsPlacement.js'
+import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { usePlayerRoomRuntime } from '../composables/player/usePlayerRoomRuntime.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
@@ -212,6 +242,8 @@ import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
+import GameActionButtons from '../components/emulator-portal/GameActionButtons.vue'
+import VirtualGamepadOpacityButton from '../components/emulator-portal/VirtualGamepadOpacityButton.vue'
 import RoomPanel from '../components/emulator-portal/RoomPanel.vue'
 import ResourceLoadingOverlay from '../components/emulator-portal/ResourceLoadingOverlay.vue'
 import InputSettings from '../components/InputSettings.vue'
@@ -249,6 +281,8 @@ const {
 const {
   isTouchLayout,
   shouldSuggestRotate,
+  viewportWidth,
+  viewportHeight,
   start: startViewport,
   stop: stopViewport,
 } = usePlayerViewport()
@@ -316,13 +350,10 @@ const {
 const {
   romMeta,
   roomInfo,
-  siblings,
-  versionMenuOpen,
   rom,
   bios,
   biosReady,
   platformInfo,
-  currentVersionLabel,
   loadingSub,
   loadMeta,
   resetForRouteChange,
@@ -359,7 +390,6 @@ const {
 remotePlayerKeyMaps = resolvedRemotePlayerKeyMaps
 
 const roomAllowsPlay = computed(() => roomAllowPlay.value)
-const canShowVersionSwitch = computed(() => isHostMode.value === true)
 const canSaveState = computed(() => isAuthed.value && signalMe.value?.isHost === true)
 
 const shouldShowVirtualGamepad = computed(() => {
@@ -462,13 +492,9 @@ const {
   onReload,
   reloadPage,
   goBack,
-  switchVersion,
   reloading,
 } = useRoomPlayerActions({
   router,
-  roomCode,
-  romMeta,
-  versionMenuOpen,
   portalRef,
   booted,
   markBooted,
@@ -490,6 +516,26 @@ const { isFullscreen, isPseudoFullscreen, isForcedLandscape, toggleFullscreen } 
 function onFullscreen() {
   toggleFullscreen()
 }
+
+// 保存 / 读档 / 重置 / 金手指放在哪里：手机端浮到画面右上角（与「按键透明度」同侧），
+// PC 宽屏排到画面右侧，窗口或缩放放不下时退回顶部工具条。规则见
+// composables/player/usePlayerActionsPlacement.js。
+const {
+  variant: actionsPlacement,
+  vertical: actionsVertical,
+  sideColumnWidth,
+} = usePlayerActionsPlacement({
+  isTouchLayout,
+  viewportWidth,
+  viewportHeight,
+  isFullscreen,
+  isForcedLandscape,
+})
+// 只有在放不下、退回顶部工具条时，这组按钮才留在工具条里（side / mobile 都由页面另行渲染）
+const showBarActions = computed(() => actionsPlacement.value === 'top')
+
+// 虚拟手柄透明度：点一下压到 20% 让出画面，再点一下恢复（选择会记住）
+const { dimmed: vpadDimmed, toggle: toggleVpadDimmed } = useVirtualPadOpacity()
 
 // 手机端：防止连点按钮 / 双指同时按手柄被浏览器当成缩放手势（放大了就回不去）
 const { isZoomed } = useTouchZoomGuard({
@@ -706,68 +752,6 @@ useRoomPlayerLifecycle({
   color: #fff;
 }
 
-.ver-switch { position: relative; }
-.ver-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--r-pill);
-  border: 0;
-  background: var(--clay-inset-surface);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 900;
-  font-family: inherit;
-  cursor: pointer;
-  box-shadow: var(--clay-in-sm);
-  transition: transform var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease), background var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease);
-}
-.ver-btn:hover {
-  background: var(--clay-surface-alt);
-  color: var(--text-primary);
-  transform: var(--clay-lift);
-  box-shadow: var(--clay-lift-shadow);
-}
-.ver-btn:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
-.ver-btn:focus-visible { outline: none; box-shadow: var(--clay-focus); }
-.ver-cur { color: var(--text-primary); }
-.ver-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 150px;
-  padding: 8px;
-  background: var(--clay-surface);
-  border: 0;
-  border-radius: var(--r-lg);
-  box-shadow: var(--clay-lg);
-  z-index: 40;
-}
-.ver-item {
-  display: block;
-  width: 100%;
-  padding: 9px 12px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-md);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 900;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
-}
-.ver-item:hover {
-  background: var(--clay-surface-alt);
-  color: var(--text-primary);
-  transform: var(--clay-lift);
-  box-shadow: var(--clay-lift-shadow);
-}
-.ver-item:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
-.ver-item.active { background: var(--clay-primary-grad); color: #fff; box-shadow: var(--clay-sm); }
 .room-chip.active { background: var(--clay-primary-grad); color: #fff; box-shadow: var(--clay-sm); }
 .chip-count {
   display: inline-flex;
@@ -819,11 +803,16 @@ useRoomPlayerLifecycle({
 }
 
 @media (min-width: 769px) {
-  .emu-area { padding: 16px 24px; }
+  /* 桌面端：右侧是图文按钮列（GameActionButtons 的 side 摆放）时，
+     左边放一块等宽占位（.emu-side-spacer），画面（crt-screen）才会停在页面正中；
+     列宽由 --side-actions-w 给出（usePlayerActionsPlacement 里的 sideColumnWidth）。 */
+  .emu-area { padding: 16px 24px; gap: 16px; justify-content: center; }
+  .emu-side-spacer { flex: 0 0 var(--side-actions-w, 176px); }
   .emu-frame {
+    flex: 0 1 1100px;
     max-width: 1100px;
     max-height: calc(100vh - 32px);
-    margin: 0 auto;
+    margin: 0;
     border-radius: var(--r-lg);
     border: 0;
     overflow: hidden;

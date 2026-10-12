@@ -4,20 +4,23 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.5.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.0`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.5.1**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.1`，同时打 `v1.5`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
 ## 功能
 
 - 游戏库：公开库、个人 ROM、收藏、回收站，支持父子版本（街机 clone、修订版、汉化版）。
-- 模拟器：浏览器内运行 libretro core，支持本地键盘、物理手柄和移动端虚拟手柄，输入映射按用户保存。手柄映射按设备保存并默认使用 XBOX 标准布局（按手柄上的字母一一对应：A 就是 A、B 就是 B、X 就是 X、Y 就是 Y；FC / NES 系列的 X / Y 行是连发 A / 连发 B，所以手柄的 X / Y 就是连发），PS / NS 等其他手柄在按键设置里逐键手动映射；按键设置的手柄分页会实时显示哪个物理键按下、对应哪一行，可逐键核对；单机默认第一个手柄控制 P1、第二个控制 P2，只有一个手柄时默认只控制 P1，控制顺序可在按键设置里改；联机房间内所有本地物理手柄都作为本机 P1 输入，不受单机座位设置或「不使用手柄」选项影响；房主控制 P1，客机仍只通过现有授权席位回传输入，观战者不能控制。物理手柄只由页面这一层读取后按下对应键位，模拟器自身不再读浏览器手柄（否则同一次按键会被 core 自己的 autoconfig 再处理一遍，出现 A+B、A/B 与 X/Y 对调）。手机竖屏、横屏都会显示虚拟手柄；触屏设备用画面左上角的悬浮按钮切全屏，手机横屏时可尝试锁定方向（iOS 等不支持锁定的浏览器会提示手动横屏）。
+- 模拟器：浏览器内运行 libretro core，支持本地键盘、物理手柄和移动端虚拟手柄，输入映射按用户保存。手柄映射按设备保存并默认使用 XBOX 标准布局（按手柄上的字母一一对应：A 就是 A、B 就是 B、X 就是 X、Y 就是 Y；FC / NES 系列的 X / Y 行是连发 A / 连发 B，所以手柄的 X / Y 就是连发），PS / NS 等其他手柄在按键设置里逐键手动映射；按键设置的手柄分页会实时显示哪个物理键按下、对应哪一行，可逐键核对；单机默认第一个手柄控制 P1、第二个控制 P2，只有一个手柄时默认只控制 P1，控制顺序可在按键设置里改；联机房间内所有本地物理手柄都作为本机 P1 输入，不受单机座位设置或「不使用手柄」选项影响；房主控制 P1，客机仍只通过现有授权席位回传输入，观战者不能控制。物理手柄只由页面这一层读取后按下对应键位，模拟器自身不再读浏览器手柄（否则同一次按键会被 core 自己的 autoconfig 再处理一遍，出现 A+B、A/B 与 X/Y 对调）。手机竖屏、横屏都会显示虚拟手柄；触屏设备用画面左上角的悬浮按钮切全屏，手机横屏时可尝试锁定方向（iOS 等不支持锁定的浏览器会提示手动横屏）；画面右上角另有「按键透明度」按钮（与全屏按钮分居两侧），点一下把整块虚拟手柄压到 20% 让出画面，再点一下恢复，选择会记住。手柄上的按键字母、方向箭头与「连发」都关掉了浏览器自带的长按手势，按住不放不会被「复制 / 搜一搜」菜单打断。
 - 玩家工具条：云存档读写、重载游戏（重启模拟器）、金手指。金手指按 ROM 分成两部分：管理员在后台为游戏内置的代码（玩家只需开关），以及玩家自己添加的代码（保存在本机浏览器）。两者都即时下发给 core，由 core 解析代码文本（Nestopia / FCEUmm / Snes9x / mGBA / Genesis Plus GX / PicoDrive / PCSX-ReARMed 等实现了 `retro_cheat_set` 的 core 生效）；未实现该接口的 core（如 FBNeo、MAME 2003-Plus、QuickNES）会忽略代码。
+- 播放页布局：手机端保存 / 读档 / 重置 / 金手指浮在画面右上角、紧挨「按键透明度」按钮，竖屏横排，横屏与全屏竖排并与它同列（排在正下方），顶部只留返回、居中的游戏信息与末端的版本选择 / 房间玩家列表；PC 宽屏同一组按钮改成图文按钮排在画面右侧、与画面上沿对齐，一行两个，窗口变窄或页面缩放排不开时收成一行一个，再放不下才退回顶部工具条。画面（crt-screen）左右等宽占位对称，始终停在页面正中，版本选择、房间玩家列表与全屏按钮位置不变。
+- 全屏与浮层：全屏的元素是整个播放页，金手指弹窗与按键设置在它内部渲染，弹窗按容器高度自适应、列表内部滚动 —— 原生全屏、iOS / 微信的 CSS 伪全屏、以及浏览器不给锁方向时整页被转成横版的兜底全屏下都能正常打开且不超出屏幕。
+- 站点图标：`frontend/public/favicon.svg` 是唯一源文件（粘土粉圆角方块 + 奶油色方向键与 A / B 键），`favicon.ico` 给老浏览器兜底，`apple-touch-icon.png` 供 iOS 加到主屏；页签与书签优先用 SVG。
 - 云存档：按 ROM 与槽位读写。
-- 联机房间：公开/私有房间、房间码与密码、聊天、席位同步；host 推流画面与音频，guest 通过 DataChannel 回传输入，游客默认观战。STUN / TURN 都能在后台填写，保存后玩家刷新页面即生效，不需要重新构建镜像。
+- 联机房间：公开/私有房间、房间码与密码、聊天、席位同步；host 推流画面与音频，guest 通过 DataChannel 回传输入，游客默认观战；房间内不提供 ROM 版本切换，统一跑进房时选定的版本。STUN / TURN 都能在后台填写，保存后玩家刷新页面即生效，不需要重新构建镜像。
 - 管理后台：用户、ROM、BIOS、站点设置（上传开关、联机开关、游客游玩、STUN 与 TURN 地址及连通性测试）；每个 ROM 可单独配置内置金手指（后台 ROM 列表里的「金手指」按钮）。
 - ROM 与用户列表里的时间统一按 `Asia/Shanghai` 显示：数据库连接、Drizzle 映射和接口输出都固定同一个时区，不再出现差 8 小时的混用。
-- ROM 封面与元数据可编辑；超过 3MB 的 ROM 可转存到独立远端存储（Node 或 PHP 版，见 `deploy/README.md`）。
+- ROM 封面与元数据可编辑；ROM 可转存到独立远端存储（Node 或 PHP 版，见 `deploy/README.md`），不限文件大小。
 
 ## 技术栈
 
@@ -34,6 +37,7 @@
 ```text
 .
 ├── frontend/                 # Vue 3 前端：src/api、components、composables、views
+│   └── public/               # 站点图标：favicon.svg（源文件）、favicon.ico、apple-touch-icon.png
 ├── server/                   # Hono API 与 WebSocket 服务
 │   ├── db/                   # Drizzle schema 与迁移
 │   ├── middleware/           # 认证、CSRF、安全头、限流、错误处理
@@ -154,7 +158,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.5.0"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.5.1"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -205,7 +209,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.1`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）。
 
 **6. 备份与恢复**
 

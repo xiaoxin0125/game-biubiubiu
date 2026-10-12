@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Games Online">
+  <title>Games Online</title>
+  <!-- 站点图标：粘土粉圆角方块 + 奶油色方向键与 A / B 键。
+       配色沿用 frontend/src/assets/global.css 的粘土变量：
+       粉 F9A8D4 到 F472B6、墨色 4E3348。
+       同目录的 favicon.ico 与 apple-touch-icon.png 由这个 SVG 导出：在浏览器里打开它，
+       用 canvas 分别画到 16 / 32 / 48 / 180 像素再存 PNG（180 那份要先铺一层同色渐变底，
+       iOS 主屏图标不接受透明角）。XML 注释里不能出现连续两个短横线。 -->
+  <defs>
+    <linearGradient id="clayPink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F9A8D4"/>
+      <stop offset="1" stop-color="#F472B6"/>
+    </linearGradient>
+    <!-- 上高光、下暗面：粘土表面的体积感，不用滤镜以便各处渲染一致 -->
+    <linearGradient id="clayGloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.62"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="clayShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.5" stop-color="#4E3348" stop-opacity="0"/>
+      <stop offset="1" stop-color="#4E3348" stop-opacity="0.22"/>
+    </linearGradient>
+    <linearGradient id="keyFace" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEFF6"/>
+    </linearGradient>
+
+    <g id="padKeys">
+      <rect x="21.5" y="15.4" width="11" height="30" rx="4.6"/>
+      <rect x="12" y="25" width="30" height="11" rx="4.6"/>
+      <circle cx="48" cy="41.6" r="4.7"/>
+      <circle cx="54" cy="28.6" r="4.7"/>
+    </g>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#clayPink)"/>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#clayGloss)"/>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#clayShade)"/>
+
+  <!-- 按键先垫一层墨色投影，再盖上奶油色表面 -->
+  <use href="#padKeys" y="1.8" fill="#4E3348" opacity="0.16"/>
+  <use href="#padKeys" fill="url(#keyFace)"/>
+</svg>

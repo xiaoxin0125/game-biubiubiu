@@ -20,7 +20,7 @@
       </span>
     </button>
 
-    <Teleport to="body">
+    <Teleport :to="panelTarget">
       <Transition name="clay-pop">
         <div
           v-if="open"
@@ -73,6 +73,14 @@ const panel = ref(null)
 const open = ref(false)
 const activeIndex = ref(-1)
 const panelStyle = ref({})
+// 原生全屏时浏览器只渲染全屏元素内部的内容，挂在 body 上的面板在全屏里会整个消失：
+// 全屏中改挂进全屏元素（播放页容器）。面板用 position: fixed + 视口坐标定位，
+// 播放页在原生全屏下没有 transform，坐标依旧对得上；不在全屏时照旧挂 body。
+const panelTarget = ref('body')
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null
+}
 
 const normalizedOptions = computed(() => props.options
   .map((option) => {
@@ -93,6 +101,7 @@ function toggle() {
 
 async function openPanel() {
   open.value = true
+  panelTarget.value = fullscreenElement() || 'body'
   const index = normalizedOptions.value.findIndex((option) => option.value === String(props.modelValue))
   activeIndex.value = index >= 0 ? index : firstEnabledIndex()
   await nextTick()

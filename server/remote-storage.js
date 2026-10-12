@@ -26,9 +26,6 @@ export const DIRECT_URL_PURPOSE = 'download'
 // 允许的对表误差，只用于吸收服务器之间的秒级漂移。
 export const DIRECT_URL_CLOCK_SKEW_SEC = 60
 
-// 超过这个体积的 ROM 才在界面上提供「上传到远端服务器」的选项。
-export const REMOTE_UPLOAD_THRESHOLD_BYTES = 3 * 1024 * 1024
-
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000
 const DOWNLOAD_TIMEOUT_MS = 60 * 1000
 const HEALTH_TIMEOUT_MS = 8 * 1000

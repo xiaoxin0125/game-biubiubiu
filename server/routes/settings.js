@@ -16,7 +16,6 @@ import {
 } from '../webrtc-settings.js'
 import { testStunUrls, probeTurnServer, probeTurnWithCredentials } from '../stun-test.js'
 import {
-  REMOTE_UPLOAD_THRESHOLD_BYTES,
   REMOTE_TOKEN_KEY,
   REMOTE_URL_KEY,
   REMOTE_DOWNLOAD_URL_KEY,
@@ -114,7 +113,6 @@ publicSettingsRoutes.get('/', async (c) => {
   for (const k of PUBLIC_KEYS) out[k] = all[k]
   // 只暴露“远端存储是否可用”，地址和密钥留在服务端
   out.remoteUploadAvailable = all[REMOTE_URL_KEY] && all[REMOTE_TOKEN_KEY] ? '1' : '0'
-  out.remoteUploadThresholdBytes = REMOTE_UPLOAD_THRESHOLD_BYTES
   return c.json(out)
 })
 

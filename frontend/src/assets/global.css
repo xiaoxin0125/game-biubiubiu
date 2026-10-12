@@ -630,6 +630,20 @@ html { scroll-behavior: smooth; }
    iOS / 微信 WebView 的 CSS 伪全屏下，手柄都不会被切到全屏层外面去。
    触屏设备全屏时隐藏顶部工具条，把整块屏幕让给画面，退出全屏靠画面左上角
    的悬浮按钮。 */
+/* 播放页里「实际能看到多大」的两个尺寸。下面被旋转成横版时本地宽高互换，
+   浮层（金手指弹窗、按键设置、加载卡片、房间面板）按这两个变量定尺寸，
+   不要直接用 vh / vw —— 那读到的是物理屏幕，横版下会算成竖屏的高度，
+   弹窗就顶出屏幕了。 */
+.player-page {
+  --view-w: 100vw;
+  --view-h: 100vh;
+}
+@supports (height: 100dvh) {
+  .player-page {
+    --view-w: 100dvw;
+    --view-h: 100dvh;
+  }
+}
 .player-page.is-pseudo-fullscreen {
   position: fixed;
   inset: 0;
@@ -683,6 +697,18 @@ html { scroll-behavior: smooth; }
     width: 100dvh;
     height: 100dvw;
     transform: translateX(100dvw) rotate(90deg);
+  }
+}
+/* 整页旋转成横版后本地宽高互换：浮层的「可视区域」也跟着换过来，
+   否则它们会按竖屏的 vh / vw 定尺寸而顶出屏幕（见文件上方 --view-* 的说明）。 */
+.player-page.is-forced-landscape.is-forced-landscape {
+  --view-w: 100vh;
+  --view-h: 100vw;
+}
+@supports (height: 100dvw) {
+  .player-page.is-forced-landscape.is-forced-landscape {
+    --view-w: 100dvh;
+    --view-h: 100dvw;
   }
 }
 .player-page.is-touch-layout.is-forced-landscape .player-bar { display: none; }

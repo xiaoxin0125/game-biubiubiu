@@ -47,11 +47,7 @@
           </div>
           <div class="pub-copy">
             <div class="pub-copy-title">上传到远端服务器</div>
-            <div class="pub-copy-hint">
-              {{ useRemoteStorage
-                ? `将转存到远端存储，本机只保留记录；${fileSizeMb}MB 转发需要一点时间`
-                : `当前文件 ${fileSizeMb}MB，超过 ${remoteThresholdMb}MB 可以转存到远端存储服务器` }}
-            </div>
+            <div class="pub-copy-hint">{{ remoteHint }}</div>
           </div>
         </label>
 
@@ -185,7 +181,7 @@ const percent = ref(0)
 const error = ref('')
 const dragging = ref(false)
 const maxMb = 100
-// 大文件可以选择转存到远端存储服务器（主站磁盘不够时用）
+// 可以选择把 ROM 转存到远端存储服务器（主站磁盘不够时用），不限文件大小
 const useRemoteStorage = ref(false)
 
 const asVariant = ref(false)
@@ -207,12 +203,20 @@ function releaseCoverUrl() {
 
 const coverPreview = computed(() => (coverFile.value ? coverUrl.value : ''))
 
-// 远端存储开关：仅在“已配置远端”且“文件超过阈值”时出现，且变体永远跟父 ROM
-const remoteThresholdBytes = computed(() => Number(settings.value.remoteUploadThresholdBytes) || 3 * 1024 * 1024)
+// 远端存储开关：只要已配置远端就出现（不限文件大小），变体永远跟父 ROM
 const remoteAvailable = computed(() => !!settings.value.remoteUploadAvailable)
-const canUseRemote = computed(() => remoteAvailable.value && !asVariant.value && !!file.value && file.value.size > remoteThresholdBytes.value)
-const remoteThresholdMb = computed(() => Math.round(remoteThresholdBytes.value / 1024 / 1024))
+const canUseRemote = computed(() => remoteAvailable.value && !asVariant.value)
 const fileSizeMb = computed(() => (file.value ? (file.value.size / 1024 / 1024).toFixed(1) : '0'))
+const remoteHint = computed(() => {
+  if (useRemoteStorage.value) {
+    return file.value
+      ? `将转存到远端存储，本机只保留记录；${fileSizeMb.value}MB 转发需要一点时间`
+      : '将转存到远端存储，本机只保留记录'
+  }
+  return file.value
+    ? `当前文件 ${fileSizeMb.value}MB，转存到远端存储服务器后本机只保留记录`
+    : '转存到远端存储服务器，本机只保留记录'
+})
 
 watch(canUseRemote, (allowed) => { if (!allowed) useRemoteStorage.value = false })
 

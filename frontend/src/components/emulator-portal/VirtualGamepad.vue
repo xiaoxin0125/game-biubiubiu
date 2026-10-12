@@ -1,9 +1,18 @@
 <template>
+  <!-- 手柄整块区域自带「长按防线」：@touchstart/@touchmove 从源头取消浏览器的原生
+       触摸手势，@selectstart / @dragstart / @copy / @contextmenu 再拦住选中与菜单
+       的每一层。原理与取舍见 onPadTouch 的注释。 -->
   <div
     v-if="enabled"
+    ref="padEl"
     class="vpad"
-    :class="{ 'vpad-landscape': landscape }"
+    :class="{ 'vpad-landscape': landscape, 'vpad-dimmed': dimmed }"
     @contextmenu.prevent
+    @selectstart.prevent
+    @dragstart.prevent
+    @copy.prevent
+    @touchstart="onPadTouch"
+    @touchmove="onPadTouch"
   >
     <!-- Left: virtual analog stick — supports diagonals by finger position -->
     <div class="vpad-group vpad-left">
@@ -110,6 +119,8 @@ const props = defineProps({
   onButton: { type: Function, default: null },
   pressButton: { type: Function, default: null },
   releaseButton: { type: Function, default: null },
+  // 手机端可以暂时把整块虚拟手柄压到 20% 透明度，让出画面。
+  dimmed: { type: Boolean, default: false },
 })
 
 const { mapping } = useInputMapping()
@@ -336,11 +347,43 @@ function release(btn) {
   resetButton(btn)
 }
 
+// ── 长按防复制（浏览器原生手势） ─────────────────────────
+// 按键上的字母（A/B/C/D、SELECT、START、连发）和方向箭头都是文本，手机浏览器
+// 自带的长按手势会把它们当成可选内容：先弹「复制 / 搜一搜 / 翻译」菜单，菜单还会
+// 顺手吞掉这次触摸 —— 玩家按住不放的键收不到抬起（onGlobalPointerEnd 只是事后
+// 兜底），手感会突然断掉。CSS 的 user-select / -webkit-touch-callout 只能挡住
+// 守规矩的内核，微信 XWEB 与部分国产浏览器照样弹菜单，所以这里在触摸的源头取消
+// 默认行为：浏览器的长按手势根本不会开始，也就没有选中和菜单可弹。
+// 手柄的按下 / 滑动 / 抬起全部走 pointer 事件（不依赖浏览器合成的 click），
+// 取消 touch 的默认行为不会影响手感。
+const padEl = ref(null)
+
+function viewportScale() {
+  const scale = window.visualViewport?.scale
+  return typeof scale === 'number' && scale > 0 ? scale : 1
+}
+
+// 画面已经被放大时放行：这时必须让用户能捏合或拖动把缩放还原（跟
+// useTouchZoomGuard 一个规矩 —— 那个守卫也是放大后松手，这里不能抢着拦）。
+function onPadTouch(e) {
+  if (viewportScale() > 1.01) return
+  e.preventDefault()
+}
+
+// 兜底：万一某个内核无视上面的取消、自己弹出长按菜单（自带菜单的国产浏览器），
+// 只要选中范围落在手柄里就立刻清掉选中 —— 菜单挂在选中上，选中没了菜单就收回去，
+// 也不会继续吞这一局的手指。selectionchange 只在 document 上派发。
+function onSelectionChange() {
+  const selection = document.getSelection?.()
+  if (!selection || selection.isCollapsed) return
+  const anchor = selection.anchorNode
+  if (anchor && padEl.value?.contains(anchor)) selection.removeAllRanges()
+}
+
 // ── Safety-net: document-level pointerup/cancel ─────────
-// Some browsers (notably WeChat WebView) can cancel a pointer mid-stroke
-// without firing pointercancel on our element (e.g. their native 选中 menu
-// pops up). Without this fallback the D-pad knob could stick in a held
-// direction. Listen globally and force-release whatever that pointer owned.
+// 长按菜单已经由上面的 onPadTouch 拦掉；但触摸仍可能被别的东西取消（WebView 的
+// 边缘手势、系统弹窗等），这类取消不一定在元素上派发 pointercancel，按住的
+// D-pad 或按键就会卡住。这里在 window 上兜底：谁的手指没了就松开谁。
 function onGlobalPointerEnd(e) {
   // D-pad
   if (dpadPointerId === e.pointerId) {
@@ -369,12 +412,14 @@ onMounted(() => {
   window.addEventListener('pointercancel', onGlobalPointerEnd)
   window.addEventListener('blur', resetAllButtons)
   document.addEventListener('visibilitychange', onVisibilityChange)
+  document.addEventListener('selectionchange', onSelectionChange)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onGlobalPointerEnd)
   window.removeEventListener('pointercancel', onGlobalPointerEnd)
   window.removeEventListener('blur', resetAllButtons)
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  document.removeEventListener('selectionchange', onSelectionChange)
   resetAllButtons()
   // Clear any pending turbo state on teardown
   for (const l of turboLoops.values()) clearInterval(l)
@@ -526,8 +571,23 @@ function onDpadEnd(e) {
     calc(16px + env(safe-area-inset-left));
   gap: 12px;
   touch-action: none;
+  opacity: 1;
+  transition: opacity var(--t-fast) var(--clay-ease);
+}
+.vpad.vpad-dimmed { opacity: 0.2; }
+
+/* 手柄整块区域一律不可选中：按键字母、SELECT / START /「连发」和方向箭头都是文本，
+   浏览器自带的长按手势会把它们当成可选内容并弹出「复制 / 搜一搜 / 翻译」。
+   这里连同后代一起声明 —— user-select 与 -webkit-touch-callout 都不是继承属性，
+   只写在外层挡不住子元素。子元素里只有 touch-action 需要各自声明（不可继承）。
+   真机上仍可能被自带长按菜单的内核无视，所以模板上还有一层事件拦截兜底。 */
+.vpad,
+.vpad * {
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .vpad-group { pointer-events: auto; display: flex; align-items: center; justify-content: center; }
 .vpad-left  { justify-content: flex-start; }
@@ -611,13 +671,8 @@ function onDpadEnd(e) {
   transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   place-self: center;
   padding: 0;
-  /* Block all native touch gestures so rapid tapping never triggers
-     double-tap-zoom, text selection, or the iOS long-press callout. */
+  /* 连点不会被当成双击缩放（其余原生手势见 .vpad 的规则） */
   touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
 }
 .face-btn.pressed {
   background: color-mix(in srgb, var(--fc) 34%, #fff);
@@ -742,10 +797,6 @@ function onDpadEnd(e) {
   box-shadow: var(--clay-md);
   transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
 }
 .sh-btn.pressed {
   background: var(--clay-pink-soft);
@@ -768,10 +819,6 @@ function onDpadEnd(e) {
   box-shadow: var(--clay-sm);
   transition: background var(--t-fast) var(--clay-ease), transform var(--t-fast) var(--clay-ease), color var(--t-fast) var(--clay-ease), box-shadow var(--t-fast) var(--clay-ease);
   touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
 }
 .sys-btn.pressed {
   background: var(--clay-pink-soft);

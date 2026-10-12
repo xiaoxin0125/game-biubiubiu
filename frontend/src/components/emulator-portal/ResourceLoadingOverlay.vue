@@ -208,7 +208,8 @@ function formatBytes(bytes) {
 
 /* ---- 进度区 ---- */
 .load-progress {
-  width: min(360px, 84vw);
+  /* 用 --view-w：全屏 + 整页被转成横版时本地宽高互换，vw 会算成竖屏的宽度 */
+  width: min(360px, calc(var(--view-w, 100vw) * 0.84));
   margin-top: 6px;
   display: flex;
   flex-direction: column;
@@ -256,7 +257,8 @@ function formatBytes(bytes) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 30vh;
+  /* --view-h：横版全屏下本地高宽互换，vh 会算成竖屏的高度 */
+  max-height: calc(var(--view-h, 100vh) * 0.3);
   overflow: auto;
 }
 .load-task {
@@ -306,7 +308,7 @@ function formatBytes(bytes) {
 /* 手机横屏时纵向空间紧张：任务列表收紧，标题缩小一点。 */
 @media (max-height: 460px) {
   .loading-stack { display: none; }
-  .load-tasks { max-height: 22vh; }
+  .load-tasks { max-height: calc(var(--view-h, 100vh) * 0.22); }
   .loading-title { font-size: 11px; }
   .loading-game { font-size: 14px; }
 }

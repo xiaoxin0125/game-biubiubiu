@@ -147,12 +147,11 @@
         <div class="field">
           <label class="label" for="webrtc-stun-urls">STUN 服务器地址</label>
           <textarea id="webrtc-stun-urls" v-model.trim="form.webrtcStunUrls" class="input" rows="3" maxlength="2000" placeholder="留空即可部署；后续填写 stun:主机:端口，多个地址用逗号或换行分隔"></textarea>
-          <p class="field-hint">STUN 用于联机时发现公网地址。默认留空，不影响网站部署和单机游玩。保存后无需重新打包，其他玩家刷新页面后生效；跨网络联机可能还需要 TURN 中继。</p>
+          <p class="field-hint">STUN 用于联机时发现公网地址。</p>
           <div class="remote-test">
             <button class="btn" type="button" :disabled="testingStun" @click="testStun">
               {{ testingStun ? '测试中…' : '测试 STUN 服务器' }}
             </button>
-            <span class="field-hint stun-test-note">完整要求：云安全组、系统防火墙、宝塔都要放行 3478/udp（stuns: 则放行 5349/tcp）</span>
           </div>
           <p v-if="stunTestResult" class="remote-test-result stun-test-result" :class="{ ok: stunTestResult.ok }">{{ stunTestResult.text }}</p>
         </div>
@@ -169,7 +168,7 @@
         <div class="field">
           <label class="label" for="webrtc-turn-urls">TURN 服务器地址</label>
           <textarea id="webrtc-turn-urls" v-model.trim="form.webrtcTurnUrls" class="input" rows="2" maxlength="2000" placeholder="留空即不启用中继；填写 turn:主机:端口?transport=udp,turn:主机:端口?transport=tcp"></textarea>
-          <p class="field-hint">只有双方网络无法直连（对称 NAT、公司/校园网）时才会用到中继，能直连的玩家不受影响。地址填 TURN 服务所在机器的公网地址，端口和中继端口窗口都要在安全组放行。</p>
+          <p class="field-hint">只有双方网络无法直连（对称 NAT、公司/校园网）时才会用到中继，能直连的玩家不受影响。</p>
         </div>
         <div class="site-fields">
           <div class="field">
@@ -201,7 +200,7 @@
         <div class="field">
           <label class="label" for="remote-url">远端服务地址</label>
           <input id="remote-url" v-model.trim="form.remoteUploadUrl" class="input" maxlength="200" placeholder="http://127.0.0.1:8790 或 http://另一台服务器:8790" />
-          <p class="field-hint">超过 3MB 的 ROM 可以选择转存到这台服务器，上传与播放都由主站带密钥转发，密钥不会下发到浏览器。远端服务代码在 <code>/www/wwwroot/rom-upload</code>，详见该目录的 README。</p>
+          <p class="field-hint">上传 ROM 时可以选择转存到这台服务器。远端服务代码在 <code>/rom-upload</code>，详见该目录的 README。</p>
         </div>
         <div class="site-fields">
           <div class="field">
@@ -220,7 +219,7 @@
             </div>
           </div>
         </div>
-        <p class="field-hint">远端是否可用只看「地址 + 密钥」是否都已保存：都填好后，上传 ROM 时超过 3MB 就会出现「上传到远端服务器」开关。</p>
+        <p class="field-hint">远端是否可用只看「地址 + 密钥」是否都已保存：都填好后，上传 ROM 时就会出现「上传到远端服务器」开关。</p>
       </div>
 
       <div class="site-block">
@@ -265,7 +264,7 @@
         <label class="toggle-row">
           <div class="toggle-text">
             <div class="tr-t">启用远端核心托管</div>
-            <div class="tr-s">开启后，模拟器核心（js/wasm，合计约 100MB）由下面的资源服务器直供，不再占用本站出口带宽；关闭或地址不可用时自动回到本站 <code>/api/cores</code></div>
+            <div class="tr-s">开启后，模拟器核心由下面的资源服务器直供；关闭或地址不可用时自动回到本站 <code>/api/cores</code></div>
           </div>
           <div class="toggle-sw">
             <input type="checkbox" v-model="form.coresRemoteEnabled" />
@@ -276,11 +275,7 @@
           <label class="label" for="cores-base-url">远端核心地址</label>
           <input id="cores-base-url" v-model.trim="form.coresBaseUrl" class="input" maxlength="200" placeholder="https://cores.example.com/releases" />
           <p class="field-hint">
-            必须能被玩家的浏览器打开（HTTPS，且该站要允许跨域读取）。每一版核心按「发布版本 + 文件名」取地址，
-            版本号由文件内容生成，所以换地址不会重复下载，也不会出现新旧核心混用。
-            发布方式：<code>node deploy/build-cores.mjs</code> → <code>deploy/sync-cores.sh</code>。
-            地址和上面的开关分开保存：开关关着也能先把地址存下来、随时可改，等测通了再打开开关；
-            关闭时忽略环境变量里的旧值，立刻回到本站 <code>/api/cores</code>。
+            必须能被玩家的浏览器打开（HTTPS，且该站要允许跨域读取）。
           </p>
         </div>
         <div class="field">

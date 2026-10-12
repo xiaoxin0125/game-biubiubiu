@@ -1,5 +1,8 @@
 <template>
-  <Teleport to="body">
+  <!-- 不做 Teleport：全屏的元素是整个播放页（.player-page），原生全屏只有它内部的内容
+       会被渲染，挂在 body 上的面板在全屏里点开等于没反应；iOS / 微信的 CSS 伪全屏也会
+       把 body 上的面板压在播放页（z-index 500）下面。面板留在播放页里，三种全屏都正常，
+       整页被 CSS 转成横版时也跟着一起转，方向才对。 -->
   <div class="is-overlay">
     <div class="is-panel" :class="{ 'source-mode': props.sourceStyle || props.roomMode, 'room-mode': props.roomMode }">
       <header class="is-head">
@@ -100,7 +103,6 @@
       </footer>
     </div>
   </div>
-  </Teleport>
 </template>
 
 <script setup>
@@ -426,7 +428,9 @@ onBeforeUnmount(() => {
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .is-panel {
-  width: 420px; max-width: 100%; max-height: 86vh;
+  /* 按遮罩（铺满播放页）算高度：全屏后整页被 CSS 转成横版时本地高宽互换，
+     用 vh 会算成竖屏的高度，面板会顶出屏幕。 */
+  width: 420px; max-width: 100%; max-height: 100%;
   display: flex; flex-direction: column;
   background: var(--clay-surface);
   border: 0;

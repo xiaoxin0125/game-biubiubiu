@@ -1,91 +1,93 @@
 <template>
-  <Teleport to="body">
-    <div class="mask" @click.self="$emit('close')">
-      <div class="dialog" role="dialog" aria-modal="true" aria-label="金手指">
-        <header class="dh">
-          <h3>金手指</h3>
-          <span v-if="coreName" class="core-chip">{{ coreName }}</span>
-          <button class="btn btn-ghost btn-icon btn-sm dlg-close" @click="$emit('close')" aria-label="关闭">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  <!-- 不做 Teleport：全屏的元素是整个播放页（.player-page），原生全屏只有它内部的内容
+       会被渲染 —— 挂在 body 上的弹窗在全屏里点了也出不来；iOS / 微信的 CSS 伪全屏也会把
+       body 上的弹窗压在播放页（z-index 500）下面。弹窗留在播放页里，三种全屏都正常，
+       整页被 CSS 转成横版时也跟着一起转，方向才对。 -->
+  <div class="mask" @click.self="$emit('close')">
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="金手指">
+      <header class="dh">
+        <h3>金手指</h3>
+        <span v-if="coreName" class="core-chip">{{ coreName }}</span>
+        <button class="btn btn-ghost btn-icon btn-sm dlg-close" @click="$emit('close')" aria-label="关闭">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+
+      <div class="dialog-body">
+        <p v-if="!supported" class="warn">
+          当前核心 <b>{{ coreName || '未知' }}</b> 不支持金手指，代码不会生效。
+        </p>
+
+        <section v-if="builtinCheats.length" class="group">
+          <h4 class="group-title">游戏内置</h4>
+          <div class="list">
+            <div v-for="item in builtinCheats" :key="item.id" class="row" :class="{ off: !item.enabled }">
+              <button
+                class="switch"
+                :class="{ on: item.enabled }"
+                :aria-label="item.enabled ? '关闭该代码' : '启用该代码'"
+                @click="$emit('toggle', item.id)"
+              >{{ item.enabled ? '开' : '关' }}</button>
+              <div class="fields">
+                <span class="label-text">{{ item.desc || '金手指' }}</span>
+                <code class="code-text">{{ item.code }}</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="group">
+          <h4 class="group-title">我的代码</h4>
+          <div v-if="cheats.length" class="list">
+            <div v-for="item in cheats" :key="item.id" class="row" :class="{ off: !item.enabled }">
+              <button
+                class="switch"
+                :class="{ on: item.enabled }"
+                :aria-label="item.enabled ? '关闭该代码' : '启用该代码'"
+                @click="$emit('toggle', item.id)"
+              >{{ item.enabled ? '开' : '关' }}</button>
+              <div class="fields">
+                <input
+                  class="input cheat-code"
+                  :value="item.code"
+                  spellcheck="false"
+                  placeholder="代码"
+                  @change="$emit('update', item.id, { code: $event.target.value })"
+                />
+                <input
+                  class="input cheat-desc"
+                  :value="item.desc"
+                  maxlength="40"
+                  placeholder="备注（可选）"
+                  @change="$emit('update', item.id, { desc: $event.target.value })"
+                />
+              </div>
+              <button class="btn btn-ghost btn-icon btn-sm del" aria-label="删除" @click="$emit('remove', item.id)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+              </button>
+            </div>
+          </div>
+          <p v-else class="empty">还没有自己的代码</p>
+        </section>
+
+        <form class="add" @submit.prevent="submit">
+          <div class="add-fields">
+            <input v-model="draftCode" class="input cheat-code" spellcheck="false" placeholder="输入代码" />
+            <input v-model="draftDesc" class="input cheat-desc" maxlength="40" placeholder="备注（可选）" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="!draftCode.trim() || cheats.length >= maxCheats">
+            添加并应用
           </button>
-        </header>
-
-        <div class="dialog-body">
-          <p v-if="!supported" class="warn">
-            当前核心 <b>{{ coreName || '未知' }}</b> 不支持金手指，代码不会生效。
-          </p>
-
-          <section v-if="builtinCheats.length" class="group">
-            <h4 class="group-title">游戏内置</h4>
-            <div class="list">
-              <div v-for="item in builtinCheats" :key="item.id" class="row" :class="{ off: !item.enabled }">
-                <button
-                  class="switch"
-                  :class="{ on: item.enabled }"
-                  :aria-label="item.enabled ? '关闭该代码' : '启用该代码'"
-                  @click="$emit('toggle', item.id)"
-                >{{ item.enabled ? '开' : '关' }}</button>
-                <div class="fields">
-                  <span class="label-text">{{ item.desc || '金手指' }}</span>
-                  <code class="code-text">{{ item.code }}</code>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="group">
-            <h4 class="group-title">我的代码</h4>
-            <div v-if="cheats.length" class="list">
-              <div v-for="item in cheats" :key="item.id" class="row" :class="{ off: !item.enabled }">
-                <button
-                  class="switch"
-                  :class="{ on: item.enabled }"
-                  :aria-label="item.enabled ? '关闭该代码' : '启用该代码'"
-                  @click="$emit('toggle', item.id)"
-                >{{ item.enabled ? '开' : '关' }}</button>
-                <div class="fields">
-                  <input
-                    class="input cheat-code"
-                    :value="item.code"
-                    spellcheck="false"
-                    placeholder="代码"
-                    @change="$emit('update', item.id, { code: $event.target.value })"
-                  />
-                  <input
-                    class="input cheat-desc"
-                    :value="item.desc"
-                    maxlength="40"
-                    placeholder="备注（可选）"
-                    @change="$emit('update', item.id, { desc: $event.target.value })"
-                  />
-                </div>
-                <button class="btn btn-ghost btn-icon btn-sm del" aria-label="删除" @click="$emit('remove', item.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-                </button>
-              </div>
-            </div>
-            <p v-else class="empty">还没有自己的代码</p>
-          </section>
-
-          <form class="add" @submit.prevent="submit">
-            <div class="add-fields">
-              <input v-model="draftCode" class="input cheat-code" spellcheck="false" placeholder="输入代码" />
-              <input v-model="draftDesc" class="input cheat-desc" maxlength="40" placeholder="备注（可选）" />
-            </div>
-            <button type="submit" class="btn btn-primary btn-sm" :disabled="!draftCode.trim() || cheats.length >= maxCheats">
-              添加并应用
-            </button>
-          </form>
-          <p v-if="error" class="err">{{ error }}</p>
-        </div>
-
-        <footer class="df">
-          <button v-if="cheats.length" class="btn btn-sm" type="button" @click="$emit('clear')">清空我的代码</button>
-          <button class="btn btn-sm" type="button" @click="$emit('close')">关闭</button>
-        </footer>
+        </form>
+        <p v-if="error" class="err">{{ error }}</p>
       </div>
+
+      <footer class="df">
+        <button v-if="cheats.length" class="btn btn-sm" type="button" @click="$emit('clear')">清空我的代码</button>
+        <button class="btn btn-sm" type="button" @click="$emit('close')">关闭</button>
+      </footer>
     </div>
-  </Teleport>
+  </div>
 </template>
 
 <script setup>
@@ -139,7 +141,10 @@ function submit() {
   flex-direction: column;
   width: 100%;
   max-width: 468px;
-  max-height: 90vh;
+  /* 按遮罩（铺满播放页）算高度，不用 90vh：全屏后整页被 CSS 转成横版时，
+     容器本地高度是 100vw，vh 还是竖屏的高度，弹窗会高过屏幕。
+     代码多时由 .dialog-body 自己滚动，不会顶出画面。 */
+  max-height: 100%;
   overflow: hidden;
   background: var(--clay-surface);
   border: 0;
@@ -242,6 +247,13 @@ function submit() {
 .switch:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 
 .input { height: 40px; }
+/* 播放页整页关掉了文本选中（长按不出菜单），但金手指代码要能选中复制 */
+.input,
+.code-text {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
 .cheat-code { font-family: ui-monospace, 'SF Mono', monospace; }
 .cheat-desc { font-size: 12px; }
 

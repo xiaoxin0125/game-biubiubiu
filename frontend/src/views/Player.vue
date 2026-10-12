@@ -14,6 +14,7 @@
       :can-cheat="canCheat"
       :show-keys="!isTouchLayout"
       :show-fullscreen="!isTouchLayout"
+      :show-actions="showBarActions"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
@@ -41,7 +42,9 @@
       </template>
     </GameOverlay>
 
-    <div class="emu-area">
+    <div class="emu-area" :style="{ '--side-actions-w': sideColumnWidth }">
+      <!-- 右侧按钮列的等宽占位：左右对称，画面（crt-screen）才会停在页面正中 -->
+      <div v-if="actionsPlacement === 'side'" class="emu-side-spacer" aria-hidden="true"></div>
       <div class="emu-frame">
         <EmulatorPortal
           v-if="portalActive"
@@ -84,7 +87,46 @@
           :active="isFullscreen"
           @toggle="onFullscreen"
         />
+
+        <!-- 手机端：保存 / 读档 / 重置 / 金手指与「按键透明度」按钮同侧（画面右上角），
+             竖屏横排，横屏与全屏改成竖排 -->
+        <GameActionButtons
+          v-if="actionsPlacement === 'mobile'"
+          variant="mobile"
+          :vertical="actionsVertical"
+          :fullscreen="isFullscreen"
+          :can-save="canSaveState"
+          :can-reload="canReload"
+          :can-cheat="canCheat"
+          @save-state="onSaveState"
+          @load-state="onLoadState"
+          @reload="onReload"
+          @cheats="showCheats = true"
+        />
+
+        <!-- 手机端「按键透明度」按钮：画面右上角，和左上角的全屏按钮分居两侧 -->
+        <VirtualGamepadOpacityButton
+          v-if="actionsPlacement === 'mobile'"
+          :dimmed="vpadDimmed"
+          :fullscreen="isFullscreen"
+          @toggle="toggleVpadDimmed"
+        />
       </div>
+
+      <!-- PC 宽屏：同一组按钮改成图文按钮放在画面右侧，一行两个 -->
+      <GameActionButtons
+        v-if="actionsPlacement === 'side'"
+        variant="side"
+        :can-save="canSaveState"
+        :can-reload="canReload"
+        :can-cheat="canCheat"
+        :show-keys="!isTouchLayout"
+        @save-state="onSaveState"
+        @load-state="onLoadState"
+        @reload="onReload"
+        @cheats="showCheats = true"
+        @keys="openInputSettings"
+      />
     </div>
 
     <Transition name="hint">
@@ -102,6 +144,7 @@
       v-if="shouldShowVirtualGamepad"
       :platform="romMeta?.platform"
       :landscape-rotate="isForcedLandscape"
+      :dimmed="vpadDimmed"
       :press-button="pressSoloGamepadButton"
       :release-button="releaseSoloGamepadButton"
     />
@@ -145,6 +188,8 @@ import { useSaveState } from '../composables/player/useSaveState.js'
 import { useCheats } from '../composables/player/useCheats.js'
 import { usePlayerUi } from '../composables/player/usePlayerUi.js'
 import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
+import { usePlayerActionsPlacement } from '../composables/player/usePlayerActionsPlacement.js'
+import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
@@ -158,6 +203,8 @@ import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
+import GameActionButtons from '../components/emulator-portal/GameActionButtons.vue'
+import VirtualGamepadOpacityButton from '../components/emulator-portal/VirtualGamepadOpacityButton.vue'
 import ResourceLoadingOverlay from '../components/emulator-portal/ResourceLoadingOverlay.vue'
 import InputSettings from '../components/InputSettings.vue'
 
@@ -194,6 +241,8 @@ const {
 const {
   isTouchLayout,
   shouldSuggestRotate,
+  viewportWidth,
+  viewportHeight,
   start: startViewport,
   stop: stopViewport,
 } = usePlayerViewport()
@@ -339,6 +388,26 @@ const { isFullscreen, isPseudoFullscreen, isForcedLandscape, toggleFullscreen } 
 function onFullscreen() {
   toggleFullscreen()
 }
+
+// 保存 / 读档 / 重置 / 金手指放在哪里：手机端浮到画面右上角（与「按键透明度」同侧），
+// PC 宽屏排到画面右侧，窗口或缩放放不下时退回顶部工具条。规则见
+// composables/player/usePlayerActionsPlacement.js。
+const {
+  variant: actionsPlacement,
+  vertical: actionsVertical,
+  sideColumnWidth,
+} = usePlayerActionsPlacement({
+  isTouchLayout,
+  viewportWidth,
+  viewportHeight,
+  isFullscreen,
+  isForcedLandscape,
+})
+// 只有在放不下、退回顶部工具条时，这组按钮才留在工具条里（side / mobile 都由页面另行渲染）
+const showBarActions = computed(() => actionsPlacement.value === 'top')
+
+// 虚拟手柄透明度：点一下压到 20% 让出画面，再点一下恢复（选择会记住）
+const { dimmed: vpadDimmed, toggle: toggleVpadDimmed } = useVirtualPadOpacity()
 
 // 手机端：防止连点按钮 / 双指同时按手柄被浏览器当成缩放手势（放大了就回不去）
 const { isZoomed } = useTouchZoomGuard({
@@ -538,11 +607,16 @@ useSoloPlayerLifecycle({
 }
 
 @media (min-width: 769px) {
-  .emu-area { padding: 16px 24px; }
+  /* 桌面端：右侧是图文按钮列（GameActionButtons 的 side 摆放）时，
+     左边放一块等宽占位（.emu-side-spacer），画面（crt-screen）才会停在页面正中；
+     列宽由 --side-actions-w 给出（usePlayerActionsPlacement 里的 sideColumnWidth）。 */
+  .emu-area { padding: 16px 24px; gap: 16px; justify-content: center; }
+  .emu-side-spacer { flex: 0 0 var(--side-actions-w, 176px); }
   .emu-frame {
+    flex: 0 1 1100px;
     max-width: 1100px;
     max-height: calc(100vh - 32px);
-    margin: 0 auto;
+    margin: 0;
     border-radius: var(--r-lg);
     border: 0;
     overflow: hidden;

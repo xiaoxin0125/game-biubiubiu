@@ -16,7 +16,7 @@ import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-rom
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
 import { listRomCheats } from '../rom-cheats.js'
-import { remoteDelete, remoteOpenFile, remoteUpload, REMOTE_UPLOAD_THRESHOLD_BYTES, remoteStorageConfig, buildRemoteDownloadUrl } from '../remote-storage.js'
+import { remoteDelete, remoteOpenFile, remoteUpload, remoteStorageConfig, buildRemoteDownloadUrl } from '../remote-storage.js'
 
 const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
 const LEGACY_UPLOAD_ROOTS = [
@@ -459,9 +459,9 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   const rowDefaultCore = normalizeDefaultCore(platform, body.defaultCore)
   if (rowDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
 
-  // Large ROMs can be pushed to the standalone rom-upload service instead of
-  // this server's disk. Variants always follow the parent, so the flag is only
-  // honoured for top-level ROMs.
+  // ROMs of any size can be pushed to the standalone rom-upload service instead
+  // of this server's disk. Variants always follow the parent, so the flag is
+  // only honoured for top-level ROMs.
   const wantsRemote = String(body.storage || '') === 'remote' && !parentRomId
   let storage = 'local'
   let remoteFileId = null
@@ -469,9 +469,6 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   let storedBytes = 0
   let storedSha = null
 
-  if (wantsRemote && file.size <= REMOTE_UPLOAD_THRESHOLD_BYTES) {
-    return c.json({ error: `只有超过 ${Math.round(REMOTE_UPLOAD_THRESHOLD_BYTES / 1024 / 1024)}MB 的 ROM 才能上传到远端服务器` }, 400)
-  }
   if (wantsRemote) {
     const remote = await remoteStorageConfig()
     if (!remote.configured) {

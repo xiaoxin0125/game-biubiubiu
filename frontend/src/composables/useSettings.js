@@ -9,7 +9,6 @@ const DEFAULTS = {
   userUploadEnabled: true,
   // 远端存储（大 ROM 转存）是否已在站点设置里配置好
   remoteUploadAvailable: false,
-  remoteUploadThresholdBytes: 3 * 1024 * 1024,
 }
 
 const settings = ref({ ...DEFAULTS })
@@ -22,8 +21,6 @@ function normalize(raw) {
   for (const key of ['netplayEnabled', 'guestPlayEnabled', 'userUploadEnabled', 'remoteUploadAvailable']) {
     if (typeof out[key] === 'string') out[key] = out[key] === '1'
   }
-  const threshold = Number(out.remoteUploadThresholdBytes)
-  out.remoteUploadThresholdBytes = Number.isFinite(threshold) && threshold > 0 ? threshold : DEFAULTS.remoteUploadThresholdBytes
   return out
 }
 

@@ -98,7 +98,8 @@ watch(() => props.chat.length, async () => {
   top: 64px;
   bottom: 16px;
   width: 340px;
-  max-width: calc(100vw - 32px);
+  /* 用 --view-w：全屏且整页被转成横版时本地宽高互换，vw 会算成竖屏的宽度 */
+  max-width: calc(var(--view-w, 100vw) - 32px);
   background: var(--clay-surface);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);

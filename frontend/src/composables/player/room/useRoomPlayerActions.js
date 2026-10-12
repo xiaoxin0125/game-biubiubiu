@@ -1,10 +1,10 @@
 import { ref } from 'vue'
 
+// 房间内的动作：重载游戏、返回列表。
+// ROM 版本切换已经从房间顶部移除（房间统一跑进房时选定的版本），这里不再有切换动作；
+// 单机那套见 composables/player/solo/useSoloPlayerActions.js。
 export function useRoomPlayerActions({
   router,
-  roomCode,
-  romMeta,
-  versionMenuOpen,
   portalRef,
   booted,
   markBooted,
@@ -59,13 +59,6 @@ export function useRoomPlayerActions({
     router.push('/rooms')
   }
 
-  async function switchVersion(v) {
-    versionMenuOpen.value = false
-    if (!v || v.id === romMeta.value?.id) return
-    await portalRef.value?.destroy?.()
-    router.push(`/rooms/${roomCode}/play/${v.id}`)
-  }
-
   return {
     reloading,
     onBooted,
@@ -73,6 +66,5 @@ export function useRoomPlayerActions({
     onReload,
     reloadPage,
     goBack,
-    switchVersion,
   }
 }
