@@ -1,3 +1,10 @@
+// 表里没列出的平台在前端会回落到这里的默认值；扩展名与核心是前后端共用的唯一
+// 来源（frontend/src/constants/platforms.js 里写的那两份会被覆盖）。
+//
+// 三对区域别名（nes/famicom、sfc/snes、megadrive/genesis）在本表里是两条完全
+// 相同的记录：同一台硬件、同一套扩展名、同一批核心。改动其中一边（新增扩展名、
+// 调整核心顺序）必须同步另一边，否则同一款游戏会因为上传时选了不同叫法而落到
+// 不同核心上。
 export const PLATFORM_ROM_REGISTRY = Object.freeze({
   arcade: {
     fileExtensions: ['.zip'],

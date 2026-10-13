@@ -28,16 +28,21 @@
     </footer>
 
     <ChangelogDialog v-if="changelogOpen" :current-version="appVersion" @close="changelogOpen = false" />
+    <AppDialog />
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
+import AppDialog from './components/AppDialog.vue'
 import ChangelogDialog from './components/ChangelogDialog.vue'
+import { useAppDialog } from './composables/useAppDialog.js'
 
 const route = useRoute()
+const { cancelAll } = useAppDialog()
+watch(() => route.fullPath, cancelAll, { flush: 'sync' })
 const showChrome = computed(() => !route.meta?.fullscreen)
 // 构建时由 vite.config.js 的 define 注入，值与 package.json、镜像标签一致
 const appVersion = __APP_VERSION__

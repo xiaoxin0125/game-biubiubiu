@@ -15,6 +15,8 @@
       :show-keys="!isTouchLayout"
       :show-fullscreen="!isTouchLayout"
       :show-actions="showBarActions"
+      :can-swap-disk="canUseFdsDisk"
+      :can-change-disk="canUseFdsDisk"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
@@ -22,6 +24,8 @@
       @load-state="onLoadState"
       @reload="onReload"
       @cheats="showCheats = true"
+      @swap-disk-side="swapDiskSide"
+      @change-disk="changeDisk"
     >
       <template #extras>
         <div v-if="siblings.length > 1" class="ver-switch" @click.stop>
@@ -98,10 +102,14 @@
           :can-save="canSaveState"
           :can-reload="canReload"
           :can-cheat="canCheat"
+          :can-swap-disk="canUseFdsDisk"
+          :can-change-disk="canUseFdsDisk"
           @save-state="onSaveState"
           @load-state="onLoadState"
           @reload="onReload"
           @cheats="showCheats = true"
+          @swap-disk-side="swapDiskSide"
+          @change-disk="changeDisk"
         />
 
         <!-- 手机端「按键透明度」按钮：画面右上角，和左上角的全屏按钮分居两侧 -->
@@ -121,11 +129,15 @@
         :can-reload="canReload"
         :can-cheat="canCheat"
         :show-keys="!isTouchLayout"
+        :can-swap-disk="canUseFdsDisk"
+        :can-change-disk="canUseFdsDisk"
         @save-state="onSaveState"
         @load-state="onLoadState"
         @reload="onReload"
         @cheats="showCheats = true"
         @keys="openInputSettings"
+        @swap-disk-side="swapDiskSide"
+        @change-disk="changeDisk"
       />
     </div>
 
@@ -195,6 +207,7 @@ import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
 import { usePerfOverlay } from '../composables/usePerfOverlay.js'
 import { useLocalPlayerInput } from '../composables/player/solo/useLocalPlayerInput.js'
+import { useFdsDiskSwap } from '../composables/player/useFdsDiskSwap.js'
 import { useSoloPlayerActions } from '../composables/player/solo/useSoloPlayerActions.js'
 import { useSoloPlayerLifecycle } from '../composables/player/solo/useSoloPlayerLifecycle.js'
 import { coreDisplayName } from '../constants/cores.js'
@@ -359,6 +372,10 @@ const {
   currentPlatformButtons,
   player1RuntimeKeyboard,
 })
+
+// FDS：换面 / 换盘。只有磁碟机游戏、且模拟器已经跑起来时才有意义。
+const canUseFdsDisk = computed(() => booted.value && romMeta.value?.platform === 'fds')
+const { swapDiskSide, changeDisk } = useFdsDiskSwap({ portalRef, enabled: canUseFdsDisk })
 
 const {
   onBooted,

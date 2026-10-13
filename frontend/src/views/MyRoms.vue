@@ -101,23 +101,12 @@
           </article>
         </div>
 
-        <nav v-if="filteredRoms.length > pageSize" class="pagination" aria-label="我的 ROM 分页">
-          <button class="tab page-btn" type="button" :disabled="activePage <= 1" @click="activePage -= 1">‹ 上一页</button>
-          <template v-for="(item, index) in activePageItems" :key="`${item}-${index}`">
-            <span v-if="item === 'ellipsis'" class="pagination-ellipsis">···</span>
-            <button
-              v-else
-              class="tab page-btn page-number"
-              :class="{ active: item === activePage }"
-              type="button"
-              @click="activePage = item"
-            >
-              {{ item }}
-            </button>
-          </template>
-          <button class="tab page-btn" type="button" :disabled="activePage >= activePageCount" @click="activePage += 1">下一页 ›</button>
-          <button class="tab page-btn" type="button" @click="jumpActivePage">跳转 »</button>
-        </nav>
+        <ClayPagination
+          v-if="filteredRoms.length > pageSize"
+          v-model="activePage"
+          :page-count="activePageCount"
+          aria-label="我的 ROM 分页"
+        />
       </template>
     </section>
 
@@ -166,13 +155,16 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
+import { useAppDialog } from '../composables/useAppDialog.js'
 import { getPlatform } from '../constants/platforms.js'
 import { formatServerTime } from '../composables/formatTime.js'
 import UploadDialog from '../components/UploadDialog.vue'
 import ClaySelect from '../components/ClaySelect.vue'
 import RomCover from '../components/RomCover.vue'
+import ClayPagination from '../components/ClayPagination.vue'
 
 const router = useRouter()
+const { showConfirm, showAlert } = useAppDialog()
 const roms = ref([])
 const trashRoms = ref([])
 const loading = ref(true)
@@ -225,7 +217,6 @@ const pagedRoms = computed(() => {
   const start = (activePage.value - 1) * pageSize
   return filteredRoms.value.slice(start, start + pageSize)
 })
-const activePageItems = computed(() => pageItems(activePage.value, activePageCount.value))
 
 watch([activeSearch, activePlatform, activeVisibility], () => { activePage.value = 1 })
 watch(activePageCount, (count) => {
@@ -259,7 +250,7 @@ async function togglePublic(rom, val) {
   try {
     await api.romUpdate(rom.id, { isPublic: val })
     await load()
-  } catch (err) { alert(err.message) }
+  } catch (err) { await showAlert(err.message) }
 }
 
 function startEdit(rom) {
@@ -285,18 +276,20 @@ async function saveTitle(rom) {
     const updated = await api.romUpdate(id, { title: next })
     rom.title = updated.title
   } catch (err) {
-    alert(err?.message || '重命名失败')
+    await showAlert(err?.message || '重命名失败')
   }
 }
 
 async function remove(rom) {
-  if (!confirm(`删除 "${rom.title}"？将移至回收站，可随时恢复。`)) return
+  if (!await showConfirm(`删除 "${rom.title}"？将移至回收站，可随时恢复。`, {
+    title: '删除 ROM', confirmText: '移至回收站', danger: true,
+  })) return
   try {
     await api.romDelete(rom.id)
     await load()
     trashLoaded.value = false
   } catch (err) {
-    alert(err?.message || '删除失败')
+    await showAlert(err?.message || '删除失败')
   }
 }
 
@@ -306,36 +299,24 @@ async function restore(rom) {
     await load()
     if (trashLoaded.value) await loadTrash()
   } catch (err) {
-    alert(err?.message || '恢复失败')
+    await showAlert(err?.message || '恢复失败')
   }
 }
 
 async function purge(rom) {
-  if (!confirm(`永久删除 "${rom.title}"？磁盘上的 ROM 文件、所有云存档以及子版本都会被抹除，不可恢复。`)) return
+  if (!await showConfirm(`永久删除 "${rom.title}"？磁盘上的 ROM 文件、所有云存档以及子版本都会被抹除，不可恢复。`, {
+    title: '永久删除 ROM', confirmText: '永久删除', danger: true,
+  })) return
   try {
     await api.romDelete(rom.id, { permanent: true })
     await load()
     if (trashLoaded.value) await loadTrash()
   } catch (err) {
-    alert(err?.message || '永久删除失败')
+    await showAlert(err?.message || '永久删除失败')
   }
 }
 
 function play(rom) { router.push(`/play/${rom.id}`) }
-function pageItems(current, count) {
-  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1)
-  const middle = [current - 1, current, current + 1]
-    .filter((n) => n > 1 && n < count)
-  const items = [1, ...middle, 'ellipsis', count]
-  return items.filter((item, index) => items.indexOf(item) === index)
-}
-function jumpActivePage() {
-  const input = prompt(`跳转到第几页？1 - ${activePageCount.value}`)
-  if (!input) return
-  const next = Number.parseInt(input, 10)
-  if (!Number.isFinite(next)) return
-  activePage.value = Math.min(Math.max(next, 1), activePageCount.value)
-}
 function platformColor(p) { return getPlatform(p).color }
 function platformLabel(p) { return getPlatform(p).shortLabel }
 function fmtSize(b) {
@@ -591,31 +572,6 @@ function fmtSize(b) {
 .switch input:checked:active + .track .thumb { transform: translateX(18px) scaleX(1.08) scaleY(0.9); }
 .switch-label { font-size: 12px; color: var(--text-tertiary); font-weight: 900; min-width: 28px; }
 .switch input:checked ~ .switch-label { color: var(--text-primary); }
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-.page-btn {
-  height: 38px;
-  min-width: 42px;
-  justify-content: center;
-}
-.page-number { padding: 0 12px; }
-.pagination-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 38px;
-  min-width: 42px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
 
 @media (max-width: 820px) {
   .rom-toolbar { grid-template-columns: 1fr; }

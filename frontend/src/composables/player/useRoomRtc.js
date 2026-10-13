@@ -20,14 +20,16 @@ export function useRoomRtc({ getSignal, portalRef, isHostMode, playerIndexForPee
         if (!canControlPeer?.(peerId)) return
         const playerIndex = Number(playerIndexForPeer?.(peerId))
         if (!Number.isInteger(playerIndex) || playerIndex < 2 || playerIndex > 4) return
-        const keyMap = remoteKeyMapForPlayer?.(playerIndex)
+        // 没拿到键位表（例如核心还没起来）时宁可什么都不注入：注入的键必须和 core 配置
+        // 来自同一份键位表，落到兜底的默认表上就会打到别的玩家。
+        const remoteKeyMap = remoteKeyMapForPlayer?.(playerIndex) || {}
         const turboTargets = turboTargetsForPlayer?.(playerIndex) || null
         const controls = {
           pressButton: (button, player) => portalRef.value?.pressButton?.(button, player),
           releaseButton: (button, player) => portalRef.value?.releaseButton?.(button, player),
         }
-        if (dispatchRemoteInput?.({ playerIndex, action: data.action, button: data.button, keyMap, controls, turboTargets }) === true) return
-        dispatchPlayerButton(playerIndex, data.action, data.button, keyMap, controls, { turboTargets })
+        if (dispatchRemoteInput?.({ playerIndex, action: data.action, button: data.button, keyMap: remoteKeyMap, controls, turboTargets }) === true) return
+        dispatchPlayerButton(playerIndex, data.action, data.button, remoteKeyMap, controls, { turboTargets })
       }
     },
     onStateChange: (state) => {

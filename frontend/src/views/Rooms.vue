@@ -114,6 +114,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useAppDialog } from '../composables/useAppDialog.js'
 import { getPlatform } from '../constants/platforms.js'
 import CreateRoomDialog from '../components/CreateRoomDialog.vue'
 import JoinRoomDialog from '../components/JoinRoomDialog.vue'
@@ -121,6 +122,7 @@ import EditRoomDialog from '../components/EditRoomDialog.vue'
 
 const router = useRouter()
 const { isAuthed } = useAuth()
+const { showConfirm, showAlert } = useAppDialog()
 
 const publicRooms = ref([])
 const myRooms = ref([])
@@ -150,12 +152,14 @@ function pickRoom(r) {
 }
 function resume(r) { router.push(`/rooms/${r.code}/play/${r.romId}`) }
 async function closeRoom(r) {
-  if (!confirm(`关闭房间 "${r.name}"？已连接的玩家会被踢出。`)) return
+  if (!await showConfirm(`关闭房间 "${r.name}"？已连接的玩家会被踢出。`, {
+    title: '关闭房间', confirmText: '关闭房间', danger: true,
+  })) return
   try {
     await api.roomClose(r.code)
     myRooms.value = myRooms.value.filter((x) => x.code !== r.code)
     publicRooms.value = publicRooms.value.filter((x) => x.code !== r.code)
-  } catch (err) { alert(err?.message || '关闭失败') }
+  } catch (err) { await showAlert(err?.message || '关闭失败') }
 }
 function onCreated(room) {
   showCreate.value = false

@@ -15,6 +15,8 @@
       :show-keys="!isTouchLayout"
       :show-fullscreen="!isTouchLayout"
       :show-actions="showBarActions"
+      :can-swap-disk="canUseFdsDisk"
+      :can-change-disk="canUseFdsDisk"
       @back="goBack"
       @fullscreen="onFullscreen"
       @keys="openInputSettings"
@@ -22,6 +24,8 @@
       @load-state="onLoadState"
       @reload="onReload"
       @cheats="showCheats = true"
+      @swap-disk-side="swapDiskSide"
+      @change-disk="changeDisk"
     >
       <template #extras>
         <!-- 房间里的玩家列表 / 房间面板入口：顶部工具条的最末端。
@@ -118,10 +122,14 @@
           :can-save="canSaveState"
           :can-reload="canReload"
           :can-cheat="canCheat"
+          :can-swap-disk="canUseFdsDisk"
+          :can-change-disk="canUseFdsDisk"
           @save-state="onSaveState"
           @load-state="onLoadState"
           @reload="onReload"
           @cheats="showCheats = true"
+          @swap-disk-side="swapDiskSide"
+          @change-disk="changeDisk"
         />
 
         <!-- 手机端「按键透明度」按钮：画面右上角，和左上角的全屏按钮分居两侧 -->
@@ -141,11 +149,15 @@
         :can-reload="canReload"
         :can-cheat="canCheat"
         :show-keys="!isTouchLayout"
+        :can-swap-disk="canUseFdsDisk"
+        :can-change-disk="canUseFdsDisk"
         @save-state="onSaveState"
         @load-state="onLoadState"
         @reload="onReload"
         @cheats="showCheats = true"
         @keys="openInputSettings"
+        @swap-disk-side="swapDiskSide"
+        @change-disk="changeDisk"
       />
     </div>
 
@@ -235,6 +247,7 @@ import { usePerfOverlay } from '../composables/usePerfOverlay.js'
 import { dispatchArcadeNetplayInput, isArcadeNetplayInputEnabled, arcadeNetplayGuestKeyboardPlayer } from '../composables/player/arcadeNetplayInput.js'
 import { useRoomTurboTargets } from '../composables/player/room/useRoomTurboTargets.js'
 import { useRoomPlayerInput } from '../composables/player/room/useRoomPlayerInput.js'
+import { useFdsDiskSwap } from '../composables/player/useFdsDiskSwap.js'
 import { useRoomPlayerActions } from '../composables/player/room/useRoomPlayerActions.js'
 import { useRoomPlayerLifecycle } from '../composables/player/room/useRoomPlayerLifecycle.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
@@ -484,7 +497,14 @@ const {
   turboTargetForButton,
   guestButtonInterceptor,
   roomGamepadPlayer,
+  // 远端席位的键位表：房主按到这些键要吞掉（远端只认 RTC 注入）。
+  remoteKeyMaps: resolvedRemotePlayerKeyMaps,
 })
+
+// FDS：换面 / 换盘。磁碟机在房主这一侧，与重置 / 金手指一样只对房主开放
+// （客人的按键是转发给 core 的，但磁盘动作改的是房主的虚拟磁碟机，不跟着转发）。
+const canUseFdsDisk = computed(() => canControlEmulator.value && romMeta.value?.platform === 'fds')
+const { swapDiskSide, changeDisk } = useFdsDiskSwap({ portalRef, enabled: canUseFdsDisk })
 
 const {
   onBooted,

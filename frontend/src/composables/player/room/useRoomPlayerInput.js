@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, unref } from 'vue'
 import {
   BUTTON_DEFS,
   RETROPAD_BUTTON_DEFS,
@@ -7,9 +7,38 @@ import {
   effectiveKeyboardForPlayer,
   effectiveLocalKeyboardForPlayer,
   normalizeKeyboardEventKey,
+  normalizeRetroarchKey,
 } from '../../useInputMapping.js'
 import { dispatchKeyboardEvent } from '../../dispatchKeyboardEvent.js'
 import { useGamepads } from '../../useGamepads.js'
+
+// 远端席位在 core 里用的那批「中转键」。core 直接读 canvas 上的原生键盘事件，这些键又
+// 都是房主键盘上真实存在的键，所以房主按下它们会打到对应玩家的角色。把它们收集起来，
+// 房主侧吞掉（见 interceptRoomRemoteSeatKey），远端席位就只认 RTC 注入的合成事件。
+export function roomRemoteSeatKeySet(remoteKeyMaps = null) {
+  const out = new Set()
+  for (const [player, keyMap] of Object.entries(remoteKeyMaps || {})) {
+    if (!(Number(player) >= 2)) continue
+    for (const value of Object.values(keyMap || {})) {
+      const key = normalizeRetroarchKey(value)
+      if (key && key !== 'nul') out.add(key)
+    }
+  }
+  return out
+}
+
+// 房主按到远端席位的键就整段吞掉：既不落到本地 P1，也不让 core 看到。带
+// __internalInputDispatch 的合成事件是我们自己注入的（P1 的键、客人转发的键），放行。
+export function interceptRoomRemoteSeatKey(event, { isRoomMode = false, isHost = false, seatKeys = null } = {}) {
+  if (!isRoomMode || !isHost) return false
+  if (!seatKeys || !seatKeys.size) return false
+  if (event?.__internalInputDispatch) return false
+  const key = normalizeKeyboardEventKey(event)
+  if (!key || !seatKeys.has(key)) return false
+  event.preventDefault?.()
+  event.stopImmediatePropagation?.()
+  return true
+}
 
 // Room physical pads always use the local P1 dispatch path. The argument is
 // the existing room authorization/seat result, not the literal emulator seat.
@@ -48,10 +77,13 @@ export function useRoomPlayerInput({
   turboTargetForButton,
   guestButtonInterceptor,
   roomGamepadPlayer,
+  remoteKeyMaps = null,
 }) {
   const keyboardTurboLoops = new Map()
   const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
   const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
+  // 远端席位的键位表在 core 配置与运行时注入之间是同一份，这里照它吞键。
+  const remoteSeatKeys = () => roomRemoteSeatKeySet(unref(remoteKeyMaps))
 
   function snapshotKeyboardMapping() {
     const snapshot = roomHostInputConfigSnapshot.value
@@ -282,10 +314,21 @@ export function useRoomPlayerInput({
     }
   }
 
+  // 房主的物理键盘碰到远端席位的键：吞掉，别让它到 core（那些键只是内部中转，玩家
+  // 应该按自己的键，按键设置里也没有这些行）。P1 自己的键在上面已经处理过了。
+  function handleRemoteSeatKeyboard(e) {
+    return interceptRoomRemoteSeatKey(e, {
+      isRoomMode,
+      isHost: isHostMode.value,
+      seatKeys: remoteSeatKeys(),
+    })
+  }
+
   function handleRoomKeyboardEvent(e) {
     if (handleHostKeyboardRemap(e)) return true
     if (handleLocalPlayer2Keyboard(e)) return true
     if (handleLocalKeyboardButton(e)) return true
+    if (handleRemoteSeatKeyboard(e)) return true
     handleTurboKeyboard(e)
     return false
   }

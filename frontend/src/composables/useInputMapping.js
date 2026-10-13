@@ -68,6 +68,7 @@ import {
   buildPlayer2RetroarchConfig,
   buildRemotePlayerKeyMaps,
   buildRemotePlayersRetroarchConfig,
+  player1ReservedKeys,
 } from './input/remotePlayers.js'
 import { loadInputMapping, saveInputMapping } from './input/storage.js'
 
@@ -105,6 +106,7 @@ export {
   normalizeKeyboardEventKey,
   normalizeRetroarchKey,
   parseDeviceKey,
+  player1ReservedKeys,
   resolveSoloSeatPlayers,
   shortDeviceName,
 }

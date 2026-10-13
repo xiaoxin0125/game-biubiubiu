@@ -6,10 +6,40 @@ import {
   effectiveKeyboardForPlayer,
   effectiveLocalKeyboardForPlayer,
   normalizeKeyboardEventKey,
+  normalizeRetroarchKey,
 } from '../../useInputMapping.js'
 import { turboButtonsForPlatform } from '../../../constants/platforms.js'
 import { dispatchKeyboardEvent } from '../../dispatchKeyboardEvent.js'
 import { useGamepads } from '../../useGamepads.js'
+
+// 单机双打：P2 在 core 里的键位是运行期键位（默认 z x v n q y …
+// 见 buildLocalMultiplayerRetroarchConfig），按键设置里给 P2 看的是另一套小键盘键位，
+// 前端再把玩家的物理键换算成运行期键注入给 core。core 直接读 canvas 上的原生键盘
+// 事件，所以玩家本人按到这批运行期键时 core 会当成 P2 的输入 —— 但它们并不在 P2 的
+// 映射里，属于误触。这里把它们吞掉，P2 只认前端注入的合成事件。
+export function localPlayer2RuntimeKeySet(runtimeKeyboard = null) {
+  const out = new Set()
+  for (const value of Object.values(runtimeKeyboard || {})) {
+    const key = normalizeRetroarchKey(value)
+    if (key && key !== 'nul') out.add(key)
+  }
+  return out
+}
+
+// 吞键本身只在桌面端、本地双打（P2 真的被 core 绑定了）时启用：P1 映射与 P2 映射都
+// 在上面处理过了，走到这里说明这批运行期键没人认领。
+export function interceptLocalPlayer2RuntimeKey(event, { enabled = false, runtimeKeys = null } = {}) {
+  if (!enabled) return false
+  if (!runtimeKeys || !runtimeKeys.size) return false
+  // 带 __internalInputDispatch 的合成事件是前端自己注入的（玩家按 P2 映射时用的就是
+  // 它），放行。原生事件才是要吞的那一批。
+  if (event?.__internalInputDispatch) return false
+  const key = normalizeKeyboardEventKey(event)
+  if (!key || !runtimeKeys.has(key)) return false
+  event.preventDefault?.()
+  event.stopImmediatePropagation?.()
+  return true
+}
 
 export function useLocalPlayerInput({
   mapping,
@@ -29,6 +59,7 @@ export function useLocalPlayerInput({
   const pressLocalButton = (button, player = 1) => portalRef.value?.pressButton?.(button, player)
   const releaseLocalButton = (button, player = 1) => portalRef.value?.releaseButton?.(button, player)
   const p2RuntimeKeyboard = computed(() => buildLocalPlayerKeyboardMap(2, currentPlatformButtons.value))
+  const p2RuntimeKeys = computed(() => localPlayer2RuntimeKeySet(p2RuntimeKeyboard.value))
   const turboTargetForButton = (button) => currentTurboTargets.value?.[button] || null
 
   const dispatchLocalButtonTurbo = (loopKey, targetButton, action, player = 1) => {
@@ -172,9 +203,20 @@ export function useLocalPlayerInput({
     return true
   }
 
+  // P2 运行期键位的兜底：P1 映射、P2 映射都处理完之后，剩下的运行期键属于「按键设置
+  // 里看不到、core 却认」的那批，直接吞掉，免得误触 P2。打开按键设置时不吞（那时用户
+  // 正在绑键），触屏布局与单人模式也没有 P2 可打。
+  function handleLocalPlayer2RuntimeKey(e) {
+    return interceptLocalPlayer2RuntimeKey(e, {
+      enabled: !showInput.value && !isTouchLayout.value && activeMaxPlayers.value >= 2,
+      runtimeKeys: p2RuntimeKeys.value,
+    })
+  }
+
   function handleLocalKeyboardEvent(e) {
     if (handleLocalPlayer2Keyboard(e)) return true
-    return handleLocalKeyboardButton(e)
+    if (handleLocalKeyboardButton(e)) return true
+    return handleLocalPlayer2RuntimeKey(e)
   }
 
   return {

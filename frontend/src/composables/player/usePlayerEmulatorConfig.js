@@ -5,8 +5,8 @@ import {
   buildRemotePlayerKeyMaps,
   buildRemotePlayersRetroarchConfig,
   effectiveKeyboardForPlayer,
+  player1ReservedKeys,
   RETROPAD_BUTTON_DEFS,
-  TURBO_BUTTON_TARGETS,
 } from '../useInputMapping.js'
 import {
   buildArcadeNetplayRemoteKeyMaps,
@@ -70,22 +70,40 @@ export function usePlayerEmulatorConfig({
     }
     return out
   })
+  // 房主这一侧 P1 会产生、core 收得到的全部键：运行期注入用的键 + 房主物理键盘上属于
+  // P1 的键（含平台用不到的按钮，它们在按键设置里没有行，但键还在存档里）。远端席位的
+  // 键位表必须避开这一份，否则房主按自己的键就会打到别的玩家身上。
+  const player1ReservedKeyboardKeys = computed(() => {
+    const platform = romMeta.value?.platform || null
+    return player1ReservedKeys(
+      effectiveKeyboardForPlayer(null, 1, platform),
+      effectiveKeyboardForPlayer(mapping.value, 1, platform),
+    )
+  })
+  // P1 在 core 里的键位启动时冻结一次，之后前端按这份快照把玩家的物理按键换算成 core
+  // 认的键（见 useRoomPlayerInput 的 handleHostKeyboardRemap）。远端键位表和 core 配置
+  // 都从这里取，保证两边是同一份。
+  function roomHostInputSnapshot() {
+    if (!roomHostInputConfigSnapshot.value) {
+      roomHostInputConfigSnapshot.value = {
+        ...buildPlayerRetroarchConfig(mapping.value, currentPlatformButtons.value, {
+          runtimeKeyboard: player1RuntimeKeyboard.value,
+        }),
+      }
+    }
+    return roomHostInputConfigSnapshot.value
+  }
   const remotePlayerKeyMaps = computed(() => {
     const platformButtons = currentPlatformButtons.value
     if (usesArcadeNetplayInputConfig.value) {
-      const base = roomHostInputConfigSnapshot.value || buildPlayerRetroarchConfig(mapping.value, platformButtons, {
-        runtimeKeyboard: player1RuntimeKeyboard.value,
-      })
       return buildArcadeNetplayRemoteKeyMaps({
         maxPlayers: activeMaxPlayers.value,
-        hostConfig: base,
+        hostConfig: roomHostInputSnapshot(),
+        reservedKeys: player1ReservedKeyboardKeys.value,
         platformButtons,
       })
     }
-    const reservedKeys = Object.entries(mapping.value.keyboard || {})
-      .filter(([btn, key]) => !currentTurboTargets.value[btn] && !TURBO_BUTTON_TARGETS[btn] && key != null && key !== '')
-      .map(([, key]) => key)
-    return buildRemotePlayerKeyMaps(activeMaxPlayers.value, reservedKeys, platformButtons)
+    return buildRemotePlayerKeyMaps(activeMaxPlayers.value, player1ReservedKeyboardKeys.value, platformButtons)
   })
   const retroarchConfig = computed(() => {
     const platformButtons = currentPlatformButtons.value
@@ -98,12 +116,10 @@ export function usePlayerEmulatorConfig({
       }
     }
     if (isRoomMode && signalMe.value?.isHost) {
-      if (!roomHostInputConfigSnapshot.value) roomHostInputConfigSnapshot.value = { ...base }
-      const reservedKeys = Object.values(roomHostInputConfigSnapshot.value)
-        .filter((value) => typeof value === 'string' && value !== 'nul')
+      const hostConfig = roomHostInputSnapshot()
       if (usesArcadeNetplayInputConfig.value) {
         return {
-          ...roomHostInputConfigSnapshot.value,
+          ...hostConfig,
           ...buildArcadeNetplayRetroarchConfig({
             maxPlayers: activeMaxPlayers.value,
             keyMaps: remotePlayerKeyMaps.value,
@@ -111,9 +127,15 @@ export function usePlayerEmulatorConfig({
           }),
         }
       }
+      // 远端席位的键位表和运行时注入共用同一份，core 绑的和注入的必须是同一个键。
       return {
-        ...roomHostInputConfigSnapshot.value,
-        ...buildRemotePlayersRetroarchConfig(activeMaxPlayers.value, reservedKeys, platformButtons),
+        ...hostConfig,
+        ...buildRemotePlayersRetroarchConfig(
+          activeMaxPlayers.value,
+          player1ReservedKeyboardKeys.value,
+          platformButtons,
+          remotePlayerKeyMaps.value,
+        ),
       }
     }
     return base

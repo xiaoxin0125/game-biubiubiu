@@ -23,11 +23,15 @@
       :can-reload="canReload"
       :can-cheat="canCheat"
       :show-keys="showKeys"
+      :can-swap-disk="canSwapDisk"
+      :can-change-disk="canChangeDisk"
       @save-state="$emit('save-state')"
       @load-state="$emit('load-state')"
       @reload="$emit('reload')"
       @cheats="$emit('cheats')"
       @keys="$emit('keys')"
+      @swap-disk-side="$emit('swap-disk-side')"
+      @change-disk="$emit('change-disk')"
     />
 
     <button v-if="canFullscreen && showFullscreen" class="bar-btn bar-btn-accent" @click="$emit('fullscreen')" aria-label="全屏">
@@ -53,8 +57,12 @@ defineProps({
   // 手机端与 PC 宽屏把这组按钮挪到画面旁边（GameActionButtons 的 mobile / side），
   // 工具条上就不再重复出现
   showActions: { type: Boolean, default: true },
+  // FDS 专用：换面 / 换盘。顶部工具条里也是同一组按钮，所以同样要透传
+  // （PC 窄屏、页面缩放到放不下侧栏时，这组按钮就退回这里）。
+  canSwapDisk: { type: Boolean, default: false },
+  canChangeDisk: { type: Boolean, default: false },
 })
-defineEmits(['back', 'fullscreen', 'keys', 'save-state', 'load-state', 'reload', 'cheats'])
+defineEmits(['back', 'fullscreen', 'keys', 'save-state', 'load-state', 'reload', 'cheats', 'swap-disk-side', 'change-disk'])
 
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)

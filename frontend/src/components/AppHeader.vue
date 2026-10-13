@@ -56,11 +56,13 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useSettings } from '../composables/useSettings.js'
+import { useAppDialog } from '../composables/useAppDialog.js'
 import { stats as cacheStatsFn, clearCache } from '../composables/useBlobCache.js'
 import ChangePasswordDialog from './ChangePasswordDialog.vue'
 
 const { user, isAuthed, isAdmin, loading, logout } = useAuth()
 const { settings } = useSettings()
+const { showConfirm } = useAppDialog()
 
 const cacheLabel = ref('')
 async function refreshCacheStats() {
@@ -69,7 +71,9 @@ async function refreshCacheStats() {
 }
 
 async function onClearCache() {
-  if (!confirm('清空本地缓存？ROM、BIOS、核心会在下次启动游戏时重新下载。')) return
+  if (!await showConfirm('清空本地缓存？ROM、BIOS、核心会在下次启动游戏时重新下载。', {
+    title: '清空本地缓存', confirmText: '清空缓存', danger: true,
+  })) return
   await clearCache()
   await refreshCacheStats()
   menuOpen.value = false

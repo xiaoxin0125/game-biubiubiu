@@ -427,23 +427,12 @@
         </article>
       </div>
 
-      <nav v-if="filteredAdminRoms.length > pageSize" class="pagination" aria-label="管理 ROM 分页">
-        <button class="seg-btn page-btn" type="button" :disabled="adminRomPage <= 1" @click="adminRomPage -= 1">‹ 上一页</button>
-        <template v-for="(item, index) in adminRomPageItems" :key="`${item}-${index}`">
-          <span v-if="item === 'ellipsis'" class="pagination-ellipsis">···</span>
-          <button
-            v-else
-            class="seg-btn page-btn page-number"
-            :class="{ active: item === adminRomPage }"
-            type="button"
-            @click="adminRomPage = item"
-          >
-            {{ item }}
-          </button>
-        </template>
-        <button class="seg-btn page-btn" type="button" :disabled="adminRomPage >= adminRomPageCount" @click="adminRomPage += 1">下一页 ›</button>
-        <button class="seg-btn page-btn" type="button" @click="jumpAdminRomPage">跳转 »</button>
-      </nav>
+      <ClayPagination
+        v-if="filteredAdminRoms.length > pageSize"
+        v-model="adminRomPage"
+        :page-count="adminRomPageCount"
+        aria-label="管理 ROM 分页"
+      />
     </section>
 
     <section v-if="tab === 'bios'" class="panel-card panel">
@@ -505,6 +494,7 @@ import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useAppDialog } from '../composables/useAppDialog.js'
 import { useSettings } from '../composables/useSettings.js'
 import { formatServerDateTime } from '../composables/formatTime.js'
 import { testStunIce } from '../composables/useIceGatheringTest.js'
@@ -515,8 +505,10 @@ import EditRomDialog from '../components/EditRomDialog.vue'
 import RomCheatsDialog from '../components/RomCheatsDialog.vue'
 import ClaySelect from '../components/ClaySelect.vue'
 import RomCover from '../components/RomCover.vue'
+import ClayPagination from '../components/ClayPagination.vue'
 
 const router = useRouter()
+const { showConfirm, showAlert } = useAppDialog()
 const { user: me } = useAuth()
 const { updateLocal } = useSettings()
 
@@ -608,7 +600,6 @@ const pagedAdminRoms = computed(() => {
   const start = (adminRomPage.value - 1) * pageSize
   return filteredAdminRoms.value.slice(start, start + pageSize)
 })
-const adminRomPageItems = computed(() => pageItems(adminRomPage.value, adminRomPageCount.value))
 
 const publicRomCount = computed(() => roms.value.filter((r) => r.isPublic).length)
 const adminCount = computed(() => users.value.filter((u) => u.role === 'admin').length)
@@ -827,7 +818,7 @@ async function saveSite() {
   const coresBaseUrl = String(form.coresBaseUrl || '').trim()
   if (form.coresRemoteEnabled && !coresBaseUrl) {
     savingSite.value = false
-    alert('开启远端核心托管需要先填写远端核心地址')
+    await showAlert('开启远端核心托管需要先填写远端核心地址')
     return
   }
   try {
@@ -882,7 +873,7 @@ async function saveSite() {
     })
     siteSaved.value = true
     setTimeout(() => { siteSaved.value = false }, 1600)
-  } catch (err) { alert(err?.message || '保存失败') }
+  } catch (err) { await showAlert(err?.message || '保存失败') }
   finally { savingSite.value = false }
 }
 
@@ -893,7 +884,7 @@ async function loadBios() {
   try {
     biosItems.value = (await api.adminBios()).bios || []
   } catch (err) {
-    alert(err?.message || '读取 BIOS 列表失败')
+    await showAlert(err?.message || '读取 BIOS 列表失败')
   } finally {
     biosLoading.value = false
   }
@@ -901,20 +892,24 @@ async function loadBios() {
 
 async function toggleRole(u) {
   const nextRole = u.role === 'admin' ? 'user' : 'admin'
-  if (!confirm(`确认将 ${u.username} 设为 ${nextRole === 'admin' ? '管理员' : '普通用户'} ？`)) return
+  if (!await showConfirm(`确认将 ${u.username} 设为 ${nextRole === 'admin' ? '管理员' : '普通用户'}？`, {
+    title: '修改用户角色', confirmText: '确认修改',
+  })) return
   try {
     const updated = await api.adminUpdateUser(u.id, { role: nextRole })
     u.role = updated.role
-  } catch (err) { alert(err.message) }
+  } catch (err) { await showAlert(err.message) }
 }
 
 async function removeUser(u) {
-  if (!confirm(`删除用户 ${u.username} 及其所有 ROM？该操作不可撤销。`)) return
+  if (!await showConfirm(`删除用户 ${u.username} 及其所有 ROM？该操作不可撤销。`, {
+    title: '删除用户', confirmText: '删除用户', danger: true,
+  })) return
   try {
     await api.adminDeleteUser(u.id)
     users.value = users.value.filter((x) => x.id !== u.id)
     loadRoms()
-  } catch (err) { alert(err.message) }
+  } catch (err) { await showAlert(err.message) }
 }
 
 function openUpload() { showUpload.value = true }
@@ -924,9 +919,15 @@ function onUploaded() {
 }
 
 async function deleteRom(r) {
-  if (!confirm(`删除 "${r.title}" ？将移至回收站，用户可在「我的 ROM」里恢复。`)) return
-  await api.romDelete(r.id)
-  await loadRoms()
+  if (!await showConfirm(`删除 "${r.title}"？将移至回收站，用户可在「我的 ROM」里恢复。`, {
+    title: '删除 ROM', confirmText: '移至回收站', danger: true,
+  })) return
+  try {
+    await api.romDelete(r.id)
+    await loadRoms()
+  } catch (err) {
+    await showAlert(err?.message || '删除失败')
+  }
 }
 
 const togglingId = ref(null)
@@ -956,7 +957,7 @@ async function togglePublic(r) {
     await api.romUpdate(r.id, { isPublic: !r.isPublic })
     await loadRoms()
   } catch (err) {
-    alert(err?.message || '切换失败')
+    await showAlert(err?.message || '切换失败')
   } finally {
     togglingId.value = null
   }
@@ -969,7 +970,7 @@ async function updateMaxPlayers(r, value) {
     await api.romUpdate(r.id, { maxPlayers })
     await loadRoms()
   } catch (err) {
-    alert(err?.message || '保存人数失败')
+    await showAlert(err?.message || '保存人数失败')
   } finally {
     savingMaxPlayersId.value = null
   }
@@ -986,7 +987,7 @@ async function updateDefaultCore(r, value) {
       owner: r.owner,
     })
   } catch (err) {
-    alert(err?.message || '保存核心失败')
+    await showAlert(err?.message || '保存核心失败')
   } finally {
     savingCompatId.value = null
   }
@@ -997,20 +998,6 @@ function coreOptionsFor(platform) {
 }
 
 function play(r) { router.push(`/play/${r.id}`) }
-function pageItems(current, count) {
-  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1)
-  const middle = [current - 1, current, current + 1]
-    .filter((n) => n > 1 && n < count)
-  const items = [1, ...middle, 'ellipsis', count]
-  return items.filter((item, index) => items.indexOf(item) === index)
-}
-function jumpAdminRomPage() {
-  const input = prompt(`跳转到第几页？1 - ${adminRomPageCount.value}`)
-  if (!input) return
-  const next = Number.parseInt(input, 10)
-  if (!Number.isFinite(next)) return
-  adminRomPage.value = Math.min(Math.max(next, 1), adminRomPageCount.value)
-}
 function platColor(p) { return getPlatform(p).color }
 function platLabel(p) { return getPlatform(p).shortLabel }
 function fmtSize(b) {
@@ -1611,31 +1598,6 @@ function fmtSize(b) {
   /* 平台色只做浅底，文字混入深梅子保证浅底上 ≥ 4.5:1 */
   color: color-mix(in srgb, var(--pc) 40%, var(--clay-ink));
   box-shadow: var(--clay-xs);
-}
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-.page-btn {
-  height: 38px;
-  min-width: 42px;
-  justify-content: center;
-}
-.page-number { padding: 0 12px; }
-.pagination-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 38px;
-  min-width: 42px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
 }
 
 @media (max-width: 900px) {

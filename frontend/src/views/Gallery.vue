@@ -128,23 +128,12 @@
         </button>
       </article>
     </div>
-    <nav v-if="!loading && filtered.length > pageSize" class="pagination" aria-label="ROM 分页">
-      <button class="tab page-btn" type="button" :disabled="page <= 1" @click="page -= 1">‹ 上一页</button>
-      <template v-for="(item, index) in pageItems" :key="`${item}-${index}`">
-        <span v-if="item === 'ellipsis'" class="pagination-ellipsis">···</span>
-        <button
-          v-else
-          class="tab page-btn page-number"
-          :class="{ active: item === page }"
-          type="button"
-          @click="page = item"
-        >
-          {{ item }}
-        </button>
-      </template>
-      <button class="tab page-btn" type="button" :disabled="page >= pageCount" @click="page += 1">下一页 ›</button>
-      <button class="tab page-btn" type="button" @click="jumpToPage">跳转 »</button>
-    </nav>
+    <ClayPagination
+      v-if="!loading && filtered.length > pageSize"
+      v-model="page"
+      :page-count="pageCount"
+      aria-label="ROM 分页"
+    />
 
     <VersionPickerDialog
       v-if="pickerRom"
@@ -160,12 +149,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useAppDialog } from '../composables/useAppDialog.js'
 import { tabGroups, getPlatform } from '../constants/platforms.js'
 import { useSettings } from '../composables/useSettings.js'
 import VersionPickerDialog from '../components/VersionPickerDialog.vue'
 import RomCover from '../components/RomCover.vue'
+import ClayPagination from '../components/ClayPagination.vue'
 
 const router = useRouter()
+const { showAlert } = useAppDialog()
 const { isAuthed } = useAuth()
 const { settings } = useSettings()
 const guestPlayEnabled = computed(() => settings.value?.guestPlayEnabled === true || settings.value?.guestPlayEnabled === '1')
@@ -231,29 +223,11 @@ const pagedRoms = computed(() => {
   const start = (page.value - 1) * pageSize
   return filtered.value.slice(start, start + pageSize)
 })
-const pageItems = computed(() => {
-  const count = pageCount.value
-  const current = page.value
-  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1)
-
-  const middle = [current - 1, current, current + 1]
-    .filter((n) => n > 1 && n < count)
-  const items = [1, ...middle, 'ellipsis', count]
-  return items.filter((item, index) => items.indexOf(item) === index)
-})
 
 watch([query, activeTab], () => { page.value = 1 })
 watch(pageCount, (count) => {
   if (page.value > count) page.value = count
 })
-
-function jumpToPage() {
-  const input = prompt(`跳转到第几页？1 - ${pageCount.value}`)
-  if (!input) return
-  const next = Number.parseInt(input, 10)
-  if (!Number.isFinite(next)) return
-  page.value = Math.min(Math.max(next, 1), pageCount.value)
-}
 
 async function toggleFavorite(rom) {
   const prev = !!rom.isFavorite
@@ -276,7 +250,7 @@ async function toggleFavorite(rom) {
   } catch (err) {
     rom.isFavorite = prev
     setPublicFavorite(prev)
-    alert(err?.message || '操作失败')
+    await showAlert(err?.message || '操作失败')
   }
 }
 
@@ -706,33 +680,6 @@ function onVersionPicked(v) {
 .fav-btn:focus-visible { outline: none; box-shadow: var(--clay-focus); }
 
 .rom-card-skel { cursor: default; }
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-.page-btn {
-  height: 38px;
-  min-width: 42px;
-  justify-content: center;
-}
-.page-number {
-  padding: 0 12px;
-}
-.pagination-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 38px;
-  min-width: 42px;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
 .blog-empty {
   margin: 24px auto 0;
   max-width: 520px;

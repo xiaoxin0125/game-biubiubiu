@@ -1,11 +1,13 @@
 <template>
-  <!-- 保存 / 读档 / 重置 / 金手指（桌面端还有按键设置）这组按钮的唯一实现。
+  <!-- 保存 / 读档 / 重置 / 金手指（桌面端还有按键设置）这组按钮的唯一实现，
+       FDS 另有「换面 / 换盘」两颗（canSwapDisk / canChangeDisk）。
        三种摆放方式由父组件按布局决定，组件本身只负责长什么样：
          mobile — 触屏设备：浮在画面右上角，与「按键透明度」按钮同侧；
+                  换面 / 换盘另起一组，排在画面左上角全屏按钮的正下方；
          side   — 桌面宽屏：图文按钮竖排在画面（crt-screen）右侧，一行两个；
-         top    — 桌面窄屏：退回顶部工具条，和以前一致。 -->
+         top    — 桌面窄屏：退回顶部工具条，和以前一致（换面 / 换盘也在这一排里）。 -->
   <div
-    v-if="hasActions"
+    v-if="showMainGroup"
     class="game-actions"
     :class="[`actions-${variant}`, { 'is-vertical': vertical, 'is-fullscreen': fullscreen }]"
   >
@@ -68,6 +70,48 @@
       <svg class="game-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>
       <span class="game-action-label">按键设置</span>
     </button>
+
+    <!-- FDS 专用：磁碟机的换面 / 换盘。core（nestopia / fceumm）把这两个动作绑在
+         retropad 的 L / R 上，这里按一下等于按住那两个键一下（见 useFdsDiskSwap）。
+         mobile 上这两颗不在这一排，而是单独排在左上角全屏按钮下方（见文件末尾的
+         .actions-mobile-disk），免得六颗 42px 的按钮在 320px 竖屏上顶出屏幕。 -->
+    <template v-if="variant !== 'mobile'">
+      <button
+        v-for="disk in diskActions"
+        :key="disk.key"
+        class="game-action-btn"
+        type="button"
+        :aria-label="disk.label"
+        :title="disk.title"
+        @click="$emit(disk.event)"
+      >
+        <svg class="game-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-for="path in disk.paths" :key="path" :d="path"/></svg>
+        <span class="game-action-label">{{ disk.label }}</span>
+      </button>
+    </template>
+  </div>
+
+  <!-- FDS 专用、mobile：换面 / 换盘排在左上角全屏按钮的正下方（左边与它对齐）。
+       尺寸与全屏、右上角「按键透明度」按钮一致（42px），也不跟着横屏 / 全屏那组收缩。 -->
+  <div
+    v-if="variant === 'mobile' && diskActions.length"
+    class="game-actions actions-mobile-disk"
+    :class="{ 'is-fullscreen': fullscreen }"
+    role="group"
+    aria-label="磁碟操作"
+  >
+    <button
+      v-for="disk in diskActions"
+      :key="disk.key"
+      class="game-action-btn"
+      type="button"
+      :aria-label="disk.label"
+      :title="disk.title"
+      @click="$emit(disk.event)"
+    >
+      <svg class="game-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-for="path in disk.paths" :key="path" :d="path"/></svg>
+      <span class="game-action-label">{{ disk.label }}</span>
+    </button>
   </div>
 </template>
 
@@ -79,6 +123,9 @@ const props = defineProps({
   canReload: { type: Boolean, default: false },
   canCheat: { type: Boolean, default: false },
   showKeys: { type: Boolean, default: false },
+  // FDS 专用：换面（A / B 面）与换盘（弹出 / 插回）。
+  canSwapDisk: { type: Boolean, default: false },
+  canChangeDisk: { type: Boolean, default: false },
   // mobile / side / top —— 摆放方式，见模板顶部注释
   variant: { type: String, default: 'top' },
   // 触屏设备横屏、全屏时改成竖向排布
@@ -87,9 +134,33 @@ const props = defineProps({
   fullscreen: { type: Boolean, default: false },
 })
 
-defineEmits(['save-state', 'load-state', 'reload', 'cheats', 'keys'])
+defineEmits(['save-state', 'load-state', 'reload', 'cheats', 'keys', 'swap-disk-side', 'change-disk'])
 
-const hasActions = computed(() => props.canSave || props.canReload || props.canCheat || props.showKeys)
+// FDS 的两个磁盘动作。它们在 side / top 里排在这组按钮的最后，在 mobile 上单独成组，
+// 两处共用这一份定义（标签、事件名与图标路径都只写一次）。
+const diskActions = computed(() => [
+  props.canSwapDisk && {
+    key: 'swap-side',
+    event: 'swap-disk-side',
+    label: '换面',
+    title: '换面（A / B 面，与手柄的 L 相同）',
+    paths: ['M4 9h13l-3.5-3.5', 'M20 15H7l3.5 3.5'],
+  },
+  props.canChangeDisk && {
+    key: 'change-disk',
+    event: 'change-disk',
+    label: '换盘',
+    title: '换盘（弹出 / 插回，与手柄的 R 相同）',
+    paths: ['M12 4.5 19 13H5z', 'M5 17h14'],
+  },
+].filter(Boolean))
+
+const hasPrimaryActions = computed(() => props.canSave || props.canReload || props.canCheat || props.showKeys)
+const hasDiskActions = computed(() => props.canSwapDisk || props.canChangeDisk)
+// side / top：换面 / 换盘就排在这组按钮里；mobile：它们单独一组排在左上角全屏按钮下方，
+// 所以右上角这组只看前几个按钮是否存在。
+const showMainGroup = computed(() =>
+  props.variant === 'mobile' ? hasPrimaryActions.value : hasPrimaryActions.value || hasDiskActions.value)
 </script>
 
 <style scoped>
@@ -212,8 +283,9 @@ const hasActions = computed(() => props.canSave || props.canReload || props.canC
   align-items: flex-end;
   gap: 4px;
 }
-.actions-mobile .game-action-btn {
-  /* 尺寸与「按键透明度」按钮（42px）一致，同排时上下对齐 */
+.actions-mobile .game-action-btn,
+.actions-mobile-disk .game-action-btn {
+  /* 尺寸与「按键透明度」按钮、左上角全屏按钮（42px）一致，同排 / 同列时能对齐 */
   width: 42px;
   height: 42px;
   min-width: 42px;
@@ -254,4 +326,27 @@ const hasActions = computed(() => props.canSave || props.canReload || props.canC
 .actions-mobile .game-action-btn:hover,
 .actions-mobile .game-action-btn:active,
 .actions-mobile .game-action-btn:focus-visible { opacity: 1; }
+
+/* ===== mobile 上的 FDS 换面 / 换盘 =====
+   单独一组排在画面左上角全屏按钮的正下方，不跟右上角那组挤在同一排 —— 六颗 42px 的
+   按钮在 320px 竖屏上会顶出屏幕。位置按全屏按钮算：42px（它的高度）+ 6px 间距 = 48px
+   正好是它的下沿；left 也用同一个偏移，两颗按钮与它左边对齐。
+   这一组不参与横屏 / 全屏时那组的收缩，尺寸始终是 42px（与全屏 /「按键透明度」一致）。 */
+.actions-mobile-disk {
+  position: absolute;
+  top: calc(10px + 48px);
+  left: calc(10px + env(safe-area-inset-left));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  /* 与右上角那组一样：容器不吃触摸，空出来的地方让给画面 */
+  pointer-events: none;
+}
+.actions-mobile-disk.is-fullscreen { top: calc(max(10px, env(safe-area-inset-top)) + 48px); }
+.actions-mobile-disk .game-action-label { display: none; }
+.actions-mobile-disk .game-action-btn:hover,
+.actions-mobile-disk .game-action-btn:active,
+.actions-mobile-disk .game-action-btn:focus-visible { opacity: 1; }
 </style>

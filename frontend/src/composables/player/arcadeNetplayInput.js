@@ -1,5 +1,4 @@
 import {
-  buildLocalPlayerKeyboardMap,
   buildRemotePlayerKeyMaps,
   normalizeRetroarchKey,
   RETROPAD_BUTTON_DEFS,
@@ -24,10 +23,13 @@ export function arcadeNetplayGuestKeyboardPlayer({ isRoomMode, platform } = {}) 
   return 1
 }
 
-export function buildArcadeNetplayRemoteKeyMaps({ maxPlayers = 4, hostConfig = {}, platformButtons = null } = {}) {
-  const maps = buildRemotePlayerKeyMaps(maxPlayers, reservedKeysFromHostConfig(hostConfig), platformButtons)
-  if (Number(maxPlayers) >= 2) maps[2] = buildLocalPlayerKeyboardMap(2, platformButtons)
-  return maps
+export function buildArcadeNetplayRemoteKeyMaps({ maxPlayers = 4, hostConfig = {}, platformButtons = null, reservedKeys = null } = {}) {
+  // 房间会传完整的 P1 保留键（运行期键 + 房主保存的映射，见 player1ReservedKeys）；
+  // 只给 hostConfig 的旧用法仍然按 core 配置里的 P1 键推导。
+  // P2 用单机 P2 的运行时键位这一点由 remotePlayers.js 的布局表保证，这里不再覆盖：
+  // 覆盖会绕过保留机制，把房主按得到的键分给 P2。
+  const reserved = Array.isArray(reservedKeys) ? reservedKeys : reservedKeysFromHostConfig(hostConfig)
+  return buildRemotePlayerKeyMaps(maxPlayers, reserved, platformButtons)
 }
 
 export function buildArcadeNetplayRetroarchConfig({ maxPlayers = 4, keyMaps = {}, platformButtons = null } = {}) {
