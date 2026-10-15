@@ -95,6 +95,8 @@ npm run dev
 
 开发地址：API `http://127.0.0.1:3000`，Web `http://127.0.0.1:5173`。
 
+国内机器上常把 npm 源换成本机可用的内网镜像（例如腾讯云 VPC 内的 `mirrors.tencentyun.com`）。这种域名只有内网解析得到，而 `npm install` 会把镜像地址写进 `package-lock.json`，提交之后 GitHub 的构建机就装不上依赖了，镜像打包会以 `getaddrinfo EAI_AGAIN` 失败。改过依赖如果发现锁文件里的地址变了，跑 `npm install --registry=https://registry.npmjs.org --package-lock-only` 把它改回公网地址，`npm test` 里的 `tests/lockfile-registry.test.js` 也会拦住这类提交。
+
 素材放置：
 
 - BIOS：`data/bios/<平台>/`，例如 `fds/disksys.rom`、`psx/scph5500.bin`、`psx/scph5501.bin`、`psx/scph5502.bin`、`arcade/neogeo.zip`。

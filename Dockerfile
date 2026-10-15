@@ -1,4 +1,10 @@
 FROM node:22-alpine AS dependencies
+# 托管构建机上 npm 偶尔会遇到 DNS / 连接抖动（报错形如 getaddrinfo EAI_AGAIN），
+# 一次抖动整轮打包就失败：把重试次数与重试间隔调大，和 CI 里的设置一致。
+# ENV 不跨构建阶段继承，所以下面 production 阶段要再写一遍。
+ENV NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
@@ -22,6 +28,10 @@ ENV NODE_ENV=production \
     BIOS_DIR=/app/data/bios \
     SAVES_DIR=/app/data/saves \
     CORES_DIR=/app/data/cores
+# npm 的下载重试设置（理由见文件开头 dependencies 阶段），ENV 不跨阶段继承，这里重写一遍。
+ENV NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
 WORKDIR /app
 
 COPY package.json package-lock.json ./

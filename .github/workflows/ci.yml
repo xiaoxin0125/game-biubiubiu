@@ -22,6 +22,13 @@ on:
 permissions:
   contents: read
 
+# 托管构建机上 npm 偶尔会遇到 DNS / 连接抖动（报错形如 getaddrinfo EAI_AGAIN），
+# 一次抖动就够整轮流水线变红：把重试次数与重试间隔调大，和 Dockerfile 里的设置一致。
+env:
+  NPM_CONFIG_FETCH_RETRIES: '5'
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '20000'
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '120000'
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -38,6 +45,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+
+      # 先单独跑一遍锁文件检查：锁文件里混进内网镜像地址时，npm ci 会以
+      # getaddrinfo EAI_AGAIN 失败，那条报错看不出真正的原因，这里能直接点出来。
+      - name: Check lockfile registry
+        run: node tests/lockfile-registry.test.js
 
       - name: Install dependencies
         run: npm ci
