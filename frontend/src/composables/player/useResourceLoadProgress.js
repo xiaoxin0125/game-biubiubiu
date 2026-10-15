@@ -292,7 +292,7 @@ export function useResourceLoadProgress({ flushIntervalMs = FLUSH_INTERVAL_MS } 
     taskFailed,
     dropTask,
     setStage,
-    registerCoreTasks: (core) => registerCoreTasksFor(progress, core),
+    registerCoreTasks: (core, options) => registerCoreTasksFor(progress, core, options),
     statusTextFor,
     reset,
     // 测试与特殊场景：立刻落盘挂起的进度

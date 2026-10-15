@@ -75,6 +75,19 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.match(engine, /console\.debug\("error occurs at : "/)
   assert.match(engine, /console\.error\("Uncaught Java exception: "/)
   assert.doesNotMatch(engine, /console\.warn\("error occurs at : "/)
+  // 只有线程最底层那个 ExitInterpreter 标记才算「没人接」：JIT 代码通过
+  // fastInterpreterFrameAdapter 调进解释器时会再压一个标记，那种异常上面那些编译帧
+  // 自己有处理者 —— 报成没人接就是给已经接住的异常多刷一条红色报错。
+  assert.match(engine, /if \(this\.fp === this\.bp\) \{/)
+  assert.match(engine, /console\.debug\("Java exception left the interpreter: "/)
+  // 走完全部帧的异常必须离开解释器：这个分支原来把它吞掉后继续跑解释器循环，
+  // 同一条出错指令于是被反复重跑（栈指针每次涨两个 int），Java 侧的处理者永远收不到，
+  // 控制台被同一条报错刷满、游戏停在载入画面。
+  assert.match(engine, /\/\/ Site patch \(thread death\):/)
+  assert.match(engine, /if \(err && err\.classInfo\) \{\n                        throw err;\n                    \}/)
+  // 线程真的死掉时，控制台要说出是哪个 Java 异常，而不是打一个对象转储。
+  assert.match(engine, /\/\/ Site patch \(readable thread death\):/)
+  assert.match(engine, /console\.error\("Thread terminated by " \+ e\.classInfo\._name \+/)
 
   // 这些 MIDP 内部调用在这个运行时里本来就是空操作（标题栏的信任图标、套件锁、显示
   // 状态、CHAPI 记账），逐次警告只会把真正的问题淹掉。
@@ -83,6 +96,9 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.doesNotMatch(bundle, /console\.warn\("DisplayDevice\.displayStateChanged0/)
   assert.doesNotMatch(bundle, /console\.warn\("SuspendSystem\$MIDPSystem\.allMidletsKilled/)
   assert.doesNotMatch(bundle, /addUnimplementedNative\("com\/sun\/j2me\/content\/InvocationStore\.setCleanup0/)
+  // RMS 的监听者登记表是 AMS 给「别的 MIDlet」的通知簿：这里一次只跑一个 MIDlet，
+  // 也没有任何登记表，每次开关 record store 都警告两句只是噪声。
+  assert.doesNotMatch(bundle, /console\.warn\("RecordStoreRegistry\./)
   // 作者遗留的调试输出：键码、config 与 manifest 对象、未定义的配置值。
   assert.doesNotMatch(bundle, /console\.log\(keyCode\);/)
   assert.doesNotMatch(bundle, /console\.log\(config\)/)
@@ -98,6 +114,8 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   // 高级界面（Form / List / Alert …）由 lcdui.js 画进运行时的 canvas，它必须紧跟
   // 运行时加载（覆盖那批空壳 native），所以这一行也是补丁的一部分而不是手改。
   assert.match(read('main.html'), /<script defer src="bld\/main-all\.js"><\/script>\n<script defer src="lcdui\.js"><\/script>/)
+  // 云存档桥（RMS ⇄ 站点存档）同理：它要用运行时的 fs 与 loadingPromises。
+  assert.match(read('main.html'), /<script defer src="lcdui\.js"><\/script>\n<script defer src="rms\.js"><\/script>/)
 })
 
 // 播放页的十字键发手机的导航键代码（-1..-4），面键与肩键发手机键盘代码（5 当确定、

@@ -7714,21 +7714,20 @@ Native["com/sun/midp/rms/RecordStoreSharedDBHeader.cleanup0.()V"] = function(add
   }
 };
 Native["com/sun/midp/rms/RecordStoreSharedDBHeader.finalize.()V"] = Native["com/sun/midp/rms/RecordStoreSharedDBHeader.cleanup0.()V"];
+// Site patch (silent RMS registry): the RMS listener registry is AMS bookkeeping for
+// telling *other* MIDlets that a record store changed. One MIDlet runs at a time here
+// and nothing keeps a registry, so these are the honest answers -- no listeners to hand
+// out, no listeners to start or stop, nobody to notify -- instead of a warning per call.
 Native["com/sun/midp/rms/RecordStoreRegistry.getRecordStoreListeners.(ILjava/lang/String;)[I"] = function(addr, suiteId, storeNameAddr) {
-  console.warn("RecordStoreRegistry.getRecordStoreListeners.(IL...String;)[I not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
   return J2ME.Constants.NULL;
 };
 Native["com/sun/midp/rms/RecordStoreRegistry.sendRecordStoreChangeEvent.(ILjava/lang/String;II)V"] = function(addr, suiteId, storeNameAddr, changeType, recordId) {
-  console.warn("RecordStoreRegistry.sendRecordStoreChangeEvent.(IL...String;II)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ", " + changeType + ", " + recordId + ")");
 };
 Native["com/sun/midp/rms/RecordStoreRegistry.startRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
-  console.warn("RecordStoreRegistry.startRecordStoreListening.(IL...String;)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
 };
 Native["com/sun/midp/rms/RecordStoreRegistry.stopRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
-  console.warn("RecordStoreRegistry.stopRecordStoreListening.(IL...String;)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
 };
 Native["com/sun/midp/rms/RecordStoreRegistry.stopAllRecordStoreListeners.(I)V"] = function(addr, taskId) {
-  console.warn("RecordStoreRegistry.stopAllRecordStoreListeners.(I)V not implemented (" + taskId + ")");
 };
 Native["com/sun/cdc/io/j2me/file/DefaultFileHandler.create.()V"] = function(addr) {
   var pathname = J2ME.fromStringAddr(getHandle(addr).nativePath);

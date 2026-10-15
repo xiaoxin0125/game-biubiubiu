@@ -4,20 +4,21 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.6.1**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.1`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.6.3**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.3`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
 ## 功能
 
-- 游戏库：公开库、个人 ROM、收藏、回收站，支持父子版本（街机 clone、修订版、汉化版）。
+- 游戏库：公开库、个人 ROM、收藏、回收站，支持父子版本（街机 clone、修订版、汉化版）。首页排序有「默认（按游戏名，中文按拼音、数字按自然序）」「最新」「最热（游玩次数）」「随机」四种；主机分类下拉框按「机器」列（一台机器一项、名字是「中文 (英文)」加这台机器的游戏数），只列真有游戏的机器。
 - 模拟器：浏览器内运行 libretro core，支持本地键盘、物理手柄和移动端虚拟手柄，输入映射按用户保存。手柄映射按设备保存并默认使用 XBOX 标准布局（按手柄上的字母一一对应：A 就是 A、B 就是 B、X 就是 X、Y 就是 Y；FC / NES 系列的 X / Y 行是连发 A / 连发 B，所以手柄的 X / Y 就是连发），PS / NS 等其他手柄在按键设置里逐键手动映射；按键设置的手柄分页会实时显示哪个物理键按下、对应哪一行，可逐键核对；单机默认第一个手柄控制 P1、第二个控制 P2，只有一个手柄时默认只控制 P1，控制顺序可在按键设置里改；联机房间内所有本地物理手柄都作为本机 P1 输入，不受单机座位设置或「不使用手柄」选项影响；房主控制 P1，客机仍只通过现有授权席位回传输入，观战者不能控制。物理手柄只由页面这一层读取后按下对应键位，模拟器自身不再读浏览器手柄（否则同一次按键会被 core 自己的 autoconfig 再处理一遍，出现 A+B、A/B 与 X/Y 对调）。键盘同理：core 里给 P2 / P3 / P4 用的是一批只做内部中转的键，前端把它们从玩家自己的键位里全部避开，玩家本人直接按到这些键时页面会吞掉，不会误触其他玩家。虚拟手柄只在手机 / 平板这类「主指针是触摸、不能悬停」的设备上显示：触摸屏笔记本、一体机即使屏幕能摸，只要鼠标或触控板才是主指针就按 PC 处理，窗口拖小也不会切进触屏布局（那会连带把 core 的玩家数改成 1，模拟器按新配置重启）。手机竖屏、横屏都会显示虚拟手柄；触屏设备用画面左上角的悬浮按钮切全屏，手机横屏时可尝试锁定方向（iOS 等不支持锁定的浏览器会提示手动横屏）；画面右上角另有「按键透明度」按钮（与全屏按钮分居两侧），点一下把整块虚拟手柄压到 20% 让出画面，再点一下恢复，选择会记住。手柄上的按键字母、方向箭头与「连发」都关掉了浏览器自带的长按手势，按住不放不会被「复制 / 搜一搜」菜单打断。
-- 玩家工具条：云存档读写、重载游戏（重启模拟器）、金手指、FDS 换面 / 换盘（磁碟机游戏才有）。金手指按 ROM 分成两部分：管理员在后台为游戏内置的代码（玩家只需开关），以及玩家自己添加的代码（保存在本机浏览器）。两者都即时下发给 core，由 core 解析代码文本（Nestopia / FCEUmm / Snes9x / mGBA / Genesis Plus GX / PicoDrive / PCSX-ReARMed 等实现了 `retro_cheat_set` 的 core 生效）；未实现该接口的 core（如 FBNeo、MAME 2003-Plus、QuickNES）会忽略代码。
+- 玩家工具条：云存档读写、重载游戏（重启模拟器）、金手指、FDS 换面 / 换盘（磁碟机游戏才有）。J2ME 的存档是全自动的，所以这类游戏不显示存档 / 读档按钮，只留重载（兼作换兼容库）。金手指按 ROM 分成两部分：管理员在后台为游戏内置的代码（玩家只需开关），以及玩家自己添加的代码（保存在本机浏览器）。两者都即时下发给 core，由 core 解析代码文本（Nestopia / FCEUmm / Snes9x / mGBA / Genesis Plus GX / PicoDrive / PCSX-ReARMed 等实现了 `retro_cheat_set` 的 core 生效）；未实现该接口的 core（如 FBNeo、MAME 2003-Plus、QuickNES）会忽略代码。
 - 播放页布局：手机端保存 / 读档 / 重置 / 金手指浮在画面右上角、紧挨「按键透明度」按钮，竖屏横排，横屏与全屏竖排并与它同列（排在正下方），FDS 的换面 / 换盘另起一组排在左上角全屏按钮正下方，顶部只留返回、居中的游戏信息与末端的版本选择 / 房间玩家列表；PC 宽屏同一组按钮改成图文按钮排在画面右侧、与画面上沿对齐，一行两个，窗口变窄或页面缩放排不开时收成一行一个，再放不下才退回顶部工具条。画面（crt-screen）左右等宽占位对称，始终停在页面正中，版本选择、房间玩家列表与全屏按钮位置不变。
 - 全屏与浮层：全屏的元素是整个播放页，金手指弹窗与按键设置在它内部渲染，弹窗按容器高度自适应、列表内部滚动 —— 原生全屏、iOS / 微信的 CSS 伪全屏、以及浏览器不给锁方向时整页被转成横版的兜底全屏下都能正常打开且不超出屏幕。
 - 交互与分页：提示、确认、输入全部是站内弹窗（`frontend/src/components/AppDialog.vue` + `frontend/src/composables/useAppDialog.js`，多条按顺序排队），不再弹浏览器自带的 `alert` / `confirm` / `prompt`；删除类操作的确认按钮是危险色、默认聚焦「取消」，Esc 或点遮罩取消，切换路由会作废等待中的确认。列表分页统一由 `frontend/src/components/ClayPagination.vue` 提供（游戏库、我的 ROM、后台 ROM 列表），按容器实际宽度自适应 —— 优先保住页码个数，其次保住「跳转」，最后才把按钮收小一档；「跳转」走站内输入弹窗并校验页码范围。
 - 站点图标：`frontend/public/favicon.svg` 是唯一源文件（粘土粉圆角方块 + 奶油色方向键与 A / B 键），`favicon.ico` 给老浏览器兜底，`apple-touch-icon.png` 供 iOS 加到主屏；页签与书签优先用 SVG。
-- 云存档：按 ROM 与槽位读写。
+- 云存档：按 ROM 与槽位读写，每人一份（服务端按「用户 + ROM + 槽位」唯一）。Java 手机游戏（J2ME）的存档是游戏内的 RMS，登录玩家开局自动读回、运行中自动上传，不经按钮（见「支持平台」里的 J2ME 说明）。
+- J2ME 手机游戏：`.jar` 由前端本机托管的 J2meJS 运行（不走 libretro，也不需要 BIOS）。高级界面（Form / List / Alert / Gauge / TextField）由站点自己的 `lcdui.js` 画进画布，文字输入与短信验证码对话框同样搬进画面；开局先选一档 Java 兼容库（按 ROM 记住）；存档自动跟着 ROM 进出云端。单机一名玩家（房主 P1），详见「支持平台」。
 - 联机房间：公开/私有房间、房间码与密码、聊天、席位同步；host 推流画面与音频，guest 通过 DataChannel 回传输入，游客默认观战；房间内不提供 ROM 版本切换，统一跑进房时选定的版本。客机按键在 host 侧换算成一组只做内部中转的键注入 core，这组键同时会从「房主自己的键位」里全部避开，而且房主真的按到它们时页面会直接吞掉（不会打到别的玩家），客机只认经 DataChannel 回传的输入。STUN / TURN 都能在后台填写，保存后玩家刷新页面即生效，不需要重新构建镜像。
 - 管理后台：用户、ROM、BIOS、站点设置（上传开关、联机开关、游客游玩、STUN 与 TURN 地址及连通性测试）；每个 ROM 可单独配置内置金手指（后台 ROM 列表里的「金手指」按钮）。
 - ROM 与用户列表里的时间统一按 `Asia/Shanghai` 显示：数据库连接、Drizzle 映射和接口输出都固定同一个时区，不再出现差 8 小时的混用。
@@ -31,14 +32,15 @@
 | 后端 | Node.js、Hono、@hono/node-server、@hono/node-ws |
 | 数据 | MySQL 8、Drizzle ORM |
 | 实时 | WebSocket 信令、WebRTC、DataChannel |
-| 资产 | 本地 libretro core、BIOS、ROM、云存档 |
+| 资产 | 本地 libretro core、J2meJS 运行时、BIOS、ROM、云存档 |
 
 ## 目录结构
 
 ```text
 .
 ├── frontend/                 # Vue 3 前端：src/api、components、composables、views
-│   └── public/               # 站点图标：favicon.svg（源文件）、favicon.ico、apple-touch-icon.png
+│   └── public/               # 站点图标（favicon.svg 为源文件）与 j2me/ 运行时
+│       └── j2me/             # 前端托管的 J2meJS：main.html、bld/、libs/、java/（三个类库）、lcdui.js、rms.js、INTEGRATION.md
 ├── server/                   # Hono API 与 WebSocket 服务
 │   ├── db/                   # Drizzle schema 与迁移
 │   ├── middleware/           # 认证、CSRF、安全头、限流、错误处理
@@ -56,7 +58,7 @@
 ## 架构要点
 
 - 启动：`server/index.js` 先执行数据库迁移和会话清理，再挂载安全中间件、HTTP API、WebSocket 路由，最后托管 `frontend/dist`。
-- ROM 播放：`GET /api/roms/:id/file` 依据 `storage` 字段读本地磁盘或代理远端存储（透传 `Range`），前端交给 Nostalgist 按平台核心启动。
+- ROM 播放：`GET /api/roms/:id/file` 依据 `storage` 字段读本地磁盘或代理远端存储（透传 `Range`），前端交给 Nostalgist 按平台核心启动；J2ME 是例外，`.jar` 交给前端托管的 J2meJS 运行时（同源内嵌页面）解释。
 - 联机：`/api/rooms/:code/ws` 先经 `room-ws-gate` 校验会话、票据、功能开关与限流，再加入在线房间；房间内 host 运行模拟器并推流，guest 输入经 DataChannel 回传，房主固定为 P1。
 
 ## 环境要求
@@ -159,7 +161,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.1"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.3"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -210,7 +212,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.1`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.3`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可；v1.6.1 升级到 v1.6.2 只有前端与一条数据迁移（`0008_platform_aliases`，把 `famicom` / `snes` / `genesis` 并到 `nes` / `sfc` / `megadrive`，随后端启动自动执行），没有新的核心与 BIOS，替换镜像或重新构建前端即可；v1.6.2 升级到 v1.6.3 只改前端与 `frontend/public/j2me/` 里的运行时（新增 `rms.js`、补丁 15–18、`lcdui.js` 的文字输入），没有表结构变更、没有新的核心与 BIOS，**但必须重新构建前端**：运行时资源带内容版本号，只换后端镜像不会更新 `j2me/` 下的文件；云存档沿用既有的 `save_states` 表与 `data/saves` 目录，不需要改动。升级后建议清一次手机浏览器缓存或用无痕窗口验证运行时（见「常见问题」里的 J2ME 一节）。
 
 **6. 备份与恢复**
 
@@ -292,9 +294,19 @@ CORES_DIR=/www/wwwroot/game/data/cores
 
 一台机器在表里只有一条记录：红白机 / NES 记作 `nes`（界面显示「任天堂红白机 (FC / NES)」，徽章 `FC`），超任 / SNES 记作 `sfc`（`SFC`），世嘉五代 / MD / Genesis 记作 `megadrive`（`MD`）。区域叫法不再各占一条平台记录，否则分类筛选里同一台机器会出现两项、其中一项一盘游戏都没有，同一款游戏一半标 `nes`、一半标 `famicom` 时也无法互为版本。历史数据里的旧别名（`famicom`、`snes`、`genesis`）由迁移 `0008_platform_aliases` 并到通用名上，后端收到老客户端上传的别名也会先归一（见 `shared/registry/platform-roms.js` 的 `normalizePlatformId()`）。注意平台 id 是 ROM 记录上的字段，同时也是分组键：上传页按扩展名自动识别只认「一个扩展名基本只可能属于一台机器」的情况（`.nes`、`.unif`、`.unf` → `nes`，`.smc`、`.sfc` → `sfc`，`.md`、`.gen`、`.smd` → `megadrive`，`.pce` → `pcengine`，`.32x` → `sega32x`，`.ngp` / `.ngc` / `.ngpc` / `.npc` → `ngp`，`.jar` → `j2me`，任何 `.zip` → `arcade`），光盘镜像（`.cue` / `.chd` / `.iso`）与 `.bin` 多台机器共用，不再自动识别，要手动选。首页的主机分类下拉框、我的 ROM 与后台的平台筛选都以「机器」为单位（每台机器一项、标签是平台表里的「中文 (英文)」，只列真有游戏的机器），所以不会再出现空分类。
 
-BIOS 按平台放在 `data/bios/<平台>/` 下：FDS 需要 `disksys.rom`；PSX 常用 BIOS 为 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`；PCE-CD 需要 `syscard3.pce`（去掉 512 字节 copier 头后的本体，MD5 `38179df8f4ac870017db21ebcbf53114`）；Neo Geo CD 需要 `neocd_f.rom` 与 `ng-lo.rom`（核心按 `system/neocd/` 找，挂载时的子目录由 `shared/registry/platform-bios.js` 的挂载表补上）；3DO 用日版 FZ-1 的 `panafz1j.bin` 与日版字库 `panafz1j-kanji.bin`（核心选项里已点名这两份）；J2ME 改用前端本机托管的 J2meJS，不需要 BIOS；当前上传格式只接受 `.jar`，JAD/JAM 描述文件需要先取得对应 JAR 后再上传；`.sqc` 不受支持。J2meJS 的 MIDP/厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；不支持即时存档/读档，游戏内 RMS 存档仅在当前运行会话有效。后台「BIOS 文件」页会列出每个平台的必填项与缺失文件。
+BIOS 按平台放在 `data/bios/<平台>/` 下：FDS 需要 `disksys.rom`；PSX 常用 BIOS 为 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`；PCE-CD 需要 `syscard3.pce`（去掉 512 字节 copier 头后的本体，MD5 `38179df8f4ac870017db21ebcbf53114`）；Neo Geo CD 需要 `neocd_f.rom` 与 `ng-lo.rom`（核心按 `system/neocd/` 找，挂载时的子目录由 `shared/registry/platform-bios.js` 的挂载表补上）；3DO 用日版 FZ-1 的 `panafz1j.bin` 与日版字库 `panafz1j-kanji.bin`（核心选项里已点名这两份）；J2ME 改用前端本机托管的 J2meJS，不需要 BIOS。后台「BIOS 文件」页会列出每个平台的必填项与缺失文件。
 
-Opera 的浏览器核心需要让 libretro-common 的头文件与 RetroArch 实现一致；构建版本、CHD 支持和真实浏览器回归步骤见 [`deploy/opera-build.md`](deploy/opera-build.md)。Java 运行时的许可证、站点补丁、手机端（WebKit）启动修复与运行时资源版本号见 [`frontend/public/j2me/INTEGRATION.md`](frontend/public/j2me/INTEGRATION.md)；它的沙箱 iframe 必须留在屏幕内并靠 `opacity` 隐藏，一旦被挪出屏幕，Chrome 会把它的定时器压到每秒一次，游戏会明显卡顿。
+### Java 手机游戏（j2me）
+
+`.jar` 由前端本机托管的 J2meJS 解释，不走 libretro；上传格式只接受 `.jar`，JAD/JAM 描述文件需要先取得对应 JAR 后再上传，`.sqc` 不受支持。播放页在运行时之外补了三件事：
+
+- **高级界面画进画布**：MIDP 的高级界面（Form / List / Alert / Gauge / TextField）原本是运行时页面里的 DOM 元素，而播放页只镜像画布 —— 玩家看到的是一片空白，播放页还会因为「一直没画出画面」把它判成启动超时。现在由站点的 `lcdui.js` 画到画布上，条目的位置与尺寸仍由 Java 侧决定；列表的方向键移动、确定键选中与底部左右软键条也一并补上。要打字的地方同样搬进了画面：按「5 确定」或点画面上那个格子会浮出真正的输入框（手机上就是系统键盘），打完按「5」或左软键提交、右软键取消，短信验证码这类运行时自己的对话框也走同一套。
+- **兼容库开局自选**：运行时自带三档 Java 类库（enginemode：`classesold.jar` 兼容库、`classes2.jar` MIDP 2.0、`classes.jar`），能启动的游戏范围不一样。进入播放页会先弹窗选一档（默认预选上次那一档，选择按 ROM 记在浏览器本地），游戏起不来或提示缺少 MIDP 2.0 特性时换一档即可；「重载游戏」也走这个弹窗，等于用新类库重开。
+- **存档自动进云**：MIDP 里能持久化的只有 RMS（游戏内记录集）。登录玩家开局会自动读回自己的存档、游戏一写记录就自动上传（每人每个 ROM 一份，与其他平台共用同一套云存档与 `data/saves` 目录），暂停、切到后台、退出页面时各补一次，不需要点任何按钮；未登录的玩家与房间客人不留存档，因此 J2ME 对这两类人不显示存档 / 读档按钮。即时存档 / 读档（`saveState` / `loadState`）对 J2ME 仍是空操作。
+
+J2meJS 的 MIDP / 厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；它以同源内嵌页面运行（运行时要读写 IndexedDB），沙箱 iframe 必须留在屏幕内并靠 `opacity` 隐藏 —— 一旦被挪出屏幕，Chrome 会把它的定时器压到每秒一次，游戏会明显卡顿。许可证、站点补丁、手机端（WebKit）启动修复与运行时资源版本号见 [`frontend/public/j2me/INTEGRATION.md`](frontend/public/j2me/INTEGRATION.md)。
+
+Opera（3DO）的浏览器核心需要让 libretro-common 的头文件与 RetroArch 实现一致；构建版本、CHD 支持和真实浏览器回归步骤见 [`deploy/opera-build.md`](deploy/opera-build.md)。
 
 FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多出「换面」「换盘」两颗（键盘默认对应 `U` 与 `P`，也能在按键设置里改）。nestopia 下「换面」直接翻到另一面，「换盘」在双盘游戏里换到另一张盘；fceumm 下要先「换盘」弹出、再「换面」选面、再「换盘」插回。这两颗按布局走：PC 宽屏在画面右侧那组图文按钮里，窄屏退回顶部工具条时也一起排进工具条；手机端不跟右上角那组挤在同一排，而是排在画面左上角全屏按钮的正下方，尺寸与全屏 /「按键透明度」按钮一致（42px），竖屏窄到 320px 也不会顶出屏幕。
 
@@ -309,6 +321,11 @@ FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多
 | `npm run preview` | 预览前端构建产物 |
 | `npm run db:import:sqlite` | 旧 SQLite 数据导入 MySQL |
 | `npm run security:matrix` | 权限矩阵检查 |
+| `node frontend/public/j2me/apply-site-patches.mjs` | 重新应用 J2meJS 运行时的站点补丁（刷新运行时副本后执行；可重复运行） |
+| `node --test tests/*.test.js` | 跑测试套件；J2ME 的真实浏览器用例加 `J2ME_TEST_CHROME=<chrome 路径>` |
+| `node deploy/build-cores.mjs` | 发布当前版本的 libretro 核心（版本化地址与远端托管依赖它） |
+
+升级 `frontend/public/j2me/` 里的运行时副本时，除了上面的补丁脚本，还要重新构建前端让产物带上新的内容版本号（`npm run build` 末尾会自动执行 `frontend/scripts/stamp-j2me-runtime.mjs`）。
 
 验证构建与运行状态：
 
@@ -321,6 +338,10 @@ curl http://127.0.0.1:3000/api/health
 ## 常见问题
 
 **上传 ROM 后无法运行？** 依次检查平台是否选对、对应 core 的 `.js` 与 `.wasm` 是否都在 `data/cores`、平台是否需要 BIOS 文件，以及浏览器控制台是否有 core 或 WebAssembly 报错。
+
+**Java 手机游戏（J2ME）起不来 / 画面全黑？** 先在开局弹窗里换一档兼容库：默认的 `classesold.jar` 覆盖面最广，提示缺少 MIDP 2.0 特性（多媒体、3D、完整联网）时换 `classes2.jar`，「重载游戏」可以随时再换一次。仍然不行时看播放页控制台：真正的异常会以 `[EXCEPTION]` 带 Java 类名与消息出现（例如主类不存在、缺少某个 API），把它连同 JAR 名一起记录下来。游戏内的存档不需要玩家操作：登录后开局会自动读回、运行中自动上传，未登录或房间客人则只在本机保留。
+
+**运行时更新了但手机还是老样子？** 运行时的脚本与类库地址都带内容版本号，正常情况下刷新页面就会拿到新版本；被 CDN 或公司代理缓存时才需要清一次浏览器缓存，用无痕窗口可以快速区分「缓存问题」与「真的没更新」。改动过 `frontend/public/j2me/` 之后必须重新构建前端（`npm run build`），只重启后端不会重新下发这些文件。
 
 **房间能进入但没有画面 / 一直显示“握手中”？** 通常是 WebRTC 只配置了 STUN，严格防火墙或跨运营商网络无法打洞。先在后台「站点设置」填写可用的 STUN（填好后点「测试 STUN 服务器」，会从服务器发真实 STUN 请求并给出结论；自建方法见 `deploy/STUN.md`）并让玩家刷新页面；仍然失败时按上文第 3 步部署 coturn 并开放端口，把 TURN 地址与凭据填进后台「TURN 中继」再点「测试 TURN 中继」确认可用，最后用 `VITE_WEBRTC_FORCE_RELAY=1` 验证中继链路。只开放少量 relay 端口时并发能力会明显受限。
 

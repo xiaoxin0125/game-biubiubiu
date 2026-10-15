@@ -22,7 +22,7 @@
       @keys="openInputSettings"
       @save-state="onSaveState"
       @load-state="onLoadState"
-      @reload="onReload"
+      @reload="reloadGame"
       @cheats="showCheats = true"
       @swap-disk-side="swapDiskSide"
       @change-disk="changeDisk"
@@ -55,6 +55,8 @@
           :progress="loadProgress"
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
+          :engine="isJ2me && isHostMode ? engineChoice : null"
+          :cloud-save="cloudSave"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
           @error="(err) => setFatalError(err?.message || '模拟器启动失败')"
@@ -126,7 +128,7 @@
           :can-change-disk="canUseFdsDisk"
           @save-state="onSaveState"
           @load-state="onLoadState"
-          @reload="onReload"
+          @reload="reloadGame"
           @cheats="showCheats = true"
           @swap-disk-side="swapDiskSide"
           @change-disk="changeDisk"
@@ -153,7 +155,7 @@
         :can-change-disk="canUseFdsDisk"
         @save-state="onSaveState"
         @load-state="onLoadState"
-        @reload="onReload"
+        @reload="reloadGame"
         @cheats="showCheats = true"
         @keys="openInputSettings"
         @swap-disk-side="swapDiskSide"
@@ -205,6 +207,16 @@
       @close="closeInputSettings"
     />
 
+    <!-- J2ME：房主开局（以及换类库重开）前的兼容库选择。客人看画面流，不弹。 -->
+    <J2meEngineDialog
+      v-if="engineDialogOpen && isHostMode === true"
+      :title="displayName"
+      :model-value="engineChoice"
+      :mode="engineDialogMode"
+      @confirm="confirmEngine"
+      @close="closeEngineDialog"
+    />
+
     <CheatDialog
       v-if="showCheats"
       :builtin-cheats="builtinCheats"
@@ -241,6 +253,8 @@ import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { usePlayerActionsPlacement } from '../composables/player/usePlayerActionsPlacement.js'
 import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
+import { useJ2meCloudSave } from '../composables/player/useJ2meCloudSave.js'
+import { isJ2mePlatform, readJ2meEngine, writeJ2meEngine, J2ME_ENGINE_CHOICES } from '../composables/player/j2meEngines.js'
 import { usePlayerRoomRuntime } from '../composables/player/usePlayerRoomRuntime.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
@@ -260,6 +274,7 @@ import GameActionButtons from '../components/emulator-portal/GameActionButtons.v
 import VirtualGamepadOpacityButton from '../components/emulator-portal/VirtualGamepadOpacityButton.vue'
 import RoomPanel from '../components/emulator-portal/RoomPanel.vue'
 import ResourceLoadingOverlay from '../components/emulator-portal/ResourceLoadingOverlay.vue'
+import J2meEngineDialog from '../components/J2meEngineDialog.vue'
 import InputSettings from '../components/InputSettings.vue'
 import { coreDisplayName } from '../constants/cores.js'
 
@@ -404,7 +419,9 @@ const {
 remotePlayerKeyMaps = resolvedRemotePlayerKeyMaps
 
 const roomAllowsPlay = computed(() => roomAllowPlay.value)
-const canSaveState = computed(() => isAuthed.value && signalMe.value?.isHost === true)
+// 房间不给存档 / 读档按钮：J2ME 的存档跟着 ROM 自动进出云端（房主登录时），
+// 其余平台照旧（房主 + 登录）。
+const canSaveState = computed(() => isAuthed.value && signalMe.value?.isHost === true && !isJ2me.value)
 
 const shouldShowVirtualGamepad = computed(() => {
   if (!signalMe.value) return false
@@ -420,16 +437,69 @@ const canControlEmulator = computed(() => isHostMode.value === true && !!rom.val
 const canCheat = computed(() => canControlEmulator.value)
 
 // 模拟器组件挂载条件：房主 + ROM/BIOS 就绪（核心下载就在组件内部发起）。
-const portalActive = computed(() => isHostMode.value === true && !!rom.value && biosReady.value)
+// J2ME 还要等房主在开局弹窗里选完兼容库（enginemode）。
+const isJ2me = computed(() => isJ2mePlatform(romMeta.value?.platform))
+const engineChoice = ref('')
+const engineDialogOpen = ref(false)
+const engineDialogMode = ref('start')
+const engineConfirmed = ref(false)
+
+watch([isJ2me, isHostMode, () => romMeta.value?.id], ([j2me, host, romId]) => {
+  if (!j2me || host !== true || romId == null) return
+  engineChoice.value = readJ2meEngine(romId)
+  engineDialogMode.value = 'start'
+  engineDialogOpen.value = true
+}, { immediate: true })
+
+function confirmEngine(engine) {
+  const previous = engineChoice.value
+  const restarting = engineDialogMode.value === 'restart'
+  engineChoice.value = engine
+  engineDialogOpen.value = false
+  engineDialogMode.value = 'start'
+  writeJ2meEngine(romMeta.value?.id, engine)
+  if (!restarting) { engineConfirmed.value = true; return }
+  if (engine === previous) void onReload()
+}
+
+function closeEngineDialog() {
+  if (engineDialogMode.value === 'restart') { engineDialogOpen.value = false; engineDialogMode.value = 'start'; return }
+  // 开局这一步不能取消：默认用上次那一档（或兼容库）直接开局。
+  confirmEngine(engineChoice.value || J2ME_ENGINE_CHOICES[0].id)
+}
+
+function reloadGame() {
+  if (isJ2me.value) {
+    engineDialogMode.value = 'restart'
+    engineDialogOpen.value = true
+    return
+  }
+  void onReload()
+}
+
+const portalActive = computed(() => isHostMode.value === true && !!rom.value && biosReady.value
+  && (engineConfirmed.value || !isJ2me.value))
 // 客人（以及还没确定角色的访客）看的是主机画面，不该出现"本地资源"进度。
 const guestViewActive = computed(() => isRoomMode && isHostMode.value !== true)
 // 加载面板显示规则：没启动成功就一直显示；错误发生在模拟器挂载之前时让位给错误卡片。
 const showLoadOverlay = computed(() =>
   !booted.value && !guestViewActive.value && !(fatalError.value && !portalActive.value))
 
-// 核心一选定就登记任务，界面先知道要下几个文件、共多大。
-watch([activeCore, isHostMode], ([core, host]) => {
-  if (core && host === true) loadProgress.registerCoreTasks(core)
+// 核心一选定就登记任务，界面先知道要下几个文件、共多大。J2ME 等房主选完类库再登记。
+watch([activeCore, isHostMode, engineConfirmed], ([core, host, confirmed]) => {
+  if (!core || host !== true) return
+  if (isJ2me.value && !confirmed) return
+  loadProgress.registerCoreTasks(core, { engine: isJ2me.value ? engineChoice.value : null })
+}, { immediate: true })
+
+// J2ME 的存档跟着 ROM 走：房主登录时开局读云存档、运行中自动上传，客人不接
+// （客人那边跑的是画面流，没有本地文件系统）。
+const { cloudSave } = useJ2meCloudSave({
+  romMeta,
+  isAuthed,
+  isGuestMode,
+  showToast,
+  enabled: computed(() => isHostMode.value === true),
 })
 
 // 联机房里只有房主会在本地启动核心（客人看的是房间画面流），所以 @booted 只在

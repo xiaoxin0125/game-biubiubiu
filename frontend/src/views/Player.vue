@@ -22,7 +22,7 @@
       @keys="openInputSettings"
       @save-state="onSaveState"
       @load-state="onLoadState"
-      @reload="onReload"
+      @reload="reloadGame"
       @cheats="showCheats = true"
       @swap-disk-side="swapDiskSide"
       @change-disk="changeDisk"
@@ -59,6 +59,8 @@
           :progress="loadProgress"
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
+          :engine="isJ2me ? engineChoice : null"
+          :cloud-save="cloudSave"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
           @error="(err) => setFatalError(err?.message || '模拟器启动失败')"
@@ -106,7 +108,7 @@
           :can-change-disk="canUseFdsDisk"
           @save-state="onSaveState"
           @load-state="onLoadState"
-          @reload="onReload"
+          @reload="reloadGame"
           @cheats="showCheats = true"
           @swap-disk-side="swapDiskSide"
           @change-disk="changeDisk"
@@ -133,7 +135,7 @@
         :can-change-disk="canUseFdsDisk"
         @save-state="onSaveState"
         @load-state="onLoadState"
-        @reload="onReload"
+        @reload="reloadGame"
         @cheats="showCheats = true"
         @keys="openInputSettings"
         @swap-disk-side="swapDiskSide"
@@ -184,6 +186,16 @@
       @clear="clearCheats"
     />
 
+    <!-- J2ME：开局（以及换类库重开）前的兼容库选择 -->
+    <J2meEngineDialog
+      v-if="engineDialogOpen"
+      :title="displayName"
+      :model-value="engineChoice"
+      :mode="engineDialogMode"
+      @confirm="confirmEngine"
+      @close="closeEngineDialog"
+    />
+
     <!-- 手机端排查卡死：地址后加 ?perf=1 才出现 -->
     <pre v-if="perfActive" class="perf-hud">{{ perfStats }}</pre>
   </div>
@@ -204,6 +216,8 @@ import { usePlayerViewport } from '../composables/player/usePlayerViewport.js'
 import { usePlayerActionsPlacement } from '../composables/player/usePlayerActionsPlacement.js'
 import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
+import { useJ2meCloudSave } from '../composables/player/useJ2meCloudSave.js'
+import { isJ2mePlatform, readJ2meEngine, writeJ2meEngine, J2ME_ENGINE_CHOICES } from '../composables/player/j2meEngines.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
 import { usePerfOverlay } from '../composables/usePerfOverlay.js'
@@ -215,6 +229,7 @@ import { coreDisplayName } from '../constants/cores.js'
 import EmulatorPortal from '../components/emulator-portal/EmulatorPortal.vue'
 import GameOverlay from '../components/emulator-portal/GameOverlay.vue'
 import CheatDialog from '../components/emulator-portal/CheatDialog.vue'
+import J2meEngineDialog from '../components/J2meEngineDialog.vue'
 import VirtualGamepad from '../components/emulator-portal/VirtualGamepad.vue'
 import FullscreenButton from '../components/emulator-portal/FullscreenButton.vue'
 import GameActionButtons from '../components/emulator-portal/GameActionButtons.vue'
@@ -312,23 +327,78 @@ const {
   roomHostInputConfigSnapshot,
 })
 
-const canSaveState = computed(() => isAuthed.value)
+// J2ME 没有即时存档/读档：它的存档是 RMS，跟着 ROM 自动进出云端（见 useJ2meCloudSave），
+// 所以那两个按钮对它不显示。
+const canSaveState = computed(() => isAuthed.value && !isJ2me.value)
 const shouldShowVirtualGamepad = computed(() => !!rom.value)
 const displayName = computed(() => romMeta.value?.title || '加载中…')
 const isGuestMode = computed(() => false)
 const canCheat = computed(() => !!rom.value && booted.value)
 const showCheats = ref(false)
 
-// 模拟器组件挂载条件（核心下载就是在它内部发起的）。
-const portalActive = computed(() => !!rom.value && biosReady.value)
+// ---- J2ME：开局先选兼容库（enginemode）----
+// 三个类库能启动的游戏范围不一样，哪一档合适只有游戏自己知道，所以开局让玩家选一次，
+// 选过的按 ROM 记住（下次预选）。类库换掉等于换核心，得重新启动，因此这里挡住
+// EmulatorPortal 的挂载，直到玩家点下「开始游戏」。
+const isJ2me = computed(() => isJ2mePlatform(romMeta.value?.platform))
+const engineChoice = ref('')
+const engineDialogOpen = ref(false)
+const engineDialogMode = ref('start')
+const engineConfirmed = ref(false)
+
+watch([isJ2me, () => romMeta.value?.id], ([j2me, romId]) => {
+  if (!j2me || romId == null) return
+  engineChoice.value = readJ2meEngine(romId)
+  engineDialogMode.value = 'start'
+  engineDialogOpen.value = true
+}, { immediate: true })
+
+function confirmEngine(engine) {
+  const previous = engineChoice.value
+  const restarting = engineDialogMode.value === 'restart'
+  engineChoice.value = engine
+  engineDialogOpen.value = false
+  engineDialogMode.value = 'start'
+  writeJ2meEngine(romMeta.value?.id, engine)
+  if (!restarting) { engineConfirmed.value = true; return }
+  // 换档等于换核心：engine 变了由 EmulatorPortal 自己重启；选的还是同一档就手动重开一次。
+  if (engine === previous) void onReload()
+}
+
+function closeEngineDialog() {
+  if (engineDialogMode.value === 'restart') { engineDialogOpen.value = false; engineDialogMode.value = 'start'; return }
+  // 开局这一步不能取消：默认用上次那一档（或兼容库）直接进游戏。
+  confirmEngine(engineChoice.value || J2ME_ENGINE_CHOICES[0].id)
+}
+
+// 「重载游戏」：J2ME 顺手给一次换类库的机会（换档必须重启，别把这条路藏在
+// "返回列表再进来"里）。其余平台照旧重载。
+function reloadGame() {
+  if (isJ2me.value) {
+    engineDialogMode.value = 'restart'
+    engineDialogOpen.value = true
+    return
+  }
+  void onReload()
+}
+
+// 模拟器组件挂载条件（核心下载就是在它内部发起的）。J2ME 还要等玩家选完兼容库。
+const portalActive = computed(() => !!rom.value && biosReady.value && (engineConfirmed.value || !isJ2me.value))
 // 加载面板的显示规则：还没启动成功就一直显示；只有在"错误发生在模拟器挂载
 // 之前"（例如 ROM 未找到）时才让位给错误卡片，避免两层遮罩互相覆盖。
 const showLoadOverlay = computed(() => !booted.value && !(fatalError.value && !portalActive.value))
 
+// J2ME 的存档自动跟着 ROM 走：登录用户在开局读云存档、运行中自动上传（见
+// useJ2meCloudSave 与 j2meRuntime.js）。未登录 / 客人模式不接。
+const { cloudSave } = useJ2meCloudSave({ romMeta, isAuthed, isGuestMode, showToast })
+
 // 核心任务在选定核心后就登记：界面先知道"要下几个文件、总共多大"，
-// 之后下载的字节进度会更新同一批任务。
-watch(activeCore, (core) => {
-  if (core) loadProgress.registerCoreTasks(core)
+// 之后下载的字节进度会更新同一批任务。J2ME 等玩家选完类库再登记，免得先挂上
+// 默认那一档、再被换掉。
+watch([activeCore, engineConfirmed], ([core, confirmed]) => {
+  if (!core) return
+  if (isJ2me.value && !confirmed) return
+  loadProgress.registerCoreTasks(core, { engine: isJ2me.value ? engineChoice.value : null })
 }, { immediate: true })
 
 const { onSaveState, onLoadState } = useSaveState({

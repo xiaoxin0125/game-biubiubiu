@@ -69,12 +69,14 @@ export const api = {
     }
     return await res.blob()
   },
-  saveUpload: async (romId, blob, slot = 0) => {
+  saveUpload: async (romId, blob, slot = 0, { keepalive = false } = {}) => {
     const res = await fetch(`/api/saves/${romId}?slot=${slot}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/octet-stream' },
       body: blob,
+      // 关标签页之前最后一次自动存档用得上：普通 fetch 会被浏览器掐掉。
+      keepalive,
     })
     const d = await res.json().catch(() => null)
     if (!res.ok) throw new Error(d?.error || `上传存档失败 (${res.status})`)

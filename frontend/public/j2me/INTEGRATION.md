@@ -83,6 +83,12 @@ are served (and shipped) for nothing.
     warning on every call.
 14. `main.html` — loads `lcdui.js` right after the runtime scripts (see "MIDP high
     level UI" below).
+15. `bld/j2me.js` — an exception that has unwound every frame leaves the interpreter
+    instead of being swallowed and re-run (see "The exception wall" below).
+16. `bld/j2me.js` — a Java exception that kills a thread names its class and message.
+17. `bld/main-all.js` — the RMS listener registry (AMS bookkeeping for other MIDlets,
+    and a no-op here) stops warning on every record store open and close.
+18. `main.html` — loads `rms.js` right after the runtime (see "Java saves (RMS)" below).
 
 ## Console output
 
@@ -152,6 +158,20 @@ and a font's `height`/`baseline` hang off the Java `Font` object rather than the
 2D context `NativeMap` returns — without those two, every item collapses to a
 100×20 box in the top-left corner.
 
+Text entry is the other half of the same problem. The runtime's
+`TextEditorProvider` only ever served the Nokia `TextEditor` API, its elements sit
+in the hidden page, and the high-level `TextField` natives are stubs
+(`createNativeResource0` just warns; `getString0` answered with a global that only
+a `prompt()` could set). The player now opens a real `<input>` over the canvas:
+5 / 确定 starts editing, 5 or the left soft key commits, the right soft key
+cancels, and tapping the field does the same. The value goes back through
+`__lcdui.setText` / `commitText`, which writes the Java `DynamicCharacterArray`;
+Java asks for it with `getString0` whenever the MIDlet reads the field, so nothing
+else needs synchronising. The `ItemStateListener` notification cannot be sent from
+the player's key handler — a Java call made there has no VM context (`ctx` is
+null) — so it is queued and delivered from the next native Java calls back into
+(`getString0`, `setCurrentItem0`).
+
 ## Mobile: the WebKit boot failure (fixed 2026-10-14)
 
 J2ME loaded on desktop Chromium but never on phones. iOS Safari and iOS Edge
@@ -206,6 +226,40 @@ instead of depending on user-agent detection.
 The earlier allocator investigation below is retained as background; its
 `OutOfMemoryError` guard alone did **not** fix this game. Moving the runtime to a
 separate origin is optional isolation work, not required for this fix.
+
+### The exception wall behind the 98% stall (fixed 2026-10-15)
+
+The freeze came back in a player's console as a wall of
+`Uncaught Java exception: java/lang/NullPointerException`, with the picture stuck on the
+game's own loading screen. The console was the clue: the exception is real, and it is
+thrown by the game's own bytecode. `p.aq()V` resets the actor table (`n.j = -1` over each
+element of `K`) and one element of `K` is still null when it runs, so the interpreter's
+`PUTFIELD` check (patch 6) raises a Java `NullPointerException` -- correct MIDP behaviour,
+and nothing in `p.aq` or its callers catches it.
+
+`Thread.exceptionUnwind` then walked every frame, reached the `ExitInterpreter` marker and
+re-threw, which is how the runtime hands an exception back across a compiled caller
+(`fastInterpreterFrameAdapter` pushes that marker; `Thread.start0` pushes the thread's
+own). The re-throw landed in the interpreter's own `catch (err)` -- the fork had written
+it to swallow whatever came out of its handler and `continue` the loop. The loop then
+re-ran the faulting instruction against a frame stack the unwind had just removed, `sp`
+growing two words per pass: one 40-second run of one game threw the same exception **594
+times**, each one a red console line, the class library's `Display` reported a caught
+`NullPointerException` per repaint, and the picture stopped changing at the frame the game
+had reached. The handler that should have received the exception never got to run because
+the unwind never finished.
+
+Reproduce it with a bare `requestAnimationFrame` loop in the parent page -- the same
+trigger as the freeze above, and still the trigger after that fix. Two controls through
+the same harness and the same keys (no parent loop, and a parent `setInterval(0)` loop)
+play the game for 60 s without a single exception.
+
+Patch 15 lets that exception leave the interpreter, patch 16 names the class and message
+when one kills a thread, and patch 10 now only calls an exception uncaught at the thread's
+*own* bottom marker: a nested marker means the compiled frames above -- which the
+interpreter's search cannot see -- still have handlers, and reporting those turned an
+exception the game handles into one more red line. Same run after the three: no errors, no
+warnings from the runtime, and the game plays through its loading screen and its levels.
 
 ### Earlier allocator evidence
 
@@ -329,9 +383,15 @@ is registered at all and the panel falls back to ROM-only, exactly as before.
   `DecompressionStream`). The class file itself is verified too, so an
   unlaunchable JAR fails with a clear message instead of timing out.
 - Hands the JAR to the runtime as a `blob:` URL through the frame's query string,
-  together with `midletClassName`, the class library (`enginemode1-classesold.jar`
-  by default), the screen preset and the runtime version read from
-  `/j2me/version.json` (see "Runtime asset versioning").
+  together with `midletClassName`, the class library (`enginemode` chosen by the
+  player in the start dialog, `enginemode1-classesold.jar` when nothing is stored),
+  the screen preset and the runtime version read from `/j2me/version.json`
+  (see "Runtime asset versioning").
+- With a cloud save wired (`cloudSave`, see "Java saves (RMS)"), the snapshot is
+  requested before the frame opens and handed over as a second `blob:` URL in the
+  `save` parameter; a logged-in player with no save yet gets `save=none`, which
+  tells the frame to clear whatever the previous game left behind. The URL is
+  revoked when the session ends.
 - Boots are reported, not assumed: an error the runtime reports while starting is
   held for `J2ME_BOOT_ERROR_GRACE_MS` (5 s) instead of failing the session, so
   the WebKit noise described below cannot kill a boot that is about to paint,
@@ -381,6 +441,56 @@ table (2/4/6/8 → UP/LEFT/RIGHT/DOWN, 5 → FIRE, 1/3/7/9 → GAME_A..GAME_D �
 navigation codes were already there) and points the reverse table (`getKeyCode`)
 at the codes this player actually sends, which is what MIDP defines it to answer.
 
+## Java saves (RMS) in the cloud
+
+MIDP's only persistence is RMS (`javax.microedition.rms.RecordStore`), and this
+runtime stores it as files under `/RecordStore/...` in its own IndexedDB-backed
+filesystem. Two properties of that filesystem shape the design: it is per
+**origin**, not per game — the records of the last J2ME game are still there when
+the next one starts, and a MIDlet reads them without asking anything — and it
+lives in the hidden frame, so only the frame can touch it.
+
+`rms.js` (loaded after the runtime, like `lcdui.js`) makes that tree stand in for
+"this ROM's save file for this user":
+
+- **Restore before the MIDlet runs.** The adapter passes the cloud snapshot to
+  the frame as a `blob:` URL in the `save` parameter (`none` = logged in, no save
+  yet → clear the tree; the parameter absent = not logged in → leave the tree
+  alone). `rms.js` pushes a promise into the runtime's own `loadingPromises`
+  array, which `window.onload` awaits before it starts the VM, and only starts
+  the fetch after `initFS` has opened the filesystem. The MIDlet therefore sees
+  the cloud save on its very first `RecordStore.openRecordStore`. An 8 s timeout
+  and a 4 s parent-side timeout resolve the gate with what is available, so a
+  slow or broken network delays a boot but never blocks it.
+- **Snapshot format.** `{"v":1,"at":<ms>,"files":[{"p":"/RecordStore/…","m":<mtime>,"d":"<base64>"}]}`
+  — deliberately not the runtime's own `store.export`, which dumps the whole
+  filesystem and *clears the database* on import. Restoring removes records that
+  are not in the snapshot, so one game's records can never leak into another.
+- **Auto-save.** `rms.js` wraps the three natives that change records
+  (`RecordStoreFile.commitWrite`, `truncateFile`, `RecordStoreUtil.deleteFile`)
+  and posts `j2me-rms-dirty` to the player, debounced by 800 ms. The adapter
+  debounces once more (1.2 s), takes a snapshot from the frame, and uploads it to
+  `/api/saves/:romId?slot=0` — the same per-user save store the other platforms
+  use. A FNV-1a digest of the snapshot text keeps an unchanged tree from being
+  uploaded again. Pause, `exit()`, `pagehide` and a hidden tab flush the pending
+  change; the unload paths ask for `keepalive`, and `exit()` reads the snapshot
+  before it tears the frame down (bounded to 1.5 s).
+- **Who gets one.** `useJ2meCloudSave.js` wires the interface only for a
+  logged-in, non-guest player: solo sessions and the room host. Guests and
+  logged-out players keep the old behaviour (records live and die with the
+  browser profile). Each user has their own save for each ROM; the save/load
+  buttons are hidden for J2ME because there is nothing left to press — the class
+  library choice lives in the start dialog (`J2meEngineDialog.vue`, three
+  engines, remembered per ROM in `localStorage`).
+
+Verified with a probe (`/tmp/lcdui-probe/rms-probe.mjs`, MIDlet in
+`RmsProbeMidlet.java`) through the real adapter: a fresh profile with no cloud
+save starts empty, the MIDlet writes a record, and two uploads arrive without a
+single button press (record + the later `tick`); a *different* browser profile
+holding only that uploaded snapshot boots with `restore: loaded` and the MIDlet
+reads `v1` back before the VM starts — and does the same under
+`enginemode2-classes2.jar`, where the frame really fetches `java/classes2.jar`.
+
 ## Verified behaviour (2026-10-14)
 
 External sample `/www/wwwroot/default/GAME/J2ME/仙剑奇侠传.jar` (304 KB), run
@@ -414,13 +524,21 @@ stamping. Real-game evidence directories from this session:
   which reads the manifest with its own inflate. On those browsers an
   unlaunchable JAR therefore fails as a startup timeout instead of a readable
   message.
-- No save states, no rewind, no cheats: `saveState`/`loadState` reject.
-- In-game RMS storage is whatever the runtime keeps in IndexedDB; it is not tied
-  to our cloud saves.
-- MIDP high-level screens (Form/List/TextBox), the runtime's own dialogs and its
-  on-screen keypad live inside the hidden frame, so only the game canvas is
-  visible to the player.
-- The class library choice matters per game; a ROM that needs MIDP 2.0 features
-  may need `enginemode2-classes2.jar` instead of the default compatibility
-  library.
+- No save states, no rewind, no cheats: `saveState`/`loadState` reject. J2ME has no
+  state snapshot; the durable half of saving is RMS, which is wired to the cloud
+  instead (see "Java saves (RMS)").
+- RMS storage is tied to our cloud saves for logged-in players: one save per user
+  per ROM, restored before the MIDlet starts and uploaded as the game writes.
+  Logged-out players and room guests keep the records inside that browser only.
+- The class library is chosen by the player in the start dialog (three engines,
+  remembered per ROM); a game that needs MIDP 2.0 features gets them from
+  `enginemode2-classes2.jar` without anyone editing the ROM.
+- MIDP high-level screens (Form/List/Alert/Gauge/TextField) are drawn into the
+  canvas by `lcdui.js`, and text fields are edited in an input the player opens on
+  top of the canvas; the runtime's own DOM dialogs (SMS verification, the Nokia
+  file picker, download failure) and its built-in touch pad still live inside the
+  hidden frame and stay invisible. Those paths are rare (one reference each) and
+  only show up when a MIDlet uses that API.
+- A `TextBox` is entered through the same single-line input, so newlines cannot be
+  typed into it.
 - J2ME is single-player: one seat, no room control for anyone but the host.

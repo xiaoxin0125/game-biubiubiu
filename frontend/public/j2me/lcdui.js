@@ -474,50 +474,241 @@
     applyFont(device, font)
     device.fillStyle = COLORS.titleText
     var baseline = y + Math.round((height + fontHeight(font)) / 2) - 2
-    var room = Math.round(size.width / 2) - PADDING * 2
     var keys = screen.softKeys || {}
-    if (keys.left) {
+    drawKeyLabels(device, keys.left && keys.left.label, keys.right && keys.right.label)
+    return height
+  }
+
+  /** 底部左/右两个软键标签（软键条与平台对话框共用）。 */
+  function drawKeyLabels(device, left, right) {
+    var size = screenSize()
+    var font = defaultFontContext()
+    var height = fontHeight(font) + PADDING * 2
+    var y = size.height - height
+    device.fillStyle = COLORS.titleBar
+    device.fillRect(0, y, size.width, height)
+    applyFont(device, font)
+    device.fillStyle = COLORS.titleText
+    var baseline = y + Math.round((height + fontHeight(font)) / 2) - 2
+    var room = Math.round(size.width / 2) - PADDING * 2
+    if (left) {
       device.textAlign = 'left'
-      device.fillText(clipText(font, keys.left.label, room), PADDING, baseline)
+      device.fillText(clipText(font, left, room), PADDING, baseline)
     }
-    if (keys.right) {
+    if (right) {
       device.textAlign = 'right'
-      device.fillText(clipText(font, keys.right.label, room), size.width - PADDING, baseline)
+      device.fillText(clipText(font, right, room), size.width - PADDING, baseline)
     }
     device.textAlign = 'left'
-    return height
+  }
+
+  // ---- 平台对话框 ----
+  // 运行时自己要弹的那类输入框（短信验证码）挂在那张隐藏页面的 DOM 上，玩家看不到；而
+  // JSR-120 的接收 native 是活的——MIDlet 调 receive0 时会一直等下去，只有这个对话框能把
+  // 消息塞进队列。所以它画到画布上，输入复用播放页的输入框：把请求做成一个「伪条目」，
+  // 播放页那条路一行都不用改。
+  var PLATFORM_TEXT_ID = 'platform'
+  var platformText = null
+
+  /** 平台输入框的排版：画它、给播放页定位输入框，用的是同一份计算。 */
+  function textPromptLayout() {
+    var prompt = platformText
+    if (!prompt) return null
+    var size = screenSize()
+    var font = defaultFontContext()
+    var lineHeight = fontHeight(font)
+    var boxWidth = Math.min(size.width - PADDING * 2, Math.round(size.width * 0.86))
+    var lines = wrap(font, prompt.message, boxWidth - PADDING * 4)
+    var inputHeight = lineHeight + PADDING * 2
+    var boxHeight = PADDING * 3 + lines.length * lineHeight + inputHeight + (prompt.deadline ? lineHeight : 0) + PADDING
+    var boxX = Math.round((size.width - boxWidth) / 2)
+    var boxY = Math.round((size.height - boxHeight) / 2)
+    return {
+      box: { x: boxX, y: boxY, width: boxWidth, height: boxHeight },
+      lines: lines,
+      font: font,
+      lineHeight: lineHeight,
+      input: {
+        x: boxX + PADDING * 2,
+        y: boxY + PADDING * 2 + lines.length * lineHeight + PADDING,
+        width: boxWidth - PADDING * 4,
+        height: inputHeight,
+      },
+    }
+  }
+
+  function drawTextPrompt(device) {
+    var prompt = platformText
+    var layout = textPromptLayout()
+    if (!prompt || !layout) return
+    var size = screenSize()
+    var font = layout.font
+    device.setTransform(1, 0, 0, 1, 0, 0)
+    device.globalAlpha = 1
+    device.textBaseline = 'alphabetic'
+    device.textAlign = 'left'
+    device.fillStyle = COLORS.background
+    device.fillRect(0, 0, size.width, size.height)
+    device.strokeStyle = COLORS.foreground
+    device.lineWidth = 2
+    device.strokeRect(layout.box.x + 1, layout.box.y + 1, layout.box.width - 2, layout.box.height - 2)
+    applyFont(device, font)
+    device.fillStyle = COLORS.foreground
+    device.textAlign = 'center'
+    var centre = layout.box.x + layout.box.width / 2
+    var cursor = layout.box.y + PADDING * 2
+    for (var i = 0; i < layout.lines.length; i++) {
+      device.fillText(layout.lines[i], centre, cursor + fontAscent(font))
+      cursor += layout.lineHeight
+    }
+    device.textAlign = 'left'
+    device.strokeStyle = COLORS.box
+    device.lineWidth = 1
+    device.strokeRect(layout.input.x + 0.5, layout.input.y + 0.5, layout.input.width - 1, layout.input.height - 1)
+    var shown = clipText(font, prompt.text, layout.input.width - PADDING * 2)
+    device.fillStyle = COLORS.foreground
+    device.fillText(shown, layout.input.x + PADDING, layout.input.y + PADDING + fontAscent(font))
+    if (shown) device.fillRect(layout.input.x + PADDING + textWidth(font, shown), layout.input.y + PADDING + 2, 1, layout.lineHeight - 4)
+    if (prompt.deadline) {
+      var seconds = Math.max(0, Math.ceil((prompt.deadline - Date.now()) / 1000))
+      var label = Math.floor(seconds / 60) + ':' + ('0' + (seconds % 60)).slice(-2)
+      device.fillStyle = COLORS.muted
+      device.textAlign = 'center'
+      device.fillText(prompt.timeoutText ? prompt.timeoutText + ' ' + label : label, centre, layout.input.y + layout.input.height + fontAscent(font))
+      device.textAlign = 'left'
+    }
+    drawKeyLabels(device, '完成', '取消')
+  }
+
+  /** 弹一个平台输入框（一次只允许一个）。 */
+  function showTextPrompt(options) {
+    var device = context()
+    platformText = {
+      id: PLATFORM_TEXT_ID,
+      platform: true,
+      kind: 'text',
+      label: '',
+      focused: true,
+      text: options.value == null ? '' : String(options.value),
+      maxSize: options.maxLength | 0,
+      htmlType: options.htmlType || '',
+      message: options.message || '',
+      deadline: options.timeoutMs > 0 ? Date.now() + options.timeoutMs : 0,
+      timeoutText: options.timeoutText || '',
+      onCommit: options.onCommit || null,
+      onCancel: options.onCancel || null,
+      snapshot: null,
+    }
+    // 底下可能是 MIDlet 自己画的 Canvas：它卡在等消息时不会再重画，所以关掉之后得把
+    // 这一帧还回去。
+    try {
+      if (device) platformText.snapshot = device.getImageData(0, 0, device.canvas.width, device.canvas.height)
+    } catch (error) { /* 画布被跨域图片污染过就没有快照可用 */ }
+    invalidate()
+  }
+
+  function closeTextPrompt(cancelled) {
+    var prompt = platformText
+    if (!prompt) return null
+    platformText = null
+    var device = context()
+    if (prompt.snapshot && device) {
+      try { device.putImageData(prompt.snapshot, 0, 0) } catch (error) { /* 忽略 */ }
+    }
+    invalidate()
+    if (cancelled && prompt.onCancel) { try { prompt.onCancel() } catch (error) { /* 忽略 */ } }
+    return prompt
+  }
+
+  function commitTextPrompt() {
+    var prompt = closeTextPrompt(false)
+    if (prompt && prompt.onCommit) { try { prompt.onCommit(prompt.text) } catch (error) { /* 忽略 */ } }
+  }
+
+  // ---- 短信验证码 ----
+  // 这份构建里 JSR-120 的接收 native 是活的，但消息只有「玩家手填」这一条路能进队列：
+  // MIDlet 调 receive0 时队列是空的，它会一直等下去。原来负责填的是 promptForMessageText，
+  // 而那个对话框挂在隐藏页面的 DOM 上，玩家看不到。所以在这里把两者接上。
+  var SMS_RECEIVE0 = 'com/sun/midp/io/j2me/sms/Protocol.receive0.(IIILcom/sun/midp/io/j2me/sms/Protocol$SMSPacket;)I'
+
+  function smsDialogOptions() {
+    var settings = typeof MIDlet !== 'undefined' && MIDlet ? MIDlet : {}
+    // 运行时那句默认文案是英文占位，站点是中文界面：换成同义的提示，顺带告诉玩家怎么输入。
+    var placeholder = 'This app sent you an SMS. Type the message you received here:'
+    var message = settings.SMSDialogVerificationText
+    if (!message || message === placeholder) message = '游戏在等一条短信验证码：按「5 确定」或点下面的输入框填写，填完按「完成」。'
+    return {
+      message: message,
+      maxLength: settings.SMSDialogInputMaxLength | 0,
+      htmlType: settings.SMSDialogInputType || 'text',
+      timeoutMs: settings.SMSDialogTimeout | 0,
+      timeoutText: settings.SMSDialogTimeoutText || '剩余',
+      onCommit: function (value) {
+        var filter = typeof settings.SMSDialogReceiveFilter === 'function' ? settings.SMSDialogReceiveFilter : null
+        if (typeof receiveSms === 'function') receiveSms(filter ? filter(value) : value, 'unknown')
+      },
+    }
+  }
+
+  function showSmsPrompt() {
+    if (platformText) return
+    showTextPrompt(smsDialogOptions())
+  }
+
+  function hookSmsReceive() {
+    var native = Native[SMS_RECEIVE0]
+    if (typeof native !== 'function') return false
+    if (native.__lcduiHooked) return true
+    var wrapped = function () {
+      var result = native.apply(this, arguments)
+      // native 是同步设置 j2meSMSWaiting 的：队列空就说明它开始等了，这时让玩家填验证码。
+      if (MIDP && MIDP.j2meSMSWaiting && !platformText) showSmsPrompt()
+      return result
+    }
+    wrapped.__lcduiHooked = true
+    Native[SMS_RECEIVE0] = wrapped
+    return true
+  }
+
+  if (!hookSmsReceive()) {
+    // 正常顺序里运行时脚本先加载，这里只是兜底。
+    var smsHookTimer = setInterval(function () { if (hookSmsReceive()) clearInterval(smsHookTimer) }, 200)
   }
 
   function redraw() {
     var device = context()
     if (!device) return
-    if (canvasIsCurrent || !activeScreen) return
-    var screen = screens[activeScreen]
-    if (!screen) return
     var size = screenSize()
     device.setTransform(1, 0, 0, 1, 0, 0)
     device.globalAlpha = 1
-    device.fillStyle = COLORS.background
-    device.fillRect(0, 0, size.width, size.height)
     device.textBaseline = 'alphabetic'
     device.textAlign = 'left'
-    if (screen.kind === 'alert') {
-      drawAlert(device, screen)
-    } else {
-      if (screen.title) {
-        var font = fontContext(0)
-        var barHeight = titleHeight(screen)
-        device.fillStyle = COLORS.titleBar
-        device.fillRect(0, 0, size.width, barHeight)
-        device.fillStyle = COLORS.titleText
-        applyFont(device, font)
-        device.textAlign = 'center'
-        device.fillText(clipText(font, screen.title, size.width - PADDING * 2), Math.round(size.width / 2), Math.round((barHeight + fontHeight(font)) / 2) - 2)
-        device.textAlign = 'left'
+    // 高级屏幕显示时由我们接管整个画面；画面归 MIDlet 自己画时只在有平台对话框时叠加。
+    if (!canvasIsCurrent && activeScreen) {
+      var screen = screens[activeScreen]
+      if (screen) {
+        device.fillStyle = COLORS.background
+        device.fillRect(0, 0, size.width, size.height)
+        if (screen.kind === 'alert') {
+          drawAlert(device, screen)
+        } else {
+          if (screen.title) {
+            var font = fontContext(0)
+            var barHeight = titleHeight(screen)
+            device.fillStyle = COLORS.titleBar
+            device.fillRect(0, 0, size.width, barHeight)
+            device.fillStyle = COLORS.titleText
+            applyFont(device, font)
+            device.textAlign = 'center'
+            device.fillText(clipText(font, screen.title, size.width - PADDING * 2), Math.round(size.width / 2), Math.round((barHeight + fontHeight(font)) / 2) - 2)
+            device.textAlign = 'left'
+          }
+          drawItems(device, screen)
+          drawSoftKeys(device, screen)
+        }
       }
-      drawItems(device, screen)
-      drawSoftKeys(device, screen)
     }
+    if (platformText) drawTextPrompt(device)
   }
 
   function invalidate() {
@@ -528,9 +719,16 @@
     }, 0)
   }
 
-  // 画面归 MIDlet 自己画时，允许它覆盖我们的屏幕内容；但只要有高级屏幕在显示，
-  // 就周期性重画一次，防止运行时刷新旧帧时把我们画的界面盖掉。
-  setInterval(function () { if (!canvasIsCurrent && activeScreen) invalidate() }, 250)
+  // 画面归 MIDlet 自己画时，允许它覆盖我们的屏幕内容；但只要有高级屏幕或平台对话框在显示，
+  // 就周期性重画一次，防止运行时刷新旧帧时把我们画的东西盖掉。对话框还要自己看超时。
+  setInterval(function () {
+    if (platformText) {
+      if (platformText.deadline && Date.now() >= platformText.deadline) closeTextPrompt(false)
+      else invalidate()
+      return
+    }
+    if (!canvasIsCurrent && activeScreen) invalidate()
+  }, 250)
 
   // ---- 条目尺寸 ----
   // MIDP 的 LayoutManager 只在 layout 带 LAYOUT_EXPAND 时才把条目拉满，其余一律用
@@ -620,7 +818,7 @@
   }
 
   // ---- 屏幕与条目的登记 ----
-  function createScreen(kind, title) {
+  function createScreen(kind, title, lfAddress) {
     var id = nextId++
     screens[id] = {
       id: id,
@@ -636,6 +834,7 @@
       commands: null,
       itemCommands: [],
       softKeys: { left: null, right: null },
+      lfAddress: lfAddress || 0,
     }
     return id
   }
@@ -706,7 +905,7 @@
     if (activeScreen === nativeId) activeScreen = 0
   })
   install('javax/microedition/lcdui/FormLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I', function (addr, titleAddr) {
-    return createScreen('form', str(titleAddr))
+    return createScreen('form', str(titleAddr), addr)
   })
   install('javax/microedition/lcdui/FormLFImpl.showNativeResource0.(IIII)V', function (addr, nativeId, modelVersion, width, viewportHeight) {
     var screen = screens[nativeId]
@@ -739,10 +938,11 @@
     screen.currentItemId = itemId
     for (var id in items) items[id].focused = Number(id) === Number(itemId)
     invalidate()
+    flushItemChange()      // 焦点挪走了：正是把输入框的改动告诉 MIDlet 的时机
   })
   // Alert
   install('javax/microedition/lcdui/AlertLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;I)I', function (addr, titleAddr) {
-    return createScreen('alert', str(titleAddr))
+    return createScreen('alert', str(titleAddr), addr)
   })
   install('javax/microedition/lcdui/AlertLFImpl.showNativeResource0.(I)V', function (addr, nativeId) {
     if (!screens[nativeId]) return
@@ -831,8 +1031,13 @@
     return true
   }
 
-  /** 按软键：which 取 'left' / 'right'。 */
+  /** 按软键：which 取 'left' / 'right'。平台对话框在的时候它的软键优先。 */
   function pressSoftKey(which) {
+    if (platformText) {
+      if (which === 'left') commitTextPrompt()
+      else if (which === 'right') closeTextPrompt(true)
+      return true
+    }
     var screen = screens[activeScreen]
     if (!screen || !screen.softKeys) return false
     return sendCommand(screen.softKeys[which])
@@ -956,6 +1161,127 @@
   if (!hookSoftKeys()) {
     // 运行时还没把 MIDP 挂出来（正常顺序里它在主 bundle 里就有了），稍等重试。
     var hookTimer = setInterval(function () { if (hookSoftKeys()) clearInterval(hookTimer) }, 200)
+  }
+
+  // ---- 文本输入 ----
+  // 运行时自己那套编辑器（TextEditorProvider）挂在隐藏 iframe 的 DOM 上，玩家既看不见也
+  // 点不到；这份构建更是根本没把它接到高级界面上：TextFieldLFImpl.createNativeResource0
+  // 是空壳，getString0 读的是一个只有 prompt() 才会写进去的全局变量。所以输入由播放页
+  // 显示（一个真正的 <input>，手机上能拉起系统键盘），这里只做三件事：告诉播放页现在哪个
+  // 输入框被聚焦、把打进去的字写回 Java、提交时通知 ItemStateListener。Java 侧读值时本来
+  // 就会用 getString0 来问我们，不需要别的同步。
+  var TEXT_UNEDITABLE = 131072
+  var pendingItemChange = 0     // 内容改过、还没通知 MIDlet 的条目 id
+
+  /** 当前聚焦的、可编辑的输入框。 */
+  function focusedTextField() {
+    if (canvasIsCurrent || !activeScreen) return null
+    var screen = screens[activeScreen]
+    if (!screen || screen.kind !== 'form') return null
+    var item = items[screen.currentItemId]
+    if (!item || item.kind !== 'text' || item.hidden) return null
+    if ((item.constraints | 0) & TEXT_UNEDITABLE) return null
+    return item
+  }
+
+  /** 给播放页的输入框状态：坐标是画布坐标，edit* 是真正画输入框那块（标签在上面）。 */
+  function textFieldState() {
+    if (platformText) {
+      var layout = textPromptLayout()
+      if (!layout) return null
+      return {
+        id: platformText.id,
+        platform: true,
+        x: layout.input.x, y: layout.input.y, width: layout.input.width, height: layout.input.height,
+        editX: layout.input.x, editY: layout.input.y, editWidth: layout.input.width, editHeight: layout.input.height,
+        constraints: 0,
+        maxSize: platformText.maxSize | 0,
+        htmlType: platformText.htmlType || '',
+        text: platformText.text || '',
+      }
+    }
+    var item = focusedTextField()
+    if (!item) return null
+    var font = itemFont(item)
+    var labelHeight = item.label ? fontHeight(font) : 0
+    var height = item.height | 0
+    var width = item.width | 0
+    return {
+      id: item.id,
+      x: item.x | 0, y: item.y | 0, width: width, height: height,
+      editX: item.x | 0,
+      editY: (item.y | 0) + labelHeight,
+      editWidth: width,
+      editHeight: Math.max(fontHeight(font) + PADDING, height - labelHeight),
+      constraints: item.constraints | 0,
+      maxSize: item.maxSize | 0,
+      text: item.text || '',
+    }
+  }
+
+  /** 改输入框的内容：写明面上那份，同时写回 Java 的 DynamicCharacterArray。 */
+  function setItemText(item, text) {
+    if (!item) return false
+    var limit = item.maxSize | 0
+    var next = text == null ? '' : String(text)
+    if (limit > 0 && next.length > limit) next = next.slice(0, limit)
+    item.text = next
+    setBufferText(item.bufferAddr, next)
+    invalidate()
+    return true
+  }
+
+  /** 提交：写回内容，并攒下一次「条目内容变了」的通知。 */
+  function commitItemText(item, text) {
+    if (!setItemText(item, text)) return false
+    if (item.platform) { commitTextPrompt(); return true }
+    // 通知不能在这里发：调用来自播放页，那时没有 VM 上下文（实测报 ctx 为 null）。
+    // 攒着，等 Java 下次叫到我们（读值或移动焦点）时再发，那时上下文是现成的。
+    pendingItemChange = item.id
+    return true
+  }
+
+  /**
+   * 把攒下的通知发出去。必须从 Java 调进来的 native 里调用——只有那时 $ 才指向 isolate。
+   * 发完就清掉，免得同一个条目通知两次。
+   */
+  function flushItemChange() {
+    var id = pendingItemChange
+    if (!id) return false
+    pendingItemChange = 0
+    var screen = screens[activeScreen]
+    var item = items[id]
+    if (!item || !screen || screen.id !== item.ownerId) return false
+    return notifyItemChanged(item)
+  }
+
+  function notifyItemChanged(item) {
+    var screen = screens[activeScreen]
+    var reason = ''
+    try {
+      var ownerAddr = screen && screen.lfAddress
+        ? readObjectField(getHandle(screen.lfAddress), 'javax/microedition/lcdui/DisplayableLFImpl', 'owner', 'Ljavax/microedition/lcdui/Displayable;')
+        : 0
+      var owner = ownerAddr ? getHandle(ownerAddr) : null
+      var formClass = J2ME.CLASSES.getClass('javax/microedition/lcdui/Form')
+      // 只有 Form 有 uCallItemStateChanged；List / TextBox 的宿主对象不是 Form。
+      if (!owner || owner.classInfo !== formClass) reason = '宿主不是 Form'
+      else if (!item || !item.lfAddress) reason = '条目没有 LF'
+      else {
+        var javaItem = readObjectField(getHandle(item.lfAddress), 'javax/microedition/lcdui/ItemLFImpl', 'item', 'Ljavax/microedition/lcdui/Item;')
+        var methodInfo = javaItem && formClass.getMethodByNameString('uCallItemStateChanged', '(Ljavax/microedition/lcdui/Item;)V')
+        if (!javaItem) reason = '条目没有 Java 侧对象'
+        else if (!methodInfo) reason = '找不到 uCallItemStateChanged'
+        else {
+          J2ME.preemptionLockLevel++
+          J2ME.getLinkedMethod(methodInfo)(ownerAddr, javaItem)
+          J2ME.preemptionLockLevel--
+          return true
+        }
+      }
+    } catch (error) { reason = '调用失败：' + (error && error.message) }
+    if (reason) console.debug('[lcdui] ItemStateListener 没通知到：' + reason)
+    return false
   }
 
   // 条目通用
@@ -1131,6 +1457,7 @@
       constraints: constraints | 0,
       bufferAddr: bufferAddr,
       text: bufferText(bufferAddr),
+      lfAddress: addr,      // 提交编辑时要顺着它摸到 Java 的 Item，通知 ItemStateListener
     })
     attachItem(ownerId, id)
     return id
@@ -1143,6 +1470,7 @@
     invalidate()
   })
   install('javax/microedition/lcdui/TextFieldLFImpl.getString0.(ILcom/sun/midp/lcdui/DynamicCharacterArray;)Z', function (addr, nativeId, charsAddr) {
+    flushItemChange()      // 只有 Java 调进来时才有 VM 上下文，通知就在这些点发
     var item = items[nativeId]
     if (!item) return 0
     setBufferText(charsAddr, item.text || '')
@@ -1177,14 +1505,30 @@
     if (item) { item.imageAddr = imageDataAddr; item.altText = str(altTextAddr); invalidate() }
   })
 
-  // 探针/调试用的入口：只在播放页拿不到画面的场合用来查看内部状态，不参与正常渲染。
+  /** 按 id 取条目：平台对话框那个伪条目的 id 是固定字符串。 */
+  function itemById(id) {
+    return id === PLATFORM_TEXT_ID ? platformText : items[id]
+  }
+
+  // 播放页与探针用的入口：播放页靠 textField / commitText 显示输入框，
+  // 其余几项让探针与排障能看见运行时内部状态。
   window.__lcdui = {
     screens: screens,
     items: items,
     redraw: redraw,
+    /** 当前聚焦的输入框（没有就 null）：{ id, x, y, width, height, constraints, maxSize, text } */
+    textField: textFieldState,
+    /** 编辑过程中写值（不通知 MIDlet）。 */
     setText: function (nativeId, text) {
-      var item = items[nativeId]
-      if (item) { item.text = text; invalidate() }
+      return setItemText(itemById(nativeId), text)
+    },
+    /** 提交：写值并通知 MIDlet 的 ItemStateListener。 */
+    commitText: function (nativeId, text) {
+      return commitItemText(itemById(nativeId), text)
+    },
+    /** 平台对话框（现在还只有短信验证码那一个）。 */
+    prompt: function () {
+      return platformText ? { message: platformText.message, text: platformText.text, deadline: platformText.deadline > 0 } : null
     },
     commands: function () {
       var screen = screens[activeScreen]

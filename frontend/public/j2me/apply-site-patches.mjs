@@ -18,6 +18,10 @@
 //  12. bld/main-all.js          — debug value dumps (key codes, config, manifest) removed
 //  13. bld/main-all.js          — MIDP internals that are no-ops here stop warning
 //  14. main.html                — load lcdui.js (the canvas LCDUI) after the runtime
+//  15. bld/j2me.js              — an exception that unwound everything leaves the interpreter
+//  16. bld/j2me.js              — a dead thread names its exception
+//  17. bld/main-all.js          — the RMS listener registry stops warning
+//  18. main.html                — load rms.js (RMS ⇄ 云存档) after the runtime
 //
 // Usage: node frontend/public/j2me/apply-site-patches.mjs
 import fs from 'node:fs'
@@ -395,12 +399,21 @@ if (config.jars || window.__j2meJars) {
                         throw e;`,
       replacement: `                    case FrameType.ExitInterpreter:
                         // Site patch (quiet handled exceptions): the search walked every
-                        // frame without finding a handler, so nothing in the MIDlet will
-                        // catch this and the interpreter is about to stop. That is the
-                        // one Java exception worth reporting.
-                        console.error("Uncaught Java exception: " +
-                            (e && e.classInfo ? e.classInfo._name : String(e)) +
-                            (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                        // frame without finding a handler. That is only the thread's own
+                        // bottom marker (fp === bp) when nothing in the MIDlet will catch
+                        // this: another marker means compiled code called in here, and the
+                        // compiled frames above -- which this search cannot see -- have
+                        // their own handlers for it. Reporting those turned a handled
+                        // exception into a red line in the console.
+                        if (this.fp === this.bp) {
+                            console.error("Uncaught Java exception: " +
+                                (e && e.classInfo ? e.classInfo._name : String(e)) +
+                                (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                        }
+                        else {
+                            console.debug("Java exception left the interpreter: " +
+                                (e && e.classInfo ? e.classInfo._name : String(e)));
+                        }
                         this.popMarkerFrame(FrameType.ExitInterpreter);
                         throw e;`,
     },
@@ -564,6 +577,123 @@ if (config.jars || window.__j2meJars) {
       }
       return next
     },
+  },
+  {
+    // An exception that has already unwound past every frame is on this path on
+    // purpose: fastInterpreterFrameAdapter pushes an ExitInterpreter marker so a nested
+    // interpreter invocation hands the exception back to the compiled method that called
+    // it, and Thread.start0 pushes the thread's own marker at the bottom. The fork
+    // swallowed whatever came out of the unwind and continued the interpreter loop; the
+    // loop then re-ran the faulting instruction on a stack the unwind had just removed
+    // (sp growing a little on every iteration), the Java handler up the stack never saw
+    // the exception, and the console filled with one red line per iteration. In 正义化身
+    // －忍者神龟传 that was the difference between a game that plays and one that sits on
+    // its loading screen for good.
+    label: 'bld/j2me.js: an exception that unwound everything leaves the interpreter',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (thread death)'),
+    anchor: `                }catch(err){
+                    console.error(err)
+                    continue;
+                }`,
+    replacement: `                }catch(err){
+                    // Site patch (thread death): an exception carrying a classInfo is a
+                    // Java exception that exceptionUnwind put on this path on purpose.
+                    // fastInterpreterFrameAdapter pushes the ExitInterpreter marker so a
+                    // nested interpreter invocation hands such an exception back to the
+                    // compiled method that called it (the compiled code has its own
+                    // handlers); Thread.start0 pushes one for the thread as a whole.
+                    // Swallowing it here returned the interpreter to a frame stack it
+                    // had just unwound: the faulting instruction re-ran forever with a
+                    // stack that kept growing, the Java handler further up never got
+                    // the exception, and the console filled with one red line per
+                    // iteration while the MIDlet sat on its loading screen. Let the
+                    // exception through so the ordinary unwind continues.
+                    if (err && err.classInfo) {
+                        throw err;
+                    }
+                    console.error(err)
+                    continue;
+                }`,
+  },
+  {
+    // The same catch printed the raw value, and a Java exception is a plain object to the
+    // console, so the one line that explains a dead thread read "[object Object]".
+    label: 'bld/j2me.js: a dead thread names its exception',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (readable thread death)'),
+    anchor: `            catch (e) {
+                console.error(e); 
+                /*
+                // The exception was never caught and the thread must be terminated.`,
+    replacement: `            catch (e) {
+                // Site patch (readable thread death): this catch used to print the raw
+                // value, and a Java exception is a plain object here, so the one line
+                // that explains why a thread died reached the console as "[object
+                // Object]". Name the class and its detail message instead; a JavaScript
+                // error still prints as itself.
+                if (e && e.classInfo && e.classInfo._name) {
+                    console.error("Thread terminated by " + e.classInfo._name +
+                        (e.detailMessage ? ": " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                } else {
+                    console.error(e);
+                }
+                /*
+                // The exception was never caught and the thread must be terminated.`,
+  },
+  {
+    // Same family as the silent MIDP internals above: the RMS listener registry exists so
+    // the AMS can tell *other* MIDlets that a record store changed. One MIDlet runs at a
+    // time here and nothing keeps a registry, so these natives have no work to do -- they
+    // answered with a warning instead (two of them on every record store open and close).
+    label: 'main-all.js: the RMS listener registry stops warning',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (silent RMS registry)'),
+    anchor: `Native["com/sun/midp/rms/RecordStoreRegistry.getRecordStoreListeners.(ILjava/lang/String;)[I"] = function(addr, suiteId, storeNameAddr) {
+  console.warn("RecordStoreRegistry.getRecordStoreListeners.(IL...String;)[I not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
+  return J2ME.Constants.NULL;
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.sendRecordStoreChangeEvent.(ILjava/lang/String;II)V"] = function(addr, suiteId, storeNameAddr, changeType, recordId) {
+  console.warn("RecordStoreRegistry.sendRecordStoreChangeEvent.(IL...String;II)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ", " + changeType + ", " + recordId + ")");
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.startRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
+  console.warn("RecordStoreRegistry.startRecordStoreListening.(IL...String;)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.stopRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
+  console.warn("RecordStoreRegistry.stopRecordStoreListening.(IL...String;)V not implemented (" + suiteId + ", " + J2ME.fromStringAddr(storeNameAddr) + ")");
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.stopAllRecordStoreListeners.(I)V"] = function(addr, taskId) {
+  console.warn("RecordStoreRegistry.stopAllRecordStoreListeners.(I)V not implemented (" + taskId + ")");
+};`,
+    replacement: `// Site patch (silent RMS registry): the RMS listener registry is AMS bookkeeping for
+// telling *other* MIDlets that a record store changed. One MIDlet runs at a time here
+// and nothing keeps a registry, so these are the honest answers -- no listeners to hand
+// out, no listeners to start or stop, nobody to notify -- instead of a warning per call.
+Native["com/sun/midp/rms/RecordStoreRegistry.getRecordStoreListeners.(ILjava/lang/String;)[I"] = function(addr, suiteId, storeNameAddr) {
+  return J2ME.Constants.NULL;
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.sendRecordStoreChangeEvent.(ILjava/lang/String;II)V"] = function(addr, suiteId, storeNameAddr, changeType, recordId) {
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.startRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.stopRecordStoreListening.(ILjava/lang/String;)V"] = function(addr, suiteId, storeNameAddr) {
+};
+Native["com/sun/midp/rms/RecordStoreRegistry.stopAllRecordStoreListeners.(I)V"] = function(addr, taskId) {
+};`,
+  },
+  {
+    // The player treats the runtime's `/RecordStore` tree as "this ROM's save file": it
+    // restores a cloud snapshot before the MIDlet starts and uploads the tree again when
+    // the game writes to it. Both live in rms.js, which needs the runtime's `fs` and its
+    // `loadingPromises` (the boot awaits that list, so the import finishes before the VM
+    // starts) — hence it loads right after main-all.js like lcdui.js does.
+    label: 'main.html: rms.js',
+    file: 'main.html',
+    applied: (text) => text.includes('rms.js'),
+    anchor: '<script defer src="bld/main-all.js"></script>\n<script defer src="lcdui.js"></script>',
+    replacement: `<script defer src="bld/main-all.js"></script>
+<script defer src="lcdui.js"></script>
+<script defer src="rms.js"></script>`,
   },
 ]
 

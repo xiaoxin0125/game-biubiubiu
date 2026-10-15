@@ -139,6 +139,8 @@ export async function prepareEmulator({
   shader,
   progress = null,
   onRuntimeError = null,
+  engine = null,      // J2ME：玩家在开局弹窗里选的类库（enginemode）
+  cloudSave = null,   // J2ME：RMS 云存档的读写接口（见 j2meRuntime.js）
 }) {
   // Normalize legacy arguments. When `rom` isn't passed, fall back to
   // romUrl/romFileName; otherwise pass `rom` through (Nostalgist accepts
@@ -152,7 +154,12 @@ export async function prepareEmulator({
   // the self-hosted J2meJS runtime instead of a libretro core.
   if (coreName === 'j2mejs' || coreName === 'js2me' || coreName === 'squirreljme') {
     const { prepareJ2me } = await import('./player/j2meRuntime.js')
-    return prepareJ2me({ rom: resolvedRom, retroarchConfig, progress, onRuntimeError })
+    return prepareJ2me({
+      rom: resolvedRom, retroarchConfig, progress, onRuntimeError,
+      // 类库只在玩家选过之后才带上来；没选（旧调用方）就用默认兼容库。
+      ...(engine ? { engine } : {}),
+      cloudSave,
+    })
   }
 
   const localCore = typeof core === 'string'

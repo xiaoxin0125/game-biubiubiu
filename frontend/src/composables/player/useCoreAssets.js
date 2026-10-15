@@ -124,15 +124,16 @@ export function coreAssetCacheKey({ manifest, name }) {
  * 永远不会加载的核心。J2ME 没有 libretro 核心，它的任务来自运行时清单
  * （j2meCore.js）。
  */
-export async function registerCoreTasksFor(progress, core) {
+export async function registerCoreTasksFor(progress, core, { engine = null } = {}) {
   if (!progress || !core) return null
   if (core === 'j2mejs' || core === 'js2me' || core === 'squirreljme') {
     // The Java runtime is served with the frontend, not as a libretro JS/WASM
     // pair. It still gets “core” tasks — its scripts and class library are a
     // few megabytes — but they come from the runtime's own manifest, and the
     // placeholder pair from a platform default is removed instead of left
-    // unfinished (see j2meCore.js).
-    return registerJ2meCoreTasks(progress)
+    // unfinished (see j2meCore.js). 类库选哪一档由玩家在开局弹窗里决定
+    // （enginemode），所以要按它登记，免得先挂上默认那档再被换掉。
+    return registerJ2meCoreTasks(progress, { engine: engine || undefined })
   }
   const manifest = await loadCoreManifest()
   const wanted = new Set(['js', 'wasm'].map((ext) => coreTaskId(core, ext)))

@@ -18,6 +18,11 @@ const props = defineProps({
   retroarchCoreConfig: { type: Object, default: () => ({}) },
   // 资源加载进度会话（可选）：核心下载与启动阶段都会往它上面汇报状态。
   progress: { type: Object, default: null },
+  // J2ME 专用：开局弹窗里选定的 Java 类库（enginemode）。改变它意味着换一档类库，
+  // 必须重新启动（watch 里会 reboot）。
+  engine: { type: String, default: null },
+  // J2ME 专用：RMS 云存档的读写接口（null = 不接云存档，例如未登录或房间客人）。
+  cloudSave: { type: Object, default: null },
 })
 const emit = defineEmits(['booted', 'error', 'config-reloaded'])
 
@@ -51,6 +56,8 @@ async function start() {
       retroarchConfig: props.retroarchConfig,
       retroarchCoreConfig: props.retroarchCoreConfig,
       progress: props.progress,
+      engine: props.engine,
+      cloudSave: props.cloudSave,
       onRuntimeError: (err) => emit('error', err),
     })
     if (!emu) return
@@ -102,14 +109,15 @@ defineExpose({
 })
 
 // Re-boot on ROM change. Compare by primary fileContent URL (first entry of
-// an array or the single object) plus core name.
+// an array or the single object) plus core name. J2ME's class library
+// (enginemode) sits in the same slot: switching it is switching the core.
 function romKey(r) {
   if (!r) return null
   if (Array.isArray(r)) return r.map((x) => x?.fileContent).join('|')
   return r.fileContent
 }
-watch(() => [romKey(props.rom), props.core], async ([newKey, newCore], [oldKey, oldCore]) => {
-  if (newKey === oldKey && newCore === oldCore) return
+watch(() => [romKey(props.rom), props.core, props.engine], async ([newKey, newCore, newEngine], [oldKey, oldCore, oldEngine]) => {
+  if (newKey === oldKey && newCore === oldCore && newEngine === oldEngine) return
   lastCheatList = []
   await restart()
 })

@@ -3388,12 +3388,21 @@ var J2ME;
                         break;
                     case FrameType.ExitInterpreter:
                         // Site patch (quiet handled exceptions): the search walked every
-                        // frame without finding a handler, so nothing in the MIDlet will
-                        // catch this and the interpreter is about to stop. That is the
-                        // one Java exception worth reporting.
-                        console.error("Uncaught Java exception: " +
-                            (e && e.classInfo ? e.classInfo._name : String(e)) +
-                            (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                        // frame without finding a handler. That is only the thread's own
+                        // bottom marker (fp === bp) when nothing in the MIDlet will catch
+                        // this: another marker means compiled code called in here, and the
+                        // compiled frames above -- which this search cannot see -- have
+                        // their own handlers for it. Reporting those turned a handled
+                        // exception into a red line in the console.
+                        if (this.fp === this.bp) {
+                            console.error("Uncaught Java exception: " +
+                                (e && e.classInfo ? e.classInfo._name : String(e)) +
+                                (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                        }
+                        else {
+                            console.debug("Java exception left the interpreter: " +
+                                (e && e.classInfo ? e.classInfo._name : String(e)));
+                        }
                         this.popMarkerFrame(FrameType.ExitInterpreter);
                         throw e;
                     case FrameType.PushPendingFrames:
@@ -5334,6 +5343,21 @@ var J2ME;
                 
                 continue;
                 }catch(err){
+                    // Site patch (thread death): an exception carrying a classInfo is a
+                    // Java exception that exceptionUnwind put on this path on purpose.
+                    // fastInterpreterFrameAdapter pushes the ExitInterpreter marker so a
+                    // nested interpreter invocation hands such an exception back to the
+                    // compiled method that called it (the compiled code has its own
+                    // handlers); Thread.start0 pushes one for the thread as a whole.
+                    // Swallowing it here returned the interpreter to a frame stack it
+                    // had just unwound: the faulting instruction re-ran forever with a
+                    // stack that kept growing, the Java handler further up never got
+                    // the exception, and the console filled with one red line per
+                    // iteration while the MIDlet sat on its loading screen. Let the
+                    // exception through so the ordinary unwind continues.
+                    if (err && err.classInfo) {
+                        throw err;
+                    }
                     console.error(err)
                     continue;
                 }
@@ -10761,7 +10785,17 @@ var J2ME;
                 this.nativeThread.run();
             }
             catch (e) {
-                console.error(e); 
+                // Site patch (readable thread death): this catch used to print the raw
+                // value, and a Java exception is a plain object here, so the one line
+                // that explains why a thread died reached the console as "[object
+                // Object]". Name the class and its detail message instead; a JavaScript
+                // error still prints as itself.
+                if (e && e.classInfo && e.classInfo._name) {
+                    console.error("Thread terminated by " + e.classInfo._name +
+                        (e.detailMessage ? ": " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                } else {
+                    console.error(e);
+                }
                 /*
                 // The exception was never caught and the thread must be terminated.
                 this.kill();
