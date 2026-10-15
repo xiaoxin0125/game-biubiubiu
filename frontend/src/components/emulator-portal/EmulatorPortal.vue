@@ -21,6 +21,9 @@ const props = defineProps({
   // J2ME 专用：开局弹窗里选定的 Java 类库（enginemode）。改变它意味着换一档类库，
   // 必须重新启动（watch 里会 reboot）。
   engine: { type: String, default: null },
+  // J2ME 专用：开局弹窗里选定的游戏语言（传给运行时的 microedition.locale）。
+  // null = 自动，由运行时看浏览器语言。语言在 VM 启动时读取，改变它同样要重启。
+  language: { type: String, default: null },
   // J2ME 专用：RMS 云存档的读写接口（null = 不接云存档，例如未登录或房间客人）。
   cloudSave: { type: Object, default: null },
 })
@@ -57,6 +60,7 @@ async function start() {
       retroarchCoreConfig: props.retroarchCoreConfig,
       progress: props.progress,
       engine: props.engine,
+      language: props.language,
       cloudSave: props.cloudSave,
       onRuntimeError: (err) => emit('error', err),
     })
@@ -110,14 +114,15 @@ defineExpose({
 
 // Re-boot on ROM change. Compare by primary fileContent URL (first entry of
 // an array or the single object) plus core name. J2ME's class library
-// (enginemode) sits in the same slot: switching it is switching the core.
+// (enginemode) and game language sit in the same slot: switching either is
+// switching the core (both are read once, when the VM boots).
 function romKey(r) {
   if (!r) return null
   if (Array.isArray(r)) return r.map((x) => x?.fileContent).join('|')
   return r.fileContent
 }
-watch(() => [romKey(props.rom), props.core, props.engine], async ([newKey, newCore, newEngine], [oldKey, oldCore, oldEngine]) => {
-  if (newKey === oldKey && newCore === oldCore && newEngine === oldEngine) return
+watch(() => [romKey(props.rom), props.core, props.engine, props.language], async ([newKey, newCore, newEngine, newLanguage], [oldKey, oldCore, oldEngine, oldLanguage]) => {
+  if (newKey === oldKey && newCore === oldCore && newEngine === oldEngine && newLanguage === oldLanguage) return
   lastCheatList = []
   await restart()
 })

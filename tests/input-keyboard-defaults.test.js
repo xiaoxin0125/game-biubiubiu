@@ -155,6 +155,9 @@ test('街机 / MD 六键按两排三列：下排 J K L、上排 U I O', () => {
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('megadrive'), MEGADRIVE_DEFAULT)
   // 老记录里的别名（genesis）收敛到 MD，照样套用六键键位，不掉回通用默认
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('genesis'), MEGADRIVE_DEFAULT)
+  // J2ME 没有自己的键位：手机上它多摆一颗十字方向键，键盘行与通用默认一致（确定键
+  // 仍是数字行上的 7，也就是手机键盘的「5」）。
+  assert.deepEqual(defaultPlayer1KeyboardForPlatform('j2me'), PLAYER_1_DEFAULT)
 })
 
 test('默认 P2：方向键十字 + 数字小键盘成对铺开', () => {

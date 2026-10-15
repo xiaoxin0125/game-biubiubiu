@@ -1,0 +1,57 @@
+# 代码检查、测试与依赖审计（2026-10 审计 L-10）。
+#
+# 之前 CI 只构建镜像：版本号、lint、测试、依赖漏洞都没人看，靠本地手跑。
+# 这里把四件事接进流水线，任何一条红了就是红灯：
+#   - 生产依赖树不许有 moderate 及以上的公告（构建/开发期依赖另行处理）；
+#   - eslint 必须无 error（规则见仓库根 eslint.config.js）；
+#   - tests/ 下的用例必须全绿；
+#   - 前端必须构建得出来（构建链里有产物清理与运行时版本号重写）。
+name: Lint, test and audit
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        # 只卡生产依赖树：进浏览器/进运行时的东西不许有已知漏洞。
+        # drizzle-kit 这类只在本机跑迁移的开发依赖不在门禁范围内。
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build

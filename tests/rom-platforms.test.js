@@ -30,7 +30,14 @@ const repoFile = (path) => new URL(`../${path}`, import.meta.url)
 const readRepo = (path) => readFileSync(repoFile(path), 'utf8')
 
 const gamepadSource = readRepo('frontend/src/components/emulator-portal/VirtualGamepad.vue')
+// v1.6.0 新增的七个平台：注册表里必须一个不少。
 const NEW_PLATFORMS = ['pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
+
+test('v1.6.0 新增的平台都还在共享注册表里', () => {
+  for (const id of NEW_PLATFORMS) {
+    assert.ok(PLATFORM_ROM_REGISTRY[id], `${id} 不在共享注册表里`)
+  }
+})
 
 test('共享表与前端表逐项一致：扩展名、核心、默认人数、按键', () => {
   for (const [id, entry] of Object.entries(PLATFORM_ROM_REGISTRY)) {
@@ -180,7 +187,7 @@ test('新平台的按键标签与核心的实际映射对得上', () => {
   // NGP：A / B + Option。
   assert.deepEqual(getPlatform('ngp').buttonLabels, { a: 'B', b: 'A', start: 'Option' })
 
-  // J2ME：SquirrelJME 的 Dial Pad 手柄类型把 retropad 当手机键盘，标签就是手机上的键。
+  // J2ME：J2meJS 的 Dial Pad 手柄类型把 retropad 当手机键盘，标签就是手机上的键。
   assert.deepEqual(getPlatform('j2me').buttonLabels, {
     a: '3', b: '9', x: '1', y: '7', l: '＊', r: '＃', l2: '5 确定', r2: '0', select: '软键1', start: '软键2',
   })
@@ -200,6 +207,19 @@ test('虚拟手柄：新平台的布局摆得出自己的按键，且不会摆�
   assert.match(gamepadSource, /id === 'sega32x'\) return 'md'/)
   // ngp 没有自己的布局行：它落到默认的两键布局（fc）上。
   assert.match(gamepadSource, /return 'fc'  \/\/ nes, fds, gb, gbc, ngp, and everything else/)
+
+  // J2ME 的左手边不摆摇杆，而是一颗十字方向键：上、下、左、右四颗（发手机的导航键
+  // 代码）。中间不再摆键 —— 手机键盘正中的「5 / 确定」就在肩键那一行，摆两颗只会
+  // 重复；右手边的 1/3/7/9 四角键与 ＊＃ / 5 / 0 肩键行照旧保留。
+  const navBlock = gamepadSource.slice(gamepadSource.indexOf('const J2ME_NAV_BUTTONS'), gamepadSource.indexOf('function pickLayout'))
+  assert.ok(navBlock, '缺少 J2ME_NAV_BUTTONS')
+  assert.deepEqual(
+    [...navBlock.matchAll(/key: '([^']+)'/g)].map((m) => m[1]).sort(),
+    ['down', 'left', 'right', 'up'],
+    'J2ME 的十字方向键只能是上下左右四颗',
+  )
+  assert.match(gamepadSource, /v-if="isJ2meLayout"[\s\S]{0,200}class="j2me-nav"/)
+  assert.match(gamepadSource, /const isJ2meLayout = computed\(\(\) => resolvePlatformId\(props\.platform\) === 'j2me'\)/)
 
   // 每个新平台的面键必须真的在 FACE_LAYOUTS 里被摆出来 —— a/b/x/y 少摆一颗，
   // 手机端就按不出那颗键（PC 键盘与物理手柄不受影响）。
@@ -223,7 +243,8 @@ test('虚拟手柄：新平台的布局摆得出自己的按键，且不会摆�
       assert.ok(shown.has(btn), `${platform} 的 ${btn} 没有摆进 ${layout} 布局`)
     }
   }
-  // PC Engine 的 V / VI 与「模式」要摆在肩键那一行，否则六键模式按不出来。
+  // PC Engine 的 V / VI 与「模式」要摆在肩键那一行，否则六键模式按不出来；
+  // J2ME 的 5 / 确定（l2）也挂在这一行。
   assert.match(gamepadSource, /t === 'pce' \|\| t === '3do' \|\| t === 'j2me'/)
 })
 

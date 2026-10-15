@@ -1,5 +1,5 @@
-import { and, eq, gt, lt } from 'drizzle-orm'
-import { randomBytes } from 'node:crypto'
+import { and, eq, gt, lt, or } from 'drizzle-orm'
+import { createHash, randomBytes } from 'node:crypto'
 import { db } from '../db/index.js'
 import { users, sessions, STATUS } from '../db/schema.js'
 import { clientIp, isSecureRequest } from './security.js'
@@ -10,18 +10,56 @@ const DEFAULT_TTL_DAYS = 30
 const TTL_MS = DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000
 const WS_TICKET_TTL_MS = 60 * 1000
 const wsTickets = new Map()
+// 会话活跃时间不必每个请求都写一次：间隔内只更新一次，既省写又避免高频更新。
+const ACTIVITY_TOUCH_INTERVAL_MS = 5 * 60 * 1000
+// 除 30 天的绝对有效期之外，再加一道"闲置过期"：令牌被复制走后一直不用也拿不到
+// 永久访问权（2026-10 审计的加固项）。0 表示关闭这道检查。
+const IDLE_TIMEOUT_DAYS = Number(process.env.SESSION_IDLE_TIMEOUT_DAYS ?? 14)
+const IDLE_TIMEOUT_MS = Number.isFinite(IDLE_TIMEOUT_DAYS) && IDLE_TIMEOUT_DAYS > 0
+  ? IDLE_TIMEOUT_DAYS * 24 * 60 * 60 * 1000
+  : 0
+
+/** 会话最后一次活动时间（没记过活跃时间就用创建时间兜底）。 */
+function lastSeenAt(sessionRow) {
+  const value = sessionRow.lastActivityAt || sessionRow.createdAt
+  return value instanceof Date ? value.getTime() : 0
+}
+
+/** 会话是否已闲置超时。 */
+export function isSessionIdleExpired(sessionRow, now = new Date()) {
+  if (!IDLE_TIMEOUT_MS) return false
+  const seen = lastSeenAt(sessionRow)
+  if (!seen) return false
+  return now.getTime() - seen > IDLE_TIMEOUT_MS
+}
 
 function newToken() {
   // 32 bytes = 43 chars base64url, plenty of entropy
   return randomBytes(32).toString('base64url')
 }
 
+// 库里只存令牌的 sha256：数据库被读（备份泄露、误配从库）时，拿到的哈希无法直接
+// 当 Cookie 重放（2026-10 审计 M-3）。令牌本身是高熵随机串，不需要加盐慢哈希。
+function hashSessionToken(token) {
+  return createHash('sha256').update(String(token)).digest('hex')
+}
+
+async function findSessionRow(tokenValue, now) {
+  const rows = await db.select({ s: sessions, u: users })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.token, tokenValue), gt(sessions.expiresAt, now)))
+    .limit(1)
+  return rows[0] || null
+}
+
+
 export async function createSession(c, userId) {
   const token = newToken()
   const expiresAt = new Date(Date.now() + TTL_MS)
   const ip = clientIp(c)
   const userAgent = (c.req.header('user-agent') || '').slice(0, 512)
-  await db.insert(sessions).values({ userId, token, ip, userAgent, expiresAt })
+  await db.insert(sessions).values({ userId, token: hashSessionToken(token), ip, userAgent, expiresAt })
   setCookie(c, token, expiresAt)
   return token
 }
@@ -49,7 +87,11 @@ export async function consumeWebSocketTicket(ticket) {
 export async function destroyCurrentSession(c) {
   const token = readCookie(c)
   if (token) {
-    await db.delete(sessions).where(eq(sessions.token, token))
+    // 兼容历史会话：明文令牌与哈希都可能命中，一条 SQL 一起删掉。
+    await db.delete(sessions).where(or(
+      eq(sessions.token, hashSessionToken(token)),
+      eq(sessions.token, token),
+    ))
   }
   clearCookie(c)
 }
@@ -67,20 +109,46 @@ export async function currentUser(c) {
   const token = readCookie(c)
   if (!token) return null
   const now = new Date()
-  const rows = await db.select({
-    s: sessions,
-    u: users,
-  })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(and(eq(sessions.token, token), gt(sessions.expiresAt, now)))
-    .limit(1)
-  const row = rows[0]
+  const hashed = hashSessionToken(token)
+
+  let row = await findSessionRow(hashed, now)
+  if (!row) {
+    // 兼容改动之前建立的会话：那时库里存的是明文令牌。命中一次就顺手改写成哈希，
+    // 这样不需要强制任何人重新登录（2026-10 审计 M-3）。
+    row = await findSessionRow(token, now)
+    if (row) {
+      try {
+        await db.update(sessions).set({ token: hashed }).where(eq(sessions.id, row.s.id))
+      } catch (err) {
+        console.warn('[api] failed to upgrade legacy session token', err?.message || err)
+      }
+    }
+  }
   if (!row) return null
   if (row.u.status !== STATUS.normal) return null
-  // Touch lastActivityAt (best effort, fire-and-forget)
-  db.update(sessions).set({ lastActivityAt: now })
-    .where(eq(sessions.id, row.s.id)).execute?.() ?? null
+
+  // 闲置太久的会话直接作废并清掉 Cookie：库里的行留着没有意义，只会让
+  // "会话表越长越像还活着"。
+  if (isSessionIdleExpired(row.s, now)) {
+    try {
+      await db.delete(sessions).where(eq(sessions.id, row.s.id))
+    } catch (err) {
+      console.warn('[api] failed to drop idle session', err?.message || err)
+    }
+    clearCookie(c)
+    return null
+  }
+
+  // lastActivityAt 只在间隔够久时更新一次：原先是每个请求都写一次库，而且没有
+  // await（未处理的 Promise 在异常时会变成 unhandled rejection）。
+  const lastTouch = row.s.lastActivityAt instanceof Date ? row.s.lastActivityAt.getTime() : 0
+  if (now.getTime() - lastTouch > ACTIVITY_TOUCH_INTERVAL_MS) {
+    try {
+      await db.update(sessions).set({ lastActivityAt: now }).where(eq(sessions.id, row.s.id))
+    } catch (err) {
+      console.warn('[api] failed to touch session activity', err?.message || err)
+    }
+  }
   return row.u
 }
 
@@ -137,7 +205,13 @@ function clearCookie(c) {
 // Periodic expired-session cleanup (call opportunistically)
 export async function cleanupExpiredSessions() {
   try {
-    await db.delete(sessions).where(lt(sessions.expiresAt, new Date()))
+    const now = new Date()
+    const conditions = [lt(sessions.expiresAt, now)]
+    if (IDLE_TIMEOUT_MS) {
+      // 闲置过期的会话留着也没人能再用，顺手一起清掉（见 isSessionIdleExpired）。
+      conditions.push(lt(sessions.lastActivityAt, new Date(now.getTime() - IDLE_TIMEOUT_MS)))
+    }
+    await db.delete(sessions).where(or(...conditions))
   } catch (err) {
     console.error('[api] failed to cleanup expired sessions', err)
   }

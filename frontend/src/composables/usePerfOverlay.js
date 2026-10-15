@@ -21,7 +21,6 @@ export function usePerfOverlay({ enabled }) {
   const stats = ref('')
   const worstGapMs = ref(0)
   const longTasks = ref(0)
-  const lastLongTask = ref('')
   const touches = ref(0)
 
   let rafId = 0

@@ -22,13 +22,20 @@
 //  16. bld/j2me.js              — a dead thread names its exception
 //  17. bld/main-all.js          — the RMS listener registry stops warning
 //  18. main.html                — load rms.js (RMS ⇄ 云存档) after the runtime
+//  19. bld/main-all.js          — Chinese locale variants reach MIDlets as zh-CN / zh-HK
 //
-// Usage: node frontend/public/j2me/apply-site-patches.mjs
+// Usage: node frontend/scripts/apply-j2me-patches.mjs [运行时目录]
+//
+// 这个脚本刻意放在 public/ 之外：public/ 里的任何文件都会被 vite 原样复制到
+// frontend/dist 并当成静态资源对外提供，而它是开发期工具，不该被下载到
+// （2026-10 审计 H-3）。
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const base = path.dirname(fileURLToPath(import.meta.url))
+// 默认打在仓库里那份运行时上；也可以用第一个参数指定别的目录
+// （例如已经被复制出去的 dist/j2me）。
+const base = path.resolve(process.argv[2] || fileURLToPath(new URL('../public/j2me', import.meta.url)))
 
 const patches = [
   {
@@ -694,6 +701,49 @@ Native["com/sun/midp/rms/RecordStoreRegistry.stopAllRecordStoreListeners.(I)V"] 
     replacement: `<script defer src="bld/main-all.js"></script>
 <script defer src="lcdui.js"></script>
 <script defer src="rms.js"></script>`,
+  },
+  {
+    // MIDP's microedition.locale is the *device* language: real Chinese phones answer
+    // with plain zh-CN (simplified) or zh-HK (traditional), and MIDlets build their own
+    // resource name out of that string (`/lang.<value>`). One extra subtag and the game
+    // falls back to its default bundle — 「蹦球传说」 only ships lang.xx / lang.zh-CN /
+    // lang.zh-HK, so a phone that reports zh-SG (or zh-Hans-CN, zh-Hant-TW …) gets the
+    // English game. Browsers report their own spelling, hence this rewrite: fold the
+    // Chinese variants onto the device-language names. The player page can override the
+    // result outright by passing `language` in the runtime URL (urlparams.js copies it
+    // to config.language — see frontend/src/composables/player/j2meLanguage.js).
+    label: 'main-all.js: Chinese locale variants reach MIDlets as zh-CN / zh-HK',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (locale):'),
+    transform: (text) => {
+      const anchor = 'Native["java/lang/System.getProperty0.(Ljava/lang/String;)Ljava/lang/String;"] = function(addr, keyAddr) {'
+      if (!text.includes(anchor)) throw new Error('System.getProperty0 anchor not found')
+      const helper = `// Site patch (locale): MIDP's microedition.locale is the device language -- a
+// simplified-Chinese phone answers zh-CN and a traditional one zh-HK. MIDlets pick
+// their resource bundle by that exact string (\`/lang.<value>\`) and fall back to English
+// over the smallest difference, while navigator.language answers with the browser's own
+// spelling (zh-Hans-CN, zh-SG, zh-Hant-TW, ...). Fold the Chinese variants onto the
+// names MIDlets ship; the player page can override the whole thing with its \`language\`
+// parameter (URL -> config.language). See frontend/scripts/apply-j2me-patches.mjs.
+function siteLocale() {
+  var wanted = String(config.language || navigator.language || '');
+  var normalized = wanted.replace(/_/g, '-').toLowerCase();
+  if (normalized === 'zh' || normalized.indexOf('zh-') === 0) {
+    if (normalized.indexOf('hans') >= 0) return 'zh-CN';
+    var traditional = normalized.indexOf('hant') >= 0 || normalized.indexOf('-tw') >= 0 ||
+      normalized.indexOf('-hk') >= 0 || normalized.indexOf('-mo') >= 0;
+    return traditional ? 'zh-HK' : 'zh-CN';
+  }
+  return wanted;
+}
+
+`
+      let next = text.replace(anchor, helper + anchor)
+      const assignments = (next.match(/value = navigator\.language;/g) || []).length
+      if (assignments !== 2) throw new Error(`expected 2 locale assignments, found ${assignments}`)
+      next = next.replace(/value = navigator\.language;/g, 'value = siteLocale();')
+      return next
+    },
   },
 ]
 

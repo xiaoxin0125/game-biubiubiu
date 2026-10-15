@@ -4,7 +4,7 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.6.3**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.3`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.7.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.0`，同时打 `v1.7`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
@@ -60,6 +60,10 @@
 - 启动：`server/index.js` 先执行数据库迁移和会话清理，再挂载安全中间件、HTTP API、WebSocket 路由，最后托管 `frontend/dist`。
 - ROM 播放：`GET /api/roms/:id/file` 依据 `storage` 字段读本地磁盘或代理远端存储（透传 `Range`），前端交给 Nostalgist 按平台核心启动；J2ME 是例外，`.jar` 交给前端托管的 J2meJS 运行时（同源内嵌页面）解释。
 - 联机：`/api/rooms/:code/ws` 先经 `room-ws-gate` 校验会话、票据、功能开关与限流，再加入在线房间；房间内 host 运行模拟器并推流，guest 输入经 DataChannel 回传，房主固定为 P1。
+- 单实例假设（已强制）：限流计数、WebSocket 连接票据、房间在线状态、上传并发闸门与临时 TURN 凭据都在**进程内存**里，所以只跑一个 Node 进程（systemd 单实例或单容器）。启动时会用 MySQL 的 `GET_LOCK` 抢 `games-online:primary` 这把锁，抢不到就直接退出（打印原因、退出码 0，避免 systemd 反复重启），要横向扩到多副本必须先按上面的清单换成 Redis/数据库实现（临时起冒烟实例调试时用 `SINGLE_INSTANCE_LOCK=0` 跳过）。
+- 停机与健康：收到 `SIGTERM`/`SIGINT` 会停掉定时器、断开在线 WebSocket、放锁并关闭连接池再退出（10 秒兜底强退）；`GET /api/health` 每次真的 ping 一次数据库，连不上返回 `503` 与 `db: "down"`。
+- 数据库韧性：连接池开着 TCP keepalive（`enableKeepAlive`），启动期迁移与清理遇到"连接被掐断"会重试一次（幂等操作才套这层重试）。
+- 口令与会话：口令用 scrypt（`server/passwords.js`，跑在 libuv 线程池，不阻塞事件循环），历史 bcrypt 哈希可继续校验并在登录时自动升级；会话令牌在库里只存 sha256，Cookie 里才是原文，所以数据库被读也无法直接重放登录态。
 
 ## 环境要求
 
@@ -105,7 +109,7 @@ npm run dev
 | `HOST` / `PORT` | `0.0.0.0` / `3000` | 监听地址和端口；仅本机 Nginx 反代时 `HOST` 可设 `127.0.0.1` |
 | `NODE_ENV` | 无 | 生产建议 `production` |
 | `DATABASE_URL` | `mysql://games:games@127.0.0.1:3306/games_online` | MySQL 连接串 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / 开发默认 `admin123-dev` | 仅数据库为空时创建首个管理员；生产必须设置且至少 6 位 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / 开发默认 `admin123-dev` | 仅数据库为空时创建首个管理员；生产必须设置且至少 8 位 |
 | `TRUST_PROXY` | `0` | 位于可信反代后方时设为 `1` |
 | `CSRF_ALLOWED_ORIGINS` | 空 | 额外允许的写请求 Origin，逗号分隔，须与浏览器地址完全一致 |
 | `CSRF_REQUIRE_ORIGIN` | 生产要求 | 设为 `0` 允许无 Origin 的写请求 |
@@ -113,6 +117,10 @@ npm run dev
 | `MAX_STATE_BYTES` | `8388608` | 单个云存档上限（8 MB） |
 | `USER_UPLOAD_QUOTA_BYTES` | `2147483648` | 普通用户 ROM 总配额（2 GB） |
 | `MAX_SAVE_SLOT` | `9` | 云存档最大槽位 |
+| `UPLOAD_CONCURRENCY` | `2` | 同时进行的上传请求数，超出返回 429 |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | `10` | 每用户每分钟的 ROM 上传次数 |
+| `SESSION_IDLE_TIMEOUT_DAYS` | `14` | 会话闲置多少天后失效（`0` 关闭；绝对有效期固定 30 天） |
+| `SINGLE_INSTANCE_LOCK` | `1` | 单实例启动锁；`0` 跳过（仅用于临时调试实例） |
 | `UPLOADS_DIR` / `BIOS_DIR` / `SAVES_DIR` / `CORES_DIR` | `data/*` | 各类资产目录 |
 | `APP_CONFIG_FILE` | 自动检测 | 指定配置文件路径 |
 | `VITE_WEBRTC_STUN_URLS` | 空 | STUN 兜底值；正常在后台「站点设置」里配置 |
@@ -161,7 +169,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.3"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.7.0"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -212,7 +220,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.3`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可；v1.6.1 升级到 v1.6.2 只有前端与一条数据迁移（`0008_platform_aliases`，把 `famicom` / `snes` / `genesis` 并到 `nes` / `sfc` / `megadrive`，随后端启动自动执行），没有新的核心与 BIOS，替换镜像或重新构建前端即可；v1.6.2 升级到 v1.6.3 只改前端与 `frontend/public/j2me/` 里的运行时（新增 `rms.js`、补丁 15–18、`lcdui.js` 的文字输入），没有表结构变更、没有新的核心与 BIOS，**但必须重新构建前端**：运行时资源带内容版本号，只换后端镜像不会更新 `j2me/` 下的文件；云存档沿用既有的 `save_states` 表与 `data/saves` 目录，不需要改动。升级后建议清一次手机浏览器缓存或用无痕窗口验证运行时（见「常见问题」里的 J2ME 一节）。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可；v1.6.1 升级到 v1.6.2 只有前端与一条数据迁移（`0008_platform_aliases`，把 `famicom` / `snes` / `genesis` 并到 `nes` / `sfc` / `megadrive`，随后端启动自动执行），没有新的核心与 BIOS，替换镜像或重新构建前端即可；v1.6.2 升级到 v1.6.3 只改前端与 `frontend/public/j2me/` 里的运行时（新增 `rms.js`、补丁 15–18、`lcdui.js` 的文字输入），没有表结构变更、没有新的核心与 BIOS，**但必须重新构建前端**：运行时资源带内容版本号，只换后端镜像不会更新 `j2me/` 下的文件；云存档沿用既有的 `save_states` 表与 `data/saves` 目录，不需要改动。升级后建议清一次手机浏览器缓存或用无痕窗口验证运行时（见「常见问题」里的 J2ME 一节）；v1.6.3 升级到 v1.7.0 是安全与运维加固（TURN 临时凭据、上传与建房限额、会话令牌哈希入库、口令改 scrypt、单实例锁、优雅停机、静态长缓存与真 404），**没有表结构变更**，替换镜像或重新构建前端即可；新增几个可调环境变量（`UPLOAD_CONCURRENCY`、`UPLOAD_RATE_LIMIT_PER_MINUTE`、`SESSION_IDLE_TIMEOUT_DAYS`、`SINGLE_INSTANCE_LOCK`，默认值见 `.env.example` 与 `compose.yaml`），单实例部署不用改；想用临时 TURN 凭据，按 `deploy/STUN.md` 把 coturn 改成 `use-auth-secret`，再到后台「站点设置 → TURN 中继」填同一个共享密钥；升级后按 `deploy/README.md`「日常发布」的流程校验 `/api/health` 报的版本。
 
 **6. 备份与恢复**
 
@@ -300,11 +308,12 @@ BIOS 按平台放在 `data/bios/<平台>/` 下：FDS 需要 `disksys.rom`；PSX 
 
 `.jar` 由前端本机托管的 J2meJS 解释，不走 libretro；上传格式只接受 `.jar`，JAD/JAM 描述文件需要先取得对应 JAR 后再上传，`.sqc` 不受支持。播放页在运行时之外补了三件事：
 
-- **高级界面画进画布**：MIDP 的高级界面（Form / List / Alert / Gauge / TextField）原本是运行时页面里的 DOM 元素，而播放页只镜像画布 —— 玩家看到的是一片空白，播放页还会因为「一直没画出画面」把它判成启动超时。现在由站点的 `lcdui.js` 画到画布上，条目的位置与尺寸仍由 Java 侧决定；列表的方向键移动、确定键选中与底部左右软键条也一并补上。要打字的地方同样搬进了画面：按「5 确定」或点画面上那个格子会浮出真正的输入框（手机上就是系统键盘），打完按「5」或左软键提交、右软键取消，短信验证码这类运行时自己的对话框也走同一套。
+- **高级界面画进画布**：MIDP 的高级界面（Form / List / Alert / Gauge / TextField）原本是运行时页面里的 DOM 元素，而播放页只镜像画布 —— 玩家看到的是一片空白，播放页还会因为「一直没画出画面」把它判成启动超时。现在由站点的 `lcdui.js` 画到画布上，条目的位置与尺寸仍由 Java 侧决定；列表的方向键移动、确定键选中与底部左右软键条也一并补上。要打字的地方同样搬进了画面：按中间那颗「OK」或点画面上那个格子会浮出真正的输入框（手机上就是系统键盘），打完按「OK」或左软键提交、右软键取消，短信验证码这类运行时自己的对话框也走同一套。
+- **左手边是十字方向键**：J2ME 的虚拟手柄左边不是摇杆，而是老手机那颗方向键 —— 上、下、左、右四颗（发的是手机的导航键代码），比摇杆好按也让位更准。手机键盘正中的「5 / 确定」不在这里重复摆一颗，它就在肩键那一行（标签「5 确定」，PC 键盘上默认是数字行的 7）；右手边是 1/3/7/9 四角键，肩键行是 ＊＃ / 5 确定 / 0，手机键盘上的键一颗不少。
 - **兼容库开局自选**：运行时自带三档 Java 类库（enginemode：`classesold.jar` 兼容库、`classes2.jar` MIDP 2.0、`classes.jar`），能启动的游戏范围不一样。进入播放页会先弹窗选一档（默认预选上次那一档，选择按 ROM 记在浏览器本地），游戏起不来或提示缺少 MIDP 2.0 特性时换一档即可；「重载游戏」也走这个弹窗，等于用新类库重开。
 - **存档自动进云**：MIDP 里能持久化的只有 RMS（游戏内记录集）。登录玩家开局会自动读回自己的存档、游戏一写记录就自动上传（每人每个 ROM 一份，与其他平台共用同一套云存档与 `data/saves` 目录），暂停、切到后台、退出页面时各补一次，不需要点任何按钮；未登录的玩家与房间客人不留存档，因此 J2ME 对这两类人不显示存档 / 读档按钮。即时存档 / 读档（`saveState` / `loadState`）对 J2ME 仍是空操作。
 
-J2meJS 的 MIDP / 厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；它以同源内嵌页面运行（运行时要读写 IndexedDB），沙箱 iframe 必须留在屏幕内并靠 `opacity` 隐藏 —— 一旦被挪出屏幕，Chrome 会把它的定时器压到每秒一次，游戏会明显卡顿。许可证、站点补丁、手机端（WebKit）启动修复与运行时资源版本号见 [`frontend/public/j2me/INTEGRATION.md`](frontend/public/j2me/INTEGRATION.md)。
+J2meJS 的 MIDP / 厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；它以同源内嵌页面运行（运行时要读写 IndexedDB），沙箱 iframe 必须留在屏幕内并靠 `opacity` 隐藏 —— 一旦被挪出屏幕，Chrome 会把它的定时器压到每秒一次，游戏会明显卡顿。许可证、站点补丁、手机端（WebKit）启动修复与运行时资源版本号见 [`frontend/scripts/j2me-integration.md`](frontend/scripts/j2me-integration.md)。
 
 Opera（3DO）的浏览器核心需要让 libretro-common 的头文件与 RetroArch 实现一致；构建版本、CHD 支持和真实浏览器回归步骤见 [`deploy/opera-build.md`](deploy/opera-build.md)。
 
@@ -317,11 +326,13 @@ FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多
 | `npm run dev` | 同时启动 API 和 Vite 开发服务器 |
 | `npm run dev:api` / `npm run dev:web` | 只启动后端 / 前端 |
 | `npm run build` | 构建前端到 `frontend/dist` |
+| `npm test` | 跑测试套件（等价于 `node --test tests/*.test.js`） |
+| `npm run lint` | ESLint 检查（配置见仓库根 `eslint.config.js`） |
 | `npm start` | 启动生产后端，自动迁移数据库并托管前端产物 |
 | `npm run preview` | 预览前端构建产物 |
 | `npm run db:import:sqlite` | 旧 SQLite 数据导入 MySQL |
 | `npm run security:matrix` | 权限矩阵检查 |
-| `node frontend/public/j2me/apply-site-patches.mjs` | 重新应用 J2meJS 运行时的站点补丁（刷新运行时副本后执行；可重复运行） |
+| `node frontend/scripts/apply-j2me-patches.mjs` | 重新应用 J2meJS 运行时的站点补丁（刷新运行时副本后执行；可重复运行） |
 | `node --test tests/*.test.js` | 跑测试套件；J2ME 的真实浏览器用例加 `J2ME_TEST_CHROME=<chrome 路径>` |
 | `node deploy/build-cores.mjs` | 发布当前版本的 libretro 核心（版本化地址与远端托管依赖它） |
 
@@ -332,7 +343,7 @@ FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多
 ```bash
 npm run build
 node --check server/index.js
-curl http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:3000/api/health   # {"ok":true,"version":"1.7.0","db":"up","ms":1}
 ```
 
 ## 常见问题

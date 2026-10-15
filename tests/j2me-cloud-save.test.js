@@ -11,6 +11,10 @@ import { J2ME_DEFAULT_ENGINE, J2ME_ENGINES } from '../frontend/src/composables/p
 import {
   J2ME_ENGINE_CHOICES, isJ2mePlatform, j2meEngineLabel, readJ2meEngine, writeJ2meEngine,
 } from '../frontend/src/composables/player/j2meEngines.js'
+import {
+  J2ME_DEFAULT_LANGUAGE, J2ME_LANGUAGE_CHOICES, isJ2meLanguage, j2meLanguageLabel,
+  j2meLanguageParam, readJ2meLanguage, writeJ2meLanguage,
+} from '../frontend/src/composables/player/j2meLanguage.js'
 
 const repoRoot = new URL('../', import.meta.url)
 const read = (relative) => readFile(new URL(relative, repoRoot), 'utf8')
@@ -133,9 +137,11 @@ test('云存档接线：登录用户一份、客人不接、房间只有房主',
 test('开局弹窗：挡住模拟器挂载，选完才开局；重载游戏就是换档重开', async () => {
   const dialog = await read('frontend/src/components/J2meEngineDialog.vue')
   assert.match(dialog, /v-for="choice in choices"/)
-  assert.match(dialog, /@click="\$emit\('confirm', selected\)"/)
+  assert.match(dialog, /@click="\$emit\('confirm', \{ engine: selected, language: selectedLanguage \}\)"/)
   assert.match(dialog, /role="radiogroup"/)
-  for (const choice of J2ME_ENGINE_CHOICES) assert.match(dialog, new RegExp(`defineProps|J2ME_ENGINE_CHOICES`))
+  // 选项来自共享常量，弹窗自己不再抄一份列表。
+  assert.match(dialog, /const choices = J2ME_ENGINE_CHOICES/)
+  assert.match(dialog, /const languageChoices = J2ME_LANGUAGE_CHOICES/)
 
   for (const view of ['frontend/src/views/Player.vue', 'frontend/src/views/RoomPlayer.vue']) {
     const source = await read(view)
@@ -150,21 +156,112 @@ test('开局弹窗：挡住模拟器挂载，选完才开局；重载游戏就�
 test('类库选择一路传到适配器：组件 → useEmulator → nostalgist → prepareJ2me', async () => {
   const portal = await read('frontend/src/components/emulator-portal/EmulatorPortal.vue')
   assert.match(portal, /engine: \{ type: String, default: null \}/)
+  assert.match(portal, /language: \{ type: String, default: null \}/)
   assert.match(portal, /cloudSave: \{ type: Object, default: null \}/)
-  assert.match(portal, /engine: props\.engine,\n      cloudSave: props\.cloudSave,/)
-  // 换档等于换核心：EnginePortal 会自己重启。
-  assert.match(portal, /watch\(\(\) => \[romKey\(props\.rom\), props\.core, props\.engine\]/)
+  assert.match(portal, /engine: props\.engine,\n      language: props\.language,\n      cloudSave: props\.cloudSave,/)
+  // 换档/换语言等于换核心：EnginePortal 会自己重启。
+  assert.match(portal, /watch\(\(\) => \[romKey\(props\.rom\), props\.core, props\.engine, props\.language\]/)
 
   const emulator = await read('frontend/src/composables/useEmulator.js')
-  assert.match(emulator, /engine = null, cloudSave = null \}\) \{/)
-  assert.match(emulator, /engine, cloudSave,/)
+  assert.match(emulator, /engine = null, language = null, cloudSave = null \}\) \{/)
+  assert.match(emulator, /engine, language, cloudSave,/)
 
   const nostalgist = await read('frontend/src/composables/nostalgist.js')
-  assert.match(nostalgist, /\.\.\.\(engine \? \{ engine \} : \{\}\),\n      cloudSave,/)
+  assert.match(nostalgist, /\.\.\.\(engine \? \{ engine \} : \{\}\),\n      \.\.\.\(language \? \{ language \} : \{\}\),\n      cloudSave,/)
 
   const core = await read('frontend/src/composables/player/useCoreAssets.js')
   assert.match(core, /registerCoreTasksFor\(progress, core, \{ engine = null \} = \{\}\)/)
   assert.match(core, /return registerJ2meCoreTasks\(progress, \{ engine: engine \|\| undefined \}\)/)
+})
+
+test('游戏语言：弹窗选项 → 本地记忆 → 运行时 URL（auto 什么都不传）', async () => {
+  for (const view of ['frontend/src/views/Player.vue', 'frontend/src/views/RoomPlayer.vue']) {
+    const source = await read(view)
+    assert.match(source, /const languageChoice = ref\(J2ME_DEFAULT_LANGUAGE\)/)
+    assert.match(source, /languageChoice\.value = readJ2meLanguage\(\)/)
+    assert.match(source, /writeJ2meLanguage\(language\)/)
+    assert.match(source, /function confirmEngine\(\{ engine, language \}\)/)
+    // 语言进 VM 之前就定下来：改动由 EmulatorPortal 的重启 watch 接管，
+    // 两项都没动时才手动重开。
+    assert.match(source, /if \(engine === previous && language === previousLanguage\) void onReload\(\)/)
+  }
+  assert.match(await read('frontend/src/views/Player.vue'), /:language="isJ2me \? languageChoice : null"/)
+  assert.match(await read('frontend/src/views/RoomPlayer.vue'), /:language="isJ2me && isHostMode \? languageChoice : null"/)
+
+  const adapter = await read('frontend/src/composables/player/j2meRuntime.js')
+  assert.match(adapter, /if \(language != null && !isJ2meLanguage\(language\)\) throw new Error\(`未知的 J2ME 游戏语言：\$\{language\}`\)/)
+  assert.match(adapter, /const languageParam = j2meLanguageParam\(language\)/)
+  assert.match(adapter, /if \(languageParam\) url\.searchParams\.set\('language', languageParam\)/)
+})
+
+test('四个语言档位都给玩家看得懂的名字，且只有 auto 不往运行时传', () => {
+  assert.deepEqual(
+    J2ME_LANGUAGE_CHOICES.map((choice) => choice.id),
+    ['auto', 'zh-CN', 'zh-HK', 'en-US'],
+  )
+  for (const choice of J2ME_LANGUAGE_CHOICES) {
+    assert.ok(choice.label && choice.note, `${choice.id} 要有名称与说明`)
+  }
+  assert.equal(J2ME_DEFAULT_LANGUAGE, 'auto')
+  assert.equal(j2meLanguageParam('auto'), null)       // 自动：由运行时的 siteLocale 看浏览器
+  assert.equal(j2meLanguageParam('zh-CN'), 'zh-CN')
+  assert.equal(j2meLanguageParam('zh-HK'), 'zh-HK')
+  assert.equal(j2meLanguageParam('en-US'), 'en-US')
+  assert.equal(j2meLanguageParam(null), null)
+  assert.equal(j2meLanguageLabel('zh-HK'), '繁体中文')
+  assert.equal(j2meLanguageLabel('nope'), J2ME_LANGUAGE_CHOICES[0].label)
+  assert.equal(isJ2meLanguage('zh-SG'), false)        // 玩家只能选这份列表里的值
+  assert.equal(isJ2meLanguage('auto'), true)
+})
+
+test('语言的选择记在本地（跨 ROM 共用），读回来一律现校验', () => {
+  const store = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: (key) => store.delete(key),
+  }
+  try {
+    assert.equal(readJ2meLanguage(), J2ME_DEFAULT_LANGUAGE)   // 第一次玩：自动
+    writeJ2meLanguage('zh-CN')
+    assert.equal(readJ2meLanguage(), 'zh-CN')                 // 换个 ROM 也是它：语言跟着人走
+    store.set('j2me:language', 'zh-SG')                       // 老数据 / 手改过的值
+    assert.equal(readJ2meLanguage(), J2ME_DEFAULT_LANGUAGE)
+    writeJ2meLanguage('zh-SG')                                // 不认识的一律不写
+    assert.equal(readJ2meLanguage(), J2ME_DEFAULT_LANGUAGE)
+  } finally {
+    delete globalThis.localStorage
+  }
+})
+
+test('microedition.locale：中文变体归一成设备语言的名字，其他语言照原样', async () => {
+  // 直接跑运行时里那份 siteLocale（补丁写进去的），不是这里再抄一遍。
+  const bundle = await read('frontend/public/j2me/bld/main-all.js')
+  const source = bundle.match(/function siteLocale\(\) \{[\s\S]*?\n\}/)
+  assert.ok(source, 'siteLocale 必须已经在运行时里（补丁见 apply-j2me-patches.mjs）')
+  const loadSiteLocale = new Function('config', 'navigator', `${source[0]}\nreturn siteLocale;`)
+  const auto = (browser) => loadSiteLocale({}, { language: browser })()
+  const forced = (language, browser = 'en-US') => loadSiteLocale({ language }, { language: browser })()
+
+  // 自动：浏览器怎么说，就怎么归到设备语言的名字上。
+  assert.equal(auto('zh-CN'), 'zh-CN')
+  assert.equal(auto('zh-SG'), 'zh-CN')          // 新加坡简体：就是手机上那一例
+  assert.equal(auto('zh-Hans-CN'), 'zh-CN')
+  assert.equal(auto('zh'), 'zh-CN')
+  assert.equal(auto('zh_CN'), 'zh-CN')          // 下划线写法
+  assert.equal(auto('zh-TW'), 'zh-HK')
+  assert.equal(auto('zh-Hant-TW'), 'zh-HK')
+  assert.equal(auto('zh-HK'), 'zh-HK')
+  assert.equal(auto('zh-MO'), 'zh-HK')
+  assert.equal(auto('zh-Hans-HK'), 'zh-CN')     // 简繁同时出现时以简体为先
+  // 非中文原样交给游戏：MIDlet 找不到自己的包就退回 lang.xx（英文），这是它的选择。
+  assert.equal(auto('en-US'), 'en-US')
+  assert.equal(auto('ja-JP'), 'ja-JP')
+  // 玩家手选的那一档优先，并且同样走归一化。
+  assert.equal(forced('zh-CN', 'en-US'), 'zh-CN')
+  assert.equal(forced('zh-HK', 'en-US'), 'zh-HK')
+  assert.equal(forced('en-US', 'zh-SG'), 'en-US')   // 中文手机上想玩英文版：说得通
+  assert.equal(forced('zh-SG'), 'zh-CN')
 })
 
 test('上传接口支持 keepalive（关标签页前的最后一次自动存档）', async () => {

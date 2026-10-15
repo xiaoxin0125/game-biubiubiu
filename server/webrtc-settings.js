@@ -8,6 +8,19 @@ export const MAX_STUN_URLS_LENGTH = 2000
 export const TURN_URLS_KEY = 'webrtcTurnUrls'
 export const TURN_USERNAME_KEY = 'webrtcTurnUsername'
 export const TURN_CREDENTIAL_KEY = 'webrtcTurnCredential'
+// 共享密钥（coturn 的 auth secret）与临时凭据有效期。填了密钥就进入「临时凭据」
+// 模式：静态用户名/密码不再下发，前端每次拿到的是一小时后过期的签名字符串，
+// 于是密钥本身永远不出服务端，泄露的凭据也只能用来中继很短的一段时间。
+export const TURN_SECRET_KEY = 'webrtcTurnSecret'
+export const TURN_TTL_KEY = 'webrtcTurnTtl'
+
+export const TURN_SECRET_MIN_LENGTH = 16
+export const TURN_CREDENTIAL_TTL_DEFAULT_SEC = 3600
+export const TURN_CREDENTIAL_TTL_MIN_SEC = 300
+export const TURN_CREDENTIAL_TTL_MAX_SEC = 24 * 60 * 60
+// 临时凭据里的用户名部分（时间戳冒号后面的那一段），只影响 coturn 日志显示。
+export const TURN_CREDENTIAL_DEFAULT_NAME = 'games-online'
+const TURN_CREDENTIAL_NAME_MAX_LENGTH = 32
 
 const HOST_PATTERN = '(?:[a-zA-Z0-9.-]+|\\[[0-9a-fA-F:]+\\])'
 
@@ -54,6 +67,65 @@ export function normalizeTurnCredential(value) {
   if (credential.length > 256) throw new Error('TURN 密码过长')
   return credential
 }
+
+/**
+ * coturn 共享密钥（use-auth-secret / TURN REST API）。
+ * 空字符串表示"没配置"，调用方应退回静态用户名+密码模式。
+ */
+export function normalizeTurnSecret(value) {
+  const secret = String(value ?? '').trim()
+  if (!secret) return ''
+  if (secret.length < TURN_SECRET_MIN_LENGTH) {
+    throw new Error(`TURN 共享密钥至少需要 ${TURN_SECRET_MIN_LENGTH} 位`)
+  }
+  if (secret.length > 256) throw new Error('TURN 共享密钥过长')
+  return secret
+}
+
+/** 临时凭据有效期（秒）；空值表示用默认 1 小时。 */
+export function normalizeTurnTtl(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return String(TURN_CREDENTIAL_TTL_DEFAULT_SEC)
+  const ttl = Number(raw)
+  if (!Number.isInteger(ttl) || ttl < TURN_CREDENTIAL_TTL_MIN_SEC || ttl > TURN_CREDENTIAL_TTL_MAX_SEC) {
+    throw new Error(`临时凭据有效期需要在 ${TURN_CREDENTIAL_TTL_MIN_SEC} ~ ${TURN_CREDENTIAL_TTL_MAX_SEC} 秒之间`)
+  }
+  return String(ttl)
+}
+
+function turnCredentialName(raw) {
+  const name = String(raw || '')
+    .replace(/[^A-Za-z0-9._-]/g, '')
+    .slice(0, TURN_CREDENTIAL_NAME_MAX_LENGTH)
+  return name || TURN_CREDENTIAL_DEFAULT_NAME
+}
+
+/**
+ * 生成 coturn 临时凭据（RFC 草案 "TURN REST API" / coturn 的 use-auth-secret）：
+ *
+ *   username   = "<过期时间戳>:<用户名>"
+ *   credential = base64(HMAC-SHA1(共享密钥, username))
+ *
+ * coturn 用同一把共享密钥重算一遍并与客户端提交的密码比对，同时校验冒号前的
+ * 时间戳没有过期 —— 所以密钥本身不需要下发给浏览器，泄露的凭据也会自然失效。
+ * 注意：哈希输入是完整的 username（含时间戳与冒号），用户名里的冒号会被清掉。
+ */
+export function buildTurnCredentials({
+  secret,
+  name = TURN_CREDENTIAL_DEFAULT_NAME,
+  ttlSec = TURN_CREDENTIAL_TTL_DEFAULT_SEC,
+  now = Date.now(),
+} = {}) {
+  const key = String(secret || '')
+  if (!key) throw new Error('缺少 TURN 共享密钥')
+  const ttl = Number(ttlSec)
+  if (!Number.isInteger(ttl) || ttl <= 0) throw new Error('临时凭据有效期不合法')
+  const expiresAtSec = Math.floor(now / 1000) + ttl
+  const username = `${expiresAtSec}:${turnCredentialName(name)}`
+  const credential = createHmac('sha1', key).update(username).digest('base64')
+  return { username, credential, expiresAtSec, ttlSec: ttl }
+}
+
 
 // ── 带鉴权的 TURN Allocate（验证用户名/密码是否真的能分配中继端口） ──
 function appendAttribute(parts, type, value) {

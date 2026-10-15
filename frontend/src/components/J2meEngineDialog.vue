@@ -3,7 +3,7 @@
     <div class="dialog-mask" @click.self="$emit('close')">
       <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="j2me-engine-title">
         <header class="dialog-head">
-          <h3 id="j2me-engine-title">{{ mode === 'restart' ? '换一档兼容库重新开始' : '选择兼容库' }}</h3>
+          <h3 id="j2me-engine-title">{{ mode === 'restart' ? '重新开始前的设置' : '选择兼容库与语言' }}</h3>
           <button type="button" class="btn btn-ghost btn-icon btn-sm dialog-close" aria-label="关闭" @click="$emit('close')">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
@@ -33,11 +33,35 @@
               </span>
             </button>
           </div>
+
+          <h4 class="section-title">游戏语言</h4>
+          <p class="dialog-message">
+            游戏按「设备语言」挑自己的语言包：中文的写法差一点（zh-SG、zh-Hans-CN）就会退回英文。
+            自动档已经把这些写法都算作中文；想固定用某一种，在这里选。选择记在这台设备上。
+          </p>
+          <div class="choices" role="radiogroup" aria-label="游戏语言">
+            <button
+              v-for="item in languageChoices"
+              :key="item.id"
+              type="button"
+              class="choice"
+              role="radio"
+              :aria-checked="item.id === selectedLanguage ? 'true' : 'false'"
+              :class="{ active: item.id === selectedLanguage }"
+              @click="selectedLanguage = item.id"
+            >
+              <span class="radio" aria-hidden="true"><span v-if="item.id === selectedLanguage" class="dot" /></span>
+              <span class="choice-text">
+                <span class="choice-label">{{ item.label }}</span>
+                <span class="choice-note">{{ item.note }}</span>
+              </span>
+            </button>
+          </div>
         </div>
 
         <footer class="dialog-actions">
           <button v-if="mode === 'restart'" type="button" class="btn" @click="$emit('close')">取消</button>
-          <button type="button" class="btn btn-primary" @click="$emit('confirm', selected)">
+          <button type="button" class="btn btn-primary" @click="$emit('confirm', { engine: selected, language: selectedLanguage })">
             {{ mode === 'restart' ? '用这一档重新开始' : '开始游戏' }}
           </button>
         </footer>
@@ -49,19 +73,25 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { J2ME_ENGINE_CHOICES } from '../composables/player/j2meEngines.js'
+import { J2ME_LANGUAGE_CHOICES } from '../composables/player/j2meLanguage.js'
 
 const props = defineProps({
   title: { type: String, default: '这个游戏' },
   // 上次选的（或默认的）那一档：弹窗一开就预选它，回头客直接点「开始游戏」。
   modelValue: { type: String, required: true },
-  // 'start' = 开局前第一次选；'restart' = 已经开着这一局，换个类库重开。
+  // 上次选的（或默认的）游戏语言：'auto' = 跟随浏览器语言。
+  language: { type: String, default: 'auto' },
+  // 'start' = 开局前第一次选；'restart' = 已经开着这一局，换个类库/语言重开。
   mode: { type: String, default: 'start' },
 })
 defineEmits(['confirm', 'close'])
 
 const choices = J2ME_ENGINE_CHOICES
+const languageChoices = J2ME_LANGUAGE_CHOICES
 const selected = ref(props.modelValue)
+const selectedLanguage = ref(props.language)
 watch(() => props.modelValue, (value) => { selected.value = value })
+watch(() => props.language, (value) => { selectedLanguage.value = value })
 </script>
 
 <style scoped>
@@ -98,6 +128,7 @@ watch(() => props.modelValue, (value) => { selected.value = value })
 .dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 24px; }
 .dialog-message { margin: 4px 0 0; color: var(--text-secondary); line-height: 1.8; }
 .dialog-message b { color: var(--text-primary); }
+.section-title { margin: 24px 0 0; font-size: 15px; font-weight: 900; color: var(--text-primary); }
 .choices { display: flex; flex-direction: column; gap: 10px; margin: 18px 0 4px; }
 .choice {
   display: flex;

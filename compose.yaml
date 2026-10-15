@@ -31,6 +31,13 @@ services:
       MAX_STATE_BYTES: ${MAX_STATE_BYTES:-8388608}
       USER_UPLOAD_QUOTA_BYTES: ${USER_UPLOAD_QUOTA_BYTES:-2147483648}
       MAX_SAVE_SLOT: ${MAX_SAVE_SLOT:-9}
+      # 会话闲置过期（天）：30 天绝对有效期之外的又一道闸，0 关闭
+      SESSION_IDLE_TIMEOUT_DAYS: ${SESSION_IDLE_TIMEOUT_DAYS:-14}
+      # 单实例启动锁：限流/票据/房间状态都在进程内存里，第二个实例会被拒绝启动
+      SINGLE_INSTANCE_LOCK: ${SINGLE_INSTANCE_LOCK:-1}
+      # 上传闸门：同时进行的上传数 + 每用户每分钟上传次数
+      UPLOAD_CONCURRENCY: ${UPLOAD_CONCURRENCY:-2}
+      UPLOAD_RATE_LIMIT_PER_MINUTE: ${UPLOAD_RATE_LIMIT_PER_MINUTE:-10}
       # WebRTC 全部可选：STUN 建议在后台「站点设置」里填，这里留空即可；
       # TURN 由 compose.turn.yaml 叠加写入，单独用本文件启动时不会配置中继。
       VITE_WEBRTC_STUN_URLS: ${VITE_WEBRTC_STUN_URLS:-}

@@ -37,6 +37,7 @@ test('远端设置集中展示全部远端配置，并保留连接测试', () =>
   assert.match(section, /远端设置/)
   assert.deepEqual(fieldsIn(section), [
     'webrtcStunUrls', 'webrtcTurnUrls', 'webrtcTurnUsername', 'webrtcTurnCredential',
+    'webrtcTurnSecret', 'webrtcTurnTtl',
     'remoteUploadUrl', 'remoteUploadToken', 'remoteDownloadUrl', 'remoteDownloadSecret',
     'romDirectEnabled', 'coresRemoteEnabled', 'coresBaseUrl',
   ].sort())

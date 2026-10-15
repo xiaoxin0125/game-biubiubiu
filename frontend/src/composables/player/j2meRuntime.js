@@ -1,5 +1,6 @@
 import { normalizeKeyboardEventKey, normalizeRetroarchKey } from '../input/keyboardKeys.js'
 import { J2ME_DEFAULT_ENGINE, J2ME_ENGINES, warmJ2meRuntime } from './j2meCore.js'
+import { isJ2meLanguage, j2meLanguageParam } from './j2meLanguage.js'
 
 export { J2ME_DEFAULT_ENGINE } from './j2meCore.js'
 
@@ -7,8 +8,12 @@ export { J2ME_DEFAULT_ENGINE } from './j2meCore.js'
 // phone with a direction pad (Canvas.KEY_UP/DOWN/LEFT/RIGHT = -1/-2/-3/-4) —
 // while the face and shoulder buttons stay on the phone keypad, whose labels the
 // virtual pad shows (1/3/7/9 = the game keys, 5 = 确定, * / # , 0 = 键 0) and
-// whose soft keys are select/start. The runtime's game-action table is taught the
-// keypad codes too (see `apply-site-patches.mjs`), so both halves of MIDP's
+// whose soft keys are select/start. On the touch pad the left-hand stick is
+// swapped for the phone's own cross: four irregular pentagons tiling a seamless
+// plus-shape of equal width and height, one per direction, with no centre button
+// (the keypad's centre key is already the l2 row on the shoulder row). The
+// runtime's game-action table is taught the keypad codes too (see
+// `frontend/scripts/apply-j2me-patches.mjs`), so both halves of MIDP's
 // mapping reach MIDlets that ask getGameAction() instead of reading keyPressed.
 export const J2ME_BUTTON_KEYS = Object.freeze({
   up: -1, down: -2, left: -3, right: -4,
@@ -207,10 +212,11 @@ const J2ME_BOOT_ERROR_GRACE_MS = 5000
 
 export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = {}, progress = null,
   width = 240, height = 320, timeoutMs = 30000, onRuntimeError = null,
-  runtimeUrl = '/j2me/main.html', engine = J2ME_DEFAULT_ENGINE, cloudSave = null,
+  runtimeUrl = '/j2me/main.html', engine = J2ME_DEFAULT_ENGINE, language = null, cloudSave = null,
 } = {}) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 96 || height < 96 || width > 1024 || height > 1024) throw new Error('无效的 J2ME 屏幕尺寸')
   if (!J2ME_ENGINES.has(engine)) throw new Error(`未知的 J2ME 内核：${engine}`)
+  if (language != null && !isJ2meLanguage(language)) throw new Error(`未知的 J2ME 游戏语言：${language}`)
   // 云存档的读取现在就开始：预热运行时、下 JAR 的这几秒正好用来等它（见 start()）。
   const cloud = normalizeCloudSave(cloudSave)
   const cloudSavePromise = cloud?.load ? loadCloudSave(cloud) : null
@@ -238,6 +244,10 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
   url.searchParams.set('jar', jarUrl)
   if (midletClass) url.searchParams.set('midletClassName', midletClass)
   url.searchParams.set('enginemode', engine)
+  // 游戏语言：auto 不传，运行时的 siteLocale 补丁自己看浏览器语言（并把中文的
+  // 各种写法归到游戏认的 zh-CN / zh-HK，见 apply-j2me-patches.mjs）。
+  const languageParam = j2meLanguageParam(language)
+  if (languageParam) url.searchParams.set('language', languageParam)
   url.searchParams.set('logLevel', 'warn')
   if ((width !== 240 || height !== 320) && J2ME_CANVAS_PRESETS.has(`${width}x${height}`)) url.searchParams.set('canvasSize', `size-${width}x${height}`)
 
@@ -437,6 +447,10 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
   canvas.addEventListener('blur', releaseAll)
   canvas.addEventListener('click', event => { if (state === 'running' && editorHitTest(event)) startEditing() })
   const onMessage = event => {
+    // 只认这个 iframe 发来的消息：window 上的 message 事件任何窗口都能发，
+    // 不校验来源的话，别的页面（或同页的第三方脚本）能伪造一个 j2me-error
+    // 把玩家这一局打断（2026-10 审计 L-6）。
+    if (event.source && event.source !== runtimeWindow()) return
     const data = event.data
     if (!data) return
     // 帧里的 rms.js：RMS 有改动 → 去抖后自动上传；开局恢复完成 → 记下来备查。
@@ -524,9 +538,11 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
     return queueCloudSave(options)
   }
 
-  // 关标签页 / 切到后台时再补一次：手机上页面被挂起是常态，不能指望 unmount。
+  // 切到后台时先按普通请求存一次：手机上是「先隐藏、稍后才可能被丢弃」，这时页面
+  // 还活着，普通 fetch 能完整跑完。真正的 pagehide（关标签页 / 前进后退）才用
+  // keepalive 兜底——那条路有 64KB 上限，只能当最后手段（2026-10 审计 L-5）。
   function onPageHide() { void flushCloudSave({ keepalive: true }) }
-  function onVisibilityHidden() { if (document.visibilityState === 'hidden') onPageHide() }
+  function onVisibilityHidden() { if (document.visibilityState === 'hidden') void flushCloudSave() }
   if (cloud?.save) {
     window.addEventListener('pagehide', onPageHide)
     document.addEventListener('visibilitychange', onVisibilityHidden)

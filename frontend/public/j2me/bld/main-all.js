@@ -383,6 +383,25 @@ Native["java/lang/System.arraycopy.(Ljava/lang/Object;ILjava/lang/Object;II)V"] 
   }
 };
 var stubProperties = {"com.nokia.multisim.slots":"1", "com.nokia.mid.imsi":"000000000000000", "com.nokia.mid.imei":""};
+// Site patch (locale): MIDP's microedition.locale is the device language -- a
+// simplified-Chinese phone answers zh-CN and a traditional one zh-HK. MIDlets pick
+// their resource bundle by that exact string (`/lang.<value>`) and fall back to English
+// over the smallest difference, while navigator.language answers with the browser's own
+// spelling (zh-Hans-CN, zh-SG, zh-Hant-TW, ...). Fold the Chinese variants onto the
+// names MIDlets ship; the player page can override the whole thing with its `language`
+// parameter (URL -> config.language). See frontend/scripts/apply-j2me-patches.mjs.
+function siteLocale() {
+  var wanted = String(config.language || navigator.language || '');
+  var normalized = wanted.replace(/_/g, '-').toLowerCase();
+  if (normalized === 'zh' || normalized.indexOf('zh-') === 0) {
+    if (normalized.indexOf('hans') >= 0) return 'zh-CN';
+    var traditional = normalized.indexOf('hant') >= 0 || normalized.indexOf('-tw') >= 0 ||
+      normalized.indexOf('-hk') >= 0 || normalized.indexOf('-mo') >= 0;
+    return traditional ? 'zh-HK' : 'zh-CN';
+  }
+  return wanted;
+}
+
 Native["java/lang/System.getProperty0.(Ljava/lang/String;)Ljava/lang/String;"] = function(addr, keyAddr) {
   var key = J2ME.fromStringAddr(keyAddr);
   try{ 
@@ -399,7 +418,7 @@ Native["java/lang/System.getProperty0.(Ljava/lang/String;)Ljava/lang/String;"] =
       value = "1.0";
       break;
     case "microedition.locale":
-      value = navigator.language;
+      value = siteLocale();
       break;
     case "microedition.platform":
       value = config.platform ? config.platform : "Nokia503/14.0.4/java_runtime_version=Nokia_Asha_1_2";
@@ -6650,7 +6669,7 @@ if (typeof module !== "undefined" && module.exports) {
         value = "71";
         break;
       case "microedition.locale":
-        value = navigator.language;
+        value = siteLocale();
         break;
       case "datagram":
         value = "com.sun.midp.io.j2me.datagram.ProtocolPushImpl";

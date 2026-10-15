@@ -13,7 +13,7 @@ import {
   buildArcadeNetplayRetroarchConfig,
   isArcadeNetplayInputEnabled,
 } from './arcadeNetplayInput.js'
-import { getPlatform, pcButtonsForPlatform, turboButtonsForPlatform } from '../../constants/platforms.js'
+import { getPlatform, pcButtonsForPlatform } from '../../constants/platforms.js'
 import { buildPlatformCoreConfig } from '../../data/config.js'
 
 export function usePlayerEmulatorConfig({
@@ -50,11 +50,6 @@ export function usePlayerEmulatorConfig({
     const platform = romMeta.value?.platform
     if (!platform) return null
     return isTouchLayout?.value ? getPlatform(platform).buttons : pcButtonsForPlatform(platform)
-  })
-  const currentTurboTargets = computed(() => {
-    const platform = romMeta.value?.platform
-    if (!platform || isTouchLayout?.value) return {}
-    return turboButtonsForPlatform(platform)
   })
   const usesArcadeNetplayInputConfig = computed(() =>
     isArcadeNetplayInputEnabled({ isRoomMode, platform: romMeta.value?.platform }) && signalMe.value?.isHost === true

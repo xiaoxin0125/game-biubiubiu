@@ -8,7 +8,7 @@
 // The player asks for `/j2me/version.json` with `cache: 'no-store'` and opens
 // `/j2me/main.html?v=<version>`; every script/stylesheet inside that page is
 // rewritten here to carry the same version, and the runtime fetches its class
-// library under it too (see `apply-site-patches.mjs`). Updating any runtime file
+// library under it too (see `frontend/scripts/apply-j2me-patches.mjs`). Updating any runtime file
 // therefore changes every URL at once and the new copy reaches clients that
 // still hold the old one.
 //

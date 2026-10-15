@@ -199,7 +199,7 @@ export async function remoteHealth(override = null) {
       signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
     })
   } catch (err) {
-    throw new Error(describeFetchError(err))
+    throw new Error(describeFetchError(err), { cause: err })
   }
   const latencyMs = Date.now() - startedAt
   const body = await res.json().catch(() => null)
@@ -226,7 +226,7 @@ export async function remoteUpload({ buffer, fileName, sha256 }) {
       signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     })
   } catch (err) {
-    throw new Error(`上传到远端服务器失败：${describeFetchError(err)}`)
+    throw new Error(`上传到远端服务器失败：${describeFetchError(err)}`, { cause: err })
   }
   const body = await res.json().catch(() => null)
   if (!res.ok || !body?.id) {
@@ -263,7 +263,7 @@ export async function remoteOpenFile(remoteFileId, rangeHeader = null) {
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
     })
   } catch (err) {
-    throw new Error(`读取远端文件失败：${describeFetchError(err)}`)
+    throw new Error(`读取远端文件失败：${describeFetchError(err)}`, { cause: err })
   }
   return res
 }

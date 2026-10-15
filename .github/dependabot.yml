@@ -1,0 +1,38 @@
+# 依赖更新提醒（2026-10 审计 L-10 的延伸）。
+#
+# 这一轮把运行时依赖升到了当时最新，并给 CI 加了 `npm audit --omit=dev` 门禁；
+# 但门禁只在"已经出公告"时才响，没人盯着就会重新积压（上一轮就是这么攒到 25 条的）。
+# Dependabot 每周开一次 PR，CI 会自动跑 lint / 测试 / 构建 / 审计：
+#   - npm：仓库根与 frontend 工作区的依赖（两边共用一份 package-lock）；
+#   - github-actions：工作流里用到的 action 版本。
+# 小版本合并到 main 之后按常规发版流程走（改版本 → 构建 → 重启 → 校验健康检查）。
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '02:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      # 同一批补丁版本合成一个 PR，避免一开一大堆。
+      npm-patch:
+        patterns:
+          - '*'
+        update-types:
+          - patch
+    ignore:
+      # drizzle-kit 的 @esbuild-kit 依赖链在 0.31.x 上没有可用修复（4 条 moderate，
+      # 只影响本机跑迁移的 CLI），大版本升级要单独评估，不让机器人自动提。
+      - dependency-name: drizzle-kit
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3

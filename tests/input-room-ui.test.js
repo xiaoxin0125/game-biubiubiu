@@ -69,7 +69,6 @@ test('按键设置保留房间全设备分页、每帧新快照和单机互斥�
   const source = readFileSync(new URL('../frontend/src/components/InputSettings.vue', import.meta.url), 'utf8')
   const roomInputSource = readFileSync(new URL('../frontend/src/composables/player/room/useRoomPlayerInput.js', import.meta.url), 'utf8')
   const soloInputSource = readFileSync(new URL('../frontend/src/composables/player/solo/useLocalPlayerInput.js', import.meta.url), 'utf8')
-  const gamepadsSource = readFileSync(new URL('../frontend/src/composables/useGamepads.js', import.meta.url), 'utf8')
 
   assert.match(source, /const deviceTabs = connectedDevices/)
   assert.match(source, /connectedPads\.value = pads/)

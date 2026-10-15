@@ -4,6 +4,8 @@
 !.env.example
 !/config/.env.example
 
+安全与代码审计报告-2026-10-15.md
+
 # Runtime configuration
 /config/.env
 /config/app.env

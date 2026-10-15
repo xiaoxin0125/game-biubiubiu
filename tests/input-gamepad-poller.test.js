@@ -395,7 +395,7 @@ test('NES 的 X/Y 连发键只作用在自己的目标上', async () => {
     setPressed(pads[0], 3, true) // Y = 连发 B
     browser.frame()
     assert.deepEqual([...new Set(events.map(([, button]) => button))].sort(), ['a', 'b'])
-    assert.equal(events.every(([type, button, player]) => player === 1 && ['a', 'b'].includes(button)), true)
+    assert.equal(events.every(([, button, player]) => player === 1 && ['a', 'b'].includes(button)), true)
     browser.tickIntervals()
     setPressed(pads[0], 2, false)
     setPressed(pads[0], 3, false)

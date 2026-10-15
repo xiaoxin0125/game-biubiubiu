@@ -140,6 +140,7 @@ export async function prepareEmulator({
   progress = null,
   onRuntimeError = null,
   engine = null,      // J2ME：玩家在开局弹窗里选的类库（enginemode）
+  language = null,    // J2ME：玩家在开局弹窗里选的游戏语言（microedition.locale）
   cloudSave = null,   // J2ME：RMS 云存档的读写接口（见 j2meRuntime.js）
 }) {
   // Normalize legacy arguments. When `rom` isn't passed, fall back to
@@ -156,8 +157,9 @@ export async function prepareEmulator({
     const { prepareJ2me } = await import('./player/j2meRuntime.js')
     return prepareJ2me({
       rom: resolvedRom, retroarchConfig, progress, onRuntimeError,
-      // 类库只在玩家选过之后才带上来；没选（旧调用方）就用默认兼容库。
+      // 类库与语言都只在玩家选过之后才带上来；没选（旧调用方）就用默认兼容库 / 自动语言。
       ...(engine ? { engine } : {}),
+      ...(language ? { language } : {}),
       cloudSave,
     })
   }

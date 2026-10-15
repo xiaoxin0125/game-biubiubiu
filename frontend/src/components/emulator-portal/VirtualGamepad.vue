@@ -14,9 +14,33 @@
     @touchstart="onPadTouch"
     @touchmove="onPadTouch"
   >
-    <!-- Left: virtual analog stick — supports diagonals by finger position -->
+    <!-- Left: J2ME 换掉的是这一块 —— 老手机那颗「十字方向键」：四块不规则五边形拼成
+         一个无缝的十字架（整体宽高相等），每块就是一个方向，发的是手机的导航键代码
+         （MIDP 的 -1 / -2 / -3 / -4）。手机键盘正中的「5 / 确定」在肩键那一行，这里
+         不再重复摆一颗中间键。右侧的 1/3/7/9 四角键与肩键行的 ＊＃ / 5 / 0 照旧保留。
+         其余平台仍是可滑动的虚拟摇杆，8 个方向靠手指位置分辨。 -->
     <div class="vpad-group vpad-left">
+      <svg
+        v-if="isJ2meLayout"
+        class="j2me-nav"
+        viewBox="0 0 300 300"
+        @pointerdown.prevent="onBtnPointerDown"
+        @pointermove.prevent="onBtnPointerMove"
+        @pointerup.prevent="onBtnPointerUp"
+        @pointercancel.prevent="onBtnPointerUp"
+      >
+        <g
+          v-for="b in J2ME_NAV_BUTTONS"
+          :key="b.key"
+          class="nav-btn"
+          :class="[`nav-${b.place}`, { pressed: pressed[b.key] }]"
+        >
+          <path class="nav-key" :data-btn-key="b.key" :d="b.path" />
+          <polygon class="nav-arrow" :points="b.arrow" />
+        </g>
+      </svg>
       <div
+        v-else
         ref="dpadEl"
         class="stick"
         :class="{ active: stickActive }"
@@ -215,6 +239,18 @@ const FACE_LAYOUTS = {
             colors: { x: '#82AEF5', a: '#82AEF5', y: '#C4526F', b: '#C4526F' } },
 }
 
+// J2ME 的左侧不是摇杆，而是老手机那颗「十字方向键」。四颗键各是一块不规则五边形
+// —— 一个矩形臂 + 朝中心的那块三角（中心方块由四块三角拼成），四颗拼起来正好是一个
+// 无缝的十字架，整体宽高相等（viewBox 300×300 = 3 格臂宽）。每颗键发的是 MIDP 的
+// 导航键代码（-1 / -2 / -3 / -4，见 j2meRuntime.js 的 J2ME_BUTTON_KEYS）。
+// 中间不摆键 —— 手机键盘正中那颗「5 / 确定」就在肩键那一行，摆两颗只会重复。
+const J2ME_NAV_BUTTONS = [
+  { key: 'up',    place: 'up',    path: 'M100 0H200V100L150 150L100 100Z',  arrow: '150,40 170,70 130,70' },
+  { key: 'right', place: 'right', path: 'M300 100V200H200L150 150L200 100Z', arrow: '260,150 230,170 230,130' },
+  { key: 'down',  place: 'down',  path: 'M200 300H100V200L150 150L200 200Z', arrow: '150,260 130,230 170,230' },
+  { key: 'left',  place: 'left',  path: 'M0 200V100H100L150 150L100 200Z',  arrow: '40,150 70,130 70,170' },
+]
+
 function pickLayout(platform) {
   const id = resolvePlatformId(platform)
   if (id === 'arcade' || id === 'neogeocd') return 'arcade'
@@ -230,6 +266,9 @@ function pickLayout(platform) {
 }
 
 const layoutType = computed(() => pickLayout(props.platform))
+
+// J2ME 的左手边换成导航键（上下左右 + 中间 OK），右手边与肩键照旧。
+const isJ2meLayout = computed(() => resolvePlatformId(props.platform) === 'j2me')
 
 // Shoulder row is also used by arcade to expose retropad L/R as E/F;
 // several 6-button cabinets need those inputs on mobile. PC Engine 的 V / VI 与
@@ -670,6 +709,31 @@ function onDpadEnd(e) {
 .stick-down  { bottom: 8px; left: 50%; transform: translateX(-50%); }
 .stick-left  { left: 8px; top: 50%; transform: translateY(-50%); }
 
+/* ===== J2ME 十字方向键 =====
+   四块不规则五边形（矩形臂 + 朝中心的那块三角）拼成一个无缝的十字架，整体宽高相等。
+   形状交给 SVG 的 path，颜色 / 按下状态由下面的 CSS 控制。整块一个投影：看起来是
+   一整块粘土捏出来的十字键，四块之间有 SVG 描边画出的细缝。 */
+.j2me-nav {
+  display: block;
+  width: 216px;
+  height: 216px;
+  touch-action: none;
+  filter: drop-shadow(0 4px 6px rgba(94, 58, 84, 0.18));
+}
+.nav-key {
+  fill: var(--clay-surface-flat);
+  stroke: rgba(94, 58, 84, 0.12);
+  stroke-width: 2;
+  transition: fill var(--t-fast) var(--clay-ease);
+}
+.nav-btn.pressed .nav-key { fill: #FFD0E4; }
+.nav-arrow {
+  fill: var(--text-quaternary);
+  pointer-events: none;
+  transition: fill var(--t-fast) var(--clay-ease);
+}
+.nav-btn.pressed .nav-arrow { fill: #6C2039; }
+
 /* ===== Face buttons ===== */
 .face {
   display: grid;
@@ -829,7 +893,9 @@ function onDpadEnd(e) {
 .face-3do .fbtn-b { grid-area: doB; }    /* 标签 'B' */
 .face-3do .fbtn-a { grid-area: doA; }    /* 标签 'C' */
 
-/* J2ME — 手机键盘的四个角：1 3 / 7 9（retropad x a / y b） */
+/* J2ME — 手机键盘的四个角：1 3 / 7 9（retropad x a / y b）。
+   左手边那颗十字方向键（四块五边形拼成的十字架）见 .j2me-nav，手机键盘正中那颗
+   5 / 确定在肩键那一行。 */
 .face-j2me {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
@@ -912,6 +978,8 @@ function onDpadEnd(e) {
   .face-btn { width: 46px; height: 46px; font-size: 14px; }
   .face-fc .face-btn, .face-gba .face-btn { width: 54px; height: 54px; font-size: 16px; }
   .face-j2me .face-btn { width: 54px; height: 54px; font-size: 16px; }
+  /* 十字键每一块和旁边的面键一样大（54px），整体 162px = 3 块臂宽 */
+  .j2me-nav { width: 162px; height: 162px; }
   .face-md .face-btn { width: 42px; height: 42px; font-size: 13px; }
   .face-pce .face-btn { width: 42px; height: 42px; font-size: 13px; }
 }
@@ -935,7 +1003,13 @@ function onDpadEnd(e) {
   .face-btn { width: 44px; height: 44px; }
   .face-fc .face-btn, .face-gba .face-btn { width: 52px; height: 52px; font-size: 15px; }
   .face-j2me .face-btn { width: 52px; height: 52px; font-size: 15px; }
+  .j2me-nav { width: 168px; height: 168px; }
   .face-md .face-btn { width: 40px; height: 40px; font-size: 13px; }
   .face-pce .face-btn { width: 40px; height: 40px; font-size: 13px; }
+}
+
+/* 窄屏手机（320px 那档）：十字键再收一档，免得把中间的软键挤出去 */
+@media (max-width: 360px) {
+  .j2me-nav { width: 132px; height: 132px; }
 }
 </style>

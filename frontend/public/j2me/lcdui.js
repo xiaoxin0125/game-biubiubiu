@@ -636,7 +636,7 @@
     // 运行时那句默认文案是英文占位，站点是中文界面：换成同义的提示，顺带告诉玩家怎么输入。
     var placeholder = 'This app sent you an SMS. Type the message you received here:'
     var message = settings.SMSDialogVerificationText
-    if (!message || message === placeholder) message = '游戏在等一条短信验证码：按「5 确定」或点下面的输入框填写，填完按「完成」。'
+    if (!message || message === placeholder) message = '游戏在等一条短信验证码：按中间那颗「OK」或点下面的输入框填写，填完按「完成」。'
     return {
       message: message,
       maxLength: settings.SMSDialogInputMaxLength | 0,

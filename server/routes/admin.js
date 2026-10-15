@@ -1,13 +1,13 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { z } from 'zod'
 import { db, updateAndFetch } from '../db/index.js'
 import { users, roms, rooms, STATUS } from '../db/schema.js'
 import { requireAdmin, invalidateUserSessions } from '../middleware/auth.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
+import { parseListWindow, listPage } from '../http-utils.js'
 import { BIOS_BY_PLATFORM, BIOS_PLATFORM_LABELS } from '../../shared/registry/platform-bios.js'
 import { audit } from '../audit.js'
 import { coverUrlFor } from './roms.js'
@@ -57,15 +57,21 @@ adminRoutes.get('/bios', async (c) => {
 })
 
 adminRoutes.get('/users', async (c) => {
+  const { limit, offset } = parseListWindow(c)
+  const where = eq(users.status, STATUS.normal)
   const rows = await db.select({
     id: users.id,
     username: users.username,
     role: users.role,
     createdAt: users.createdAt,
   }).from(users)
-    .where(eq(users.status, STATUS.normal))
+    .where(where)
     .orderBy(desc(users.createdAt))
-  return c.json({ users: rows })
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() }).from(users).where(where)
+  const total = Number(countRow?.n || 0)
+  return c.json({ users: rows, ...listPage(rows, { total, limit, offset }) })
 })
 
 // Soft-delete a user, invalidate their sessions, close affected live rooms, and
@@ -139,14 +145,20 @@ adminRoutes.patch('/users/:id', async (c) => {
 })
 
 adminRoutes.get('/roms', async (c) => {
+  const { limit, offset } = parseListWindow(c)
+  const where = eq(roms.status, STATUS.normal)
   const rows = await db.select({
     rom: roms,
     user: { id: users.id, username: users.username },
   })
     .from(roms)
     .innerJoin(users, eq(users.id, roms.userId))
-    .where(eq(roms.status, STATUS.normal))
+    .where(where)
     .orderBy(desc(roms.createdAt))
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() }).from(roms).where(where)
+  const total = Number(countRow?.n || 0)
   const cheatCounts = await cheatCountsFor(rows.map(({ rom }) => rom.id))
   return c.json({
     roms: rows.map(({ rom, user }) => ({
@@ -168,6 +180,7 @@ adminRoutes.get('/roms', async (c) => {
       createdAt: rom.createdAt,
       owner: user,
     })),
+    ...listPage(rows, { total, limit, offset }),
   })
 })
 

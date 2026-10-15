@@ -167,7 +167,8 @@
   ]
 
   function post(message) {
-    try { parent.postMessage(message, '*') } catch (error) { /* 没有父页面（直接开 main.html 调试）*/ }
+    // 同上：固定目标源，不给跨源窗口接收的机会。
+    try { parent.postMessage(message, location.origin) } catch (error) { /* 没有父页面（直接开 main.html 调试）*/ }
   }
 
   function markDirty() {

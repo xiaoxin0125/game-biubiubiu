@@ -417,7 +417,7 @@ const BUTTON_LABELS = {
 
   // J2ME — J2meJS 适配器把 retropad 标识映射到手机键盘；保留原来的按键标签：
   //   x→1（游戏A），a→3（游戏B），y→7（游戏C），b→9（游戏D），
-  //   l2→5（开火 / 确定），l→＊，r→＃，select / start→左软键 / 右软键。
+  //   l2→5（开火 / 确定），l→＊，r→＃，r2→0，select / start→左软键 / 右软键。
   j2me:       { a: '3', b: '9', x: '1', y: '7', l: '＊', r: '＃', l2: '5 确定', r2: '0', select: '软键1', start: '软键2' },
 }
 for (const [id, p] of Object.entries(platforms)) {

@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
-import { and, desc, eq } from 'drizzle-orm'
-import bcrypt from 'bcryptjs'
+import { and, count, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
 import { rooms, roms, users, STATUS } from '../db/schema.js'
@@ -10,8 +9,15 @@ import { updateRoomPermissions, isHostOnline, broadcastRoomClosed } from '../roo
 import { effectiveMaxPlayersForRom } from '../rom-players.js'
 import { rateLimit } from '../middleware/rate-limit.js'
 import { clientIp } from '../middleware/security.js'
+import { parseListWindow, listPage } from '../http-utils.js'
+import { hashPassword, verifyPassword } from '../passwords.js'
 import { createRoomTicket } from '../room-tickets.js'
 import { liveRoom, makeRoomCode, serializeRoom } from '../rooms/room-repository.js'
+
+// 每个普通用户同时只能有一个未关闭的房间（管理员不受限，便于排查问题）。
+// 房间记录只增不减、也没有分页，不设上限的话一个账号就能把房间表刷满
+// （2026-10 审计 M-4）。
+const MAX_OPEN_ROOMS_PER_USER = 1
 
 const createSchema = z.object({
   name: z.string().min(1).max(60),
@@ -30,8 +36,18 @@ const roomJoinLimiter = rateLimit({
   key: (c) => `${clientIp(c)}:${c.req.param('code')?.toUpperCase() || ''}`,
 })
 
+// 建房频率：上限本身是「每人 1 个未关闭房间」，这条限流挡的是「关掉再建」的循环。
+const roomCreateLimiter = rateLimit({
+  name: 'room-create',
+  windowMs: 60_000,
+  max: 10,
+  key: (c) => String(c.get('user')?.id ?? clientIp(c)),
+})
+
 // List open public rooms with basic info
 roomRoutes.get('/', async (c) => {
+  const { limit, offset } = parseListWindow(c)
+  const where = liveRoom(eq(rooms.isPublic, true))
   const rows = await db.select({
     r: rooms,
     hostUsername: users.username,
@@ -43,8 +59,12 @@ roomRoutes.get('/', async (c) => {
     .from(rooms)
     .innerJoin(users, eq(users.id, rooms.hostUserId))
     .innerJoin(roms, eq(roms.id, rooms.romId))
-    .where(liveRoom(eq(rooms.isPublic, true)))
+    .where(where)
     .orderBy(desc(rooms.createdAt))
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() }).from(rooms).where(where)
+  const total = Number(countRow?.n || 0)
 
   return c.json({
     rooms: rows.map(({ r, hostUsername, romTitle, romPlatform, romMaxPlayers, romDefaultCore }) =>
@@ -55,12 +75,15 @@ roomRoutes.get('/', async (c) => {
         hostOnline: isHostOnline(r.code),
       }),
     ),
+    ...listPage(rows, { total, limit, offset }),
   })
 })
 
 // List all OPEN rooms the current user hosts (public + private)
 roomRoutes.get('/mine', requireAuth, async (c) => {
   const me = c.get('user')
+  const { limit, offset } = parseListWindow(c)
+  const where = liveRoom(eq(rooms.hostUserId, me.id))
   const rows = await db.select({
     r: rooms,
     romTitle: roms.title,
@@ -70,8 +93,12 @@ roomRoutes.get('/mine', requireAuth, async (c) => {
   })
     .from(rooms)
     .innerJoin(roms, eq(roms.id, rooms.romId))
-    .where(liveRoom(eq(rooms.hostUserId, me.id)))
+    .where(where)
     .orderBy(desc(rooms.createdAt))
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() }).from(rooms).where(where)
+  const total = Number(countRow?.n || 0)
   return c.json({
     rooms: rows.map(({ r, romTitle, romPlatform, romMaxPlayers, romDefaultCore }) =>
       serializeRoom(r, {
@@ -81,11 +108,12 @@ roomRoutes.get('/mine', requireAuth, async (c) => {
         hostOnline: isHostOnline(r.code),
       }),
     ),
+    ...listPage(rows, { total, limit, offset }),
   })
 })
 
 // Create room (must be authed; rom must be accessible to user)
-roomRoutes.post('/', requireAuth, async (c) => {
+roomRoutes.post('/', requireAuth, roomCreateLimiter, async (c) => {
   const me = c.get('user')
   // Honor global netplay kill-switch (admins bypass)
   if (me.role !== 'admin' && (await getSetting('netplayEnabled', '1')) !== '1') {
@@ -97,13 +125,24 @@ roomRoutes.post('/', requireAuth, async (c) => {
   const { name, romId, isPublic, allowPlay, password } = parsed.data
   if (!isPublic && !password) return c.json({ error: '私有房间必须设置密码' }, 400)
 
+  if (me.role !== 'admin') {
+    const [row] = await db.select({ n: count() }).from(rooms)
+      .where(and(liveRoom(), eq(rooms.hostUserId, me.id)))
+    if (Number(row?.n || 0) >= MAX_OPEN_ROOMS_PER_USER) {
+      return c.json({
+        error: '你已有一个未关闭的房间，先关闭它再创建新的',
+        openRoomLimit: MAX_OPEN_ROOMS_PER_USER,
+      }, 409)
+    }
+  }
+
   const rom = (await db.select().from(roms).where(and(eq(roms.id, romId), eq(roms.status, STATUS.normal))).limit(1))[0]
   if (!rom) return c.json({ error: 'ROM 不存在' }, 404)
   if (rom.userId !== me.id && !rom.isPublic && me.role !== 'admin') {
     return c.json({ error: '无权使用该 ROM' }, 403)
   }
 
-  const passwordHash = password ? await bcrypt.hash(password, 10) : null
+  const passwordHash = password ? await hashPassword(password) : null
 
   // try a few times in case of a code collision
   let code, inserted
@@ -157,7 +196,7 @@ roomRoutes.post('/:code/join', roomJoinLimiter, async (c) => {
 
   if (row.r.passwordHash && !isHostOrAdmin) {
     if (!password) return c.json({ error: '此房间需要密码', needsPassword: true }, 401)
-    const ok = await bcrypt.compare(password, row.r.passwordHash)
+    const ok = await verifyPassword(password, row.r.passwordHash)
     if (!ok) return c.json({ error: '密码不正确' }, 401)
   }
 
@@ -212,7 +251,7 @@ roomRoutes.patch('/:code', requireAuth, async (c) => {
   }
   if ('password' in parsed.data) {
     const pw = parsed.data.password
-    patch.passwordHash = (pw === null || pw === '') ? null : await bcrypt.hash(pw, 10)
+    patch.passwordHash = (pw === null || pw === '') ? null : await hashPassword(pw)
   }
   if (Object.keys(patch).length === 0) {
     const rom = (await db.select().from(roms).where(eq(roms.id, row.romId)).limit(1))[0]

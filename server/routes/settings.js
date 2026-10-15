@@ -10,9 +10,15 @@ import {
   TURN_URLS_KEY,
   TURN_USERNAME_KEY,
   TURN_CREDENTIAL_KEY,
+  TURN_SECRET_KEY,
+  TURN_TTL_KEY,
   normalizeTurnUrls,
   normalizeTurnUsername,
   normalizeTurnCredential,
+  normalizeTurnSecret,
+  normalizeTurnTtl,
+  buildTurnCredentials,
+  TURN_CREDENTIAL_TTL_DEFAULT_SEC,
 } from '../webrtc-settings.js'
 import { testStunUrls, probeTurnServer, probeTurnWithCredentials } from '../stun-test.js'
 import {
@@ -38,6 +44,8 @@ const WRITABLE_KEYS = new Set([
   TURN_URLS_KEY,
   TURN_USERNAME_KEY,
   TURN_CREDENTIAL_KEY,
+  TURN_SECRET_KEY,
+  TURN_TTL_KEY,
   REMOTE_URL_KEY,
   REMOTE_TOKEN_KEY,
   REMOTE_DOWNLOAD_URL_KEY,
@@ -62,6 +70,10 @@ const DEFAULTS = {
   [TURN_URLS_KEY]: '',
   [TURN_USERNAME_KEY]: '',
   [TURN_CREDENTIAL_KEY]: '',
+  // 共享密钥填了就改用 coturn 临时凭据（推荐）；留空则退回静态用户名+密码，
+  // 且静态凭据只对已登录用户下发。
+  [TURN_SECRET_KEY]: '',
+  [TURN_TTL_KEY]: '',
   // Optional remote storage for large ROMs (see /www/wwwroot/rom-upload).
   [REMOTE_URL_KEY]: '',
   [REMOTE_TOKEN_KEY]: '',
@@ -178,33 +190,59 @@ adminSettingsRoutes.post('/test-stun', async (c) => {
 })
 
 // 测试 TURN 中继：默认用后台保存的配置（没有则退回环境变量）。
-// 填了用户名/密码时会做一次带鉴权的 Allocate，真的分配一个中继端口；
-// 没填则只发不带凭据的 Allocate，401/438 即表示中继可用。
+// 表单里带了 turnUrls 时先测表单里还没保存的值。
+//
+// 凭据分三种模式：
+//   ephemeral —— 配了共享密钥（coturn use-auth-secret）：现签一份临时凭据去测，
+//                验证的就是浏览器实际拿到的那条路径；
+//   static    —— 填了用户名/密码：做一次带鉴权的 Allocate，真的分配一个中继端口；
+//   none      —— 都没有：只发不带凭据的 Allocate，401/438 即表示中继可用。
+async function resolveTurnProbeInputs(body, hasOverride) {
+  if (hasOverride) {
+    return {
+      urlsValue: normalizeTurnUrls(Array.isArray(body.turnUrls) ? body.turnUrls.join(',') : String(body.turnUrls ?? '')),
+      secret: normalizeTurnSecret(body.turnSecret ?? ''),
+      ttl: normalizeTurnTtl(body.turnTtl ?? ''),
+      username: normalizeTurnUsername(body.turnUsername ?? ''),
+      credential: normalizeTurnCredential(body.turnCredential ?? ''),
+    }
+  }
+  const all = await getAll()
+  return {
+    urlsValue: all[TURN_URLS_KEY] || String(process.env.VITE_WEBRTC_TURN_URLS || ''),
+    secret: normalizeTurnSecret(all[TURN_SECRET_KEY] || ''),
+    ttl: normalizeTurnTtl(all[TURN_TTL_KEY] || ''),
+    username: all[TURN_USERNAME_KEY] || String(process.env.VITE_WEBRTC_TURN_USERNAME || ''),
+    credential: all[TURN_CREDENTIAL_KEY] || String(process.env.VITE_WEBRTC_TURN_CREDENTIAL || ''),
+  }
+}
+
 adminSettingsRoutes.post('/test-turn', async (c) => {
   const body = await c.req.json().catch(() => ({}))
   const hasOverride = body && typeof body === 'object' && Object.hasOwn(body, 'turnUrls')
-  let urlsValue
-  let username
-  let credential
-  if (hasOverride) {
-    try {
-      urlsValue = normalizeTurnUrls(Array.isArray(body.turnUrls) ? body.turnUrls.join(',') : String(body.turnUrls ?? ''))
-      username = normalizeTurnUsername(body.turnUsername ?? '')
-      credential = normalizeTurnCredential(body.turnCredential ?? '')
-    } catch (error) {
-      return c.json({ ok: false, error: error.message })
-    }
-  } else {
-    const all = await getAll()
-    urlsValue = all[TURN_URLS_KEY] || String(process.env.VITE_WEBRTC_TURN_URLS || '')
-    username = all[TURN_USERNAME_KEY] || String(process.env.VITE_WEBRTC_TURN_USERNAME || '')
-    credential = all[TURN_CREDENTIAL_KEY] || String(process.env.VITE_WEBRTC_TURN_CREDENTIAL || '')
+  let inputs
+  try {
+    inputs = await resolveTurnProbeInputs(body, hasOverride)
+  } catch (error) {
+    return c.json({ ok: false, error: error.message })
   }
 
-  const list = [...new Set(String(urlsValue || '').split(/[,\r\n]+/).map((item) => item.trim()).filter(Boolean))]
+  const list = [...new Set(String(inputs.urlsValue || '').split(/[,\r\n]+/).map((item) => item.trim()).filter(Boolean))]
   if (!list.length) return c.json({ ok: false, error: '还没有填写 TURN 地址' })
 
-  const authenticated = !!username && !!credential
+  let username = inputs.username
+  let credential = inputs.credential
+  let mode = username && credential ? 'static' : 'none'
+  let expiresAtSec = null
+  if (inputs.secret) {
+    const issued = buildTurnCredentials({ secret: inputs.secret, ttlSec: Number(inputs.ttl) })
+    username = issued.username
+    credential = issued.credential
+    expiresAtSec = issued.expiresAtSec
+    mode = 'ephemeral'
+  }
+  const authenticated = mode !== 'none'
+
   const probes = []
   for (const url of list) {
     if (authenticated) {
@@ -217,15 +255,22 @@ adminSettingsRoutes.post('/test-turn', async (c) => {
   await audit(c, {
     action: 'admin.settings.test-turn',
     targetType: 'settings',
-    metadata: { urls: probes.map((probe) => probe.url), okCount, authenticated },
+    metadata: { urls: probes.map((probe) => probe.url), okCount, authenticated, mode },
   })
+  const modeNote = mode === 'ephemeral'
+    ? `（临时凭据模式，本次签发的凭据 ${Number(inputs.ttl) === TURN_CREDENTIAL_TTL_DEFAULT_SEC ? '默认 1 小时' : `${inputs.ttl} 秒`}后过期）`
+    : mode === 'static'
+      ? '（静态用户名 + 密码）'
+      : '（未配凭据，只验证了端口可达）'
   return c.json({
     ok: okCount > 0,
     probes,
     okCount,
     failCount: probes.length - okCount,
     authenticated,
-    summary: okCount === probes.length ? `${probes.length} 个 TURN 地址全部可用` : `${probes.length} 个地址中 ${okCount} 个可用`,
+    mode,
+    expiresAtSec,
+    summary: (okCount === probes.length ? `${probes.length} 个 TURN 地址全部可用` : `${probes.length} 个地址中 ${okCount} 个可用`) + modeNote,
   })
 })
 
@@ -257,6 +302,18 @@ adminSettingsRoutes.patch('/', async (c) => {
     } else if (k === TURN_CREDENTIAL_KEY) {
       try {
         val = normalizeTurnCredential(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === TURN_SECRET_KEY) {
+      try {
+        val = normalizeTurnSecret(v)
+      } catch (error) {
+        return c.json({ error: error.message }, 400)
+      }
+    } else if (k === TURN_TTL_KEY) {
+      try {
+        val = normalizeTurnTtl(v)
       } catch (error) {
         return c.json({ error: error.message }, 400)
       }

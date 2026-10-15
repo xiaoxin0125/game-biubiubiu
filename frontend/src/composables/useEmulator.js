@@ -92,7 +92,7 @@ export function useEmulator() {
     } catch {}
   }
 
-  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader, progress = null, onRuntimeError = null, engine = null, cloudSave = null }) {
+  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader, progress = null, onRuntimeError = null, engine = null, language = null, cloudSave = null }) {
     if (!wrapperRef.value) throw new Error('wrapper not mounted')
     if (instance.value) return instance.value
     const generation = ++bootGeneration
@@ -112,9 +112,9 @@ export function useEmulator() {
       progress?.setStage('resources')
       const emu = await prepareEmulator({
         core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader, progress,
-        // J2ME 专用：类库（enginemode）由开局弹窗选定，云存档接口由播放页给出；
-        // 其余核心的 prepareEmulator 会直接忽略这两项。
-        engine, cloudSave,
+        // J2ME 专用：类库（enginemode）与游戏语言由开局弹窗选定，云存档接口由播放页
+        // 给出；其余核心的 prepareEmulator 会直接忽略这三项。
+        engine, language, cloudSave,
         onRuntimeError(err) {
           runtimeFailure = err
           if (!bootComplete || generation !== bootGeneration) return

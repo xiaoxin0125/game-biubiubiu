@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import bcrypt from 'bcryptjs'
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
 import { db, insertAndFetch } from '../db/index.js'
@@ -7,10 +6,11 @@ import { users, STATUS } from '../db/schema.js'
 import { createSession, destroyCurrentSession, currentUser, createWebSocketTicket, invalidateUserSessions } from '../middleware/auth.js'
 import { rateLimit, consumeRateLimit } from '../middleware/rate-limit.js'
 import { clientIp } from '../middleware/security.js'
+import { hashPassword, verifyPassword, needsRehash, MIN_PASSWORD_LENGTH } from '../passwords.js'
 import { audit } from '../audit.js'
 
 const passwordSchema = z.string()
-  .min(6)
+  .min(MIN_PASSWORD_LENGTH)
 
 const credentialsSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
@@ -38,7 +38,7 @@ function rejectIfLimited(c, username, options) {
 }
 
 function passwordPolicyMessage() {
-  return '密码至少 6 位'
+  return `密码至少 ${MIN_PASSWORD_LENGTH} 位`
 }
 
 export const authRoutes = new Hono()
@@ -61,7 +61,7 @@ authRoutes.post('/register', authLimiter, async (c) => {
     await db.update(users).set({ username: releasedUsername }).where(eq(users.id, existing.id))
   }
 
-  const passwordHash = await bcrypt.hash(password, 10)
+  const passwordHash = await hashPassword(password)
   const row = await insertAndFetch(users, { username, passwordHash, role: 'user' }, eq(users.username, username))
 
   await createSession(c, row.id)
@@ -86,10 +86,20 @@ authRoutes.post('/login', authLimiter, async (c) => {
     await audit(c, { action: 'auth.login.failed', targetType: 'user', targetId: username, metadata: { reason: 'not-found' }, actor: null })
     return c.json({ error: '用户名或密码错误' }, 401)
   }
-  const ok = await bcrypt.compare(password, user.passwordHash)
+  const ok = await verifyPassword(password, user.passwordHash)
   if (!ok) {
     await audit(c, { action: 'auth.login.failed', targetType: 'user', targetId: user.id, metadata: { reason: 'bad-password' }, actor: user })
     return c.json({ error: '用户名或密码错误' }, 401)
+  }
+
+  // 历史哈希（bcrypt）在这里静默升级成 scrypt：用户不用做任何事，下次登录就已经
+  // 是新格式。升级失败不能影响登录本身。
+  if (needsRehash(user.passwordHash)) {
+    try {
+      await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, user.id))
+    } catch (err) {
+      console.warn('[auth] failed to upgrade password hash', err?.message || err)
+    }
   }
 
   await createSession(c, user.id)
@@ -129,13 +139,13 @@ authRoutes.post('/password', async (c) => {
   const limited = rejectIfLimited(c, me.username, { windowMs: 15 * 60_000, max: 8 })
   if (limited) return limited
 
-  const ok = await bcrypt.compare(parsed.data.currentPassword, me.passwordHash)
+  const ok = await verifyPassword(parsed.data.currentPassword, me.passwordHash)
   if (!ok) {
     await audit(c, { action: 'auth.password.failed', targetType: 'user', targetId: me.id, metadata: { reason: 'bad-current-password' }, actor: me })
     return c.json({ error: '当前密码不正确' }, 401)
   }
 
-  const newHash = await bcrypt.hash(parsed.data.newPassword, 10)
+  const newHash = await hashPassword(parsed.data.newPassword)
   await db.update(users).set({ passwordHash: newHash }).where(eq(users.id, me.id))
   await invalidateUserSessions(me.id, c)
   await audit(c, { action: 'auth.password.changed', targetType: 'user', targetId: me.id, actor: me })

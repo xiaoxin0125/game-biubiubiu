@@ -2,7 +2,10 @@ import { Hono } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { mkdirSync, unlinkSync, createReadStream, statSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { gunzipSync } from 'node:zlib'
+import { Readable } from 'node:stream'
 import { join, resolve } from 'node:path'
+import { bodyLimit } from 'hono/body-limit'
 import { stream } from 'hono/streaming'
 import { db } from '../db/index.js'
 import { saveStates, roms, STATUS } from '../db/schema.js'
@@ -78,23 +81,21 @@ saveRoutes.get('/:romId', requireAuth, async (c) => {
   c.header('Content-Length', String(file.stat.size))
   c.header('X-Save-Updated-At', String(row.updatedAt instanceof Date ? Math.floor(row.updatedAt.getTime()/1000) : row.updatedAt))
   return stream(c, async (s) => {
-    const rs = file.stream
-    await s.pipe(new ReadableStream({
-      start(controller) {
-        rs.on('data', (chunk) => controller.enqueue(chunk))
-        rs.on('end', () => controller.close())
-        rs.on('error', (err) => controller.error(err))
-      },
-    }))
+    // 交给 Readable.toWeb：自带背压与取消处理（手写流包装在客户端中断时会抛
+    // ERR_INVALID_STATE，见审计报告 M-5）。
+    await s.pipe(Readable.toWeb(file.stream))
   })
 })
 
-// Upload / overwrite save for a ROM + slot (body is raw binary)
-saveRoutes.post('/:romId', requireAuth, async (c) => {
-  const contentLength = Number(c.req.header('content-length') || 0)
-  if (contentLength > MAX_STATE_BYTES) {
-    return c.json({ error: `存档超过 ${Math.round(MAX_STATE_BYTES/1024/1024)}MB` }, 413)
-  }
+// Upload / overwrite save for a ROM + slot (body is raw binary).
+// bodyLimit 兜住 chunked 请求：只信 content-length 的话，不带该头的请求能把整个
+// 体积灌进内存（2026-10 审计 M-1）。
+const saveUploadBodyLimit = bodyLimit({
+  maxSize: MAX_STATE_BYTES + 1024 * 1024,
+  onError: (c) => c.json({ error: `存档超过 ${Math.round(MAX_STATE_BYTES / 1024 / 1024)}MB` }, 413),
+})
+
+saveRoutes.post('/:romId', requireAuth, saveUploadBodyLimit, async (c) => {
   const me = c.get('user')
   const romId = Number(c.req.param('romId'))
   const slot = normalizeSlot(c.req.query('slot'))
@@ -107,7 +108,21 @@ saveRoutes.post('/:romId', requireAuth, async (c) => {
     return c.json({ error: '无权为该 ROM 存档' }, 403)
   }
 
-  const buf = Buffer.from(await c.req.arrayBuffer())
+  const raw = Buffer.from(await c.req.arrayBuffer())
+  if (!raw.length) return c.json({ error: '空存档' }, 400)
+
+  // 客户端可以把大存档压成 gzip 再传（关标签页前那一次上传有 64KB 硬上限，
+  // 压缩是让大存档挤进这条路的办法，见 frontend 的 saveUpload）。解压同样要限长：
+  // 只限压缩后的体积等于允许一个 gzip 炸弹把 8MB 上限撑成几十 GB。
+  let buf = raw
+  if (String(c.req.header('content-encoding') || '').toLowerCase() === 'gzip') {
+    try {
+      buf = gunzipSync(raw, { maxOutputLength: MAX_STATE_BYTES })
+    } catch (error) {
+      const tooBig = String(error?.code || '') === 'ERR_BUFFER_TOO_LARGE' || /output length/i.test(String(error?.message || ''))
+      return c.json({ error: tooBig ? `存档超过 ${Math.round(MAX_STATE_BYTES/1024/1024)}MB` : '存档解压失败' }, tooBig ? 413 : 400)
+    }
+  }
   if (!buf.length) return c.json({ error: '空存档' }, 400)
   if (buf.length > MAX_STATE_BYTES) return c.json({ error: `存档超过 ${Math.round(MAX_STATE_BYTES/1024/1024)}MB` }, 413)
 

@@ -8,7 +8,8 @@
 (function () {
   function report(message) {
     try {
-      parent.postMessage({ type: 'j2me-error', message: String(message) }, '*');
+      // 指定目标源而不是 '*':运行时按设计与本页同源，消息不该有机会投给别的窗口。
+      parent.postMessage({ type: 'j2me-error', message: String(message) }, location.origin);
     } catch (error) {
       /* nothing else we can do without a parent */
     }

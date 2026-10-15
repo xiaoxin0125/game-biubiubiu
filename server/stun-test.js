@@ -106,7 +106,7 @@ export function parseBindingResponse(buffer, transactionId) {
       }
       if (family === 0x02 && attrLength >= 20) {
         const raw = Buffer.from(buf.subarray(valueStart + 4, valueStart + 20))
-        for (let i = 0; i < 16; i += 1) raw[i] ^= (i < 4 ? MAGIC_COOKIE[i] : txid[i - 4])
+        for (let i = 0; i < 16; i += 1) raw[i] ^= (i < 4 ? MAGIC_COOKIE[i] : transactionId[i - 4])
         const groups = []
         for (let i = 0; i < 16; i += 2) groups.push(raw.readUInt16BE(i).toString(16))
         return { address: groups.join(':'), port, family: 'IPv6' }

@@ -6,12 +6,23 @@
         <p class="page-sub">上传并管理自己的 ROM，公开后其他玩家也能试玩</p>
       </div>
       <div class="page-head-actions">
-        <button class="btn btn-primary" @click="openUpload">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          上传 ROM
+        <button
+          class="btn btn-primary"
+          :disabled="!canUpload"
+          :title="canUpload ? '' : '管理员已关闭普通用户上传'"
+          @click="openUpload"
+        >
+          <svg v-if="canUpload" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          {{ canUpload ? '上传 ROM' : '上传已关闭' }}
         </button>
       </div>
     </header>
+
+    <p v-if="!canUpload" class="upload-locked-hint">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      管理员已关闭普通用户上传，投稿入口暂时锁着；已上传的 ROM 仍可正常管理。
+    </p>
 
     <div class="tabs">
       <button class="tab" :class="{ active: activeTab === 'active' }" @click="activeTab = 'active'">
@@ -30,11 +41,14 @@
       </div>
       <div v-else-if="!roms.length" class="panel-card empty-card">
         <div class="empty-icon">
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <svg v-if="canUpload" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <svg v-else width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>
-        <h3>还没有上传过 ROM</h3>
-        <p>把 .nes / .zip / .gba / .chd 等文件拖进来开始收藏</p>
-        <button class="btn btn-primary btn-sm" @click="openUpload">选择文件</button>
+        <h3>{{ canUpload ? '还没有上传过 ROM' : '投稿入口已关闭' }}</h3>
+        <p>{{ canUpload ? '把 .nes / .zip / .gba / .chd 等文件拖进来开始收藏' : '管理员关闭了普通用户上传，需要投稿请联系管理员' }}</p>
+        <button class="btn btn-primary btn-sm" :disabled="!canUpload" @click="openUpload">
+          {{ canUpload ? '选择文件' : '上传已关闭' }}
+        </button>
       </div>
       <template v-else>
         <div class="rom-toolbar">
@@ -156,6 +170,8 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAppDialog } from '../composables/useAppDialog.js'
+import { useAuth } from '../composables/useAuth.js'
+import { useSettings } from '../composables/useSettings.js'
 import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
 import { formatServerTime } from '../composables/formatTime.js'
 import UploadDialog from '../components/UploadDialog.vue'
@@ -165,6 +181,11 @@ import ClayPagination from '../components/ClayPagination.vue'
 
 const router = useRouter()
 const { showConfirm, showAlert } = useAppDialog()
+const { isAdmin } = useAuth()
+const { settings } = useSettings()
+// 管理员在后台关掉「允许普通用户上传」后，普通用户的投稿入口直接上锁：点开再被
+// 后端 403 拒绝体验更差（2026-10 审计 M-4）。管理员自己不受这个开关限制。
+const canUpload = computed(() => isAdmin.value || settings.value.userUploadEnabled !== false)
 const roms = ref([])
 const trashRoms = ref([])
 const loading = ref(true)
@@ -235,8 +256,12 @@ function onSwitchTrash() {
   if (!trashLoaded.value) loadTrash()
 }
 
-function openUpload() { showUpload.value = true }
-function onUploaded(r) {
+function openUpload() {
+  // 锁着的时候不打开上传弹窗（按钮本身也是 disabled，这里再兜一层）
+  if (!canUpload.value) return
+  showUpload.value = true
+}
+function onUploaded() {
   load()
   showUpload.value = false
 }
@@ -323,6 +348,21 @@ function fmtSize(b) {
 
 <style scoped>
 .my-page { max-width: 960px; }
+
+/* 普通用户投稿入口被后台关掉时的提示条（见 canUpload） */
+.upload-locked-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -12px 0 20px;
+  padding: 10px 14px;
+  border-radius: var(--r-md, 12px);
+  background: var(--clay-inset-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.upload-locked-hint svg { flex: none; opacity: 0.75; }
 
 .tabs {
   display: flex;

@@ -4,7 +4,6 @@ import dgram from 'node:dgram'
 import { randomBytes } from 'node:crypto'
 import { buildAllocateRequest, parseTurnResponse, probeTurnServer, probeTurnWithCredentials } from '../server/stun-test.js'
 import { verifyMessageIntegrity } from '../server/webrtc-settings.js'
-import { createHash, createHmac } from 'node:crypto'
 
 const COOKIE = Buffer.from([0x21, 0x12, 0xa4, 0x42])
 

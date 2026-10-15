@@ -23,7 +23,7 @@
         </div>
         <div class="field">
           <label class="label">密码</label>
-          <input v-model="password" class="input" type="password" autocomplete="current-password" placeholder="至少 6 位密码" required />
+          <input v-model="password" class="input" type="password" autocomplete="current-password" placeholder="至少 8 位密码" required />
         </div>
         <div v-if="error" class="err">{{ error }}</div>
         <button class="btn btn-primary btn-lg btn-submit" :disabled="submitting">
@@ -58,15 +58,17 @@ const password = ref('')
 const error = ref('')
 const submitting = ref(false)
 
+// 服务端新密码最短 8 位（见 server/passwords.js）：这里跟着改，否则 6~7 位
+// 会先被前端放行、再被后端 400 拒绝。
 function validPassword(value) {
-  return value.length >= 6
+  return value.length >= 8
 }
 
 async function submit() {
   error.value = ''
   if (username.value.length < 3) return (error.value = '用户名至少 3 位')
   if (mode.value === 'register' && !validPassword(password.value)) {
-    return (error.value = '密码至少 6 位')
+    return (error.value = '密码至少 8 位')
   }
   submitting.value = true
   try {

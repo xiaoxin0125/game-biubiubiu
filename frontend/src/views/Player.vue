@@ -60,6 +60,7 @@
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
           :engine="isJ2me ? engineChoice : null"
+          :language="isJ2me ? languageChoice : null"
           :cloud-save="cloudSave"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
@@ -191,6 +192,7 @@
       v-if="engineDialogOpen"
       :title="displayName"
       :model-value="engineChoice"
+      :language="languageChoice"
       :mode="engineDialogMode"
       @confirm="confirmEngine"
       @close="closeEngineDialog"
@@ -218,6 +220,7 @@ import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { useJ2meCloudSave } from '../composables/player/useJ2meCloudSave.js'
 import { isJ2mePlatform, readJ2meEngine, writeJ2meEngine, J2ME_ENGINE_CHOICES } from '../composables/player/j2meEngines.js'
+import { readJ2meLanguage, writeJ2meLanguage, J2ME_DEFAULT_LANGUAGE } from '../composables/player/j2meLanguage.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
 import { usePerfOverlay } from '../composables/usePerfOverlay.js'
@@ -336,12 +339,14 @@ const isGuestMode = computed(() => false)
 const canCheat = computed(() => !!rom.value && booted.value)
 const showCheats = ref(false)
 
-// ---- J2ME：开局先选兼容库（enginemode）----
+// ---- J2ME：开局先选兼容库（enginemode）与游戏语言 ----
 // 三个类库能启动的游戏范围不一样，哪一档合适只有游戏自己知道，所以开局让玩家选一次，
-// 选过的按 ROM 记住（下次预选）。类库换掉等于换核心，得重新启动，因此这里挡住
-// EmulatorPortal 的挂载，直到玩家点下「开始游戏」。
+// 选过的按 ROM 记住（下次预选）。语言同理，但它跟着玩家走（跨 ROM 共用一份）。语言
+// 要在 VM 启动前定下来，类库换掉又等于换核心，因此这里挡住 EmulatorPortal 的挂载，
+// 直到玩家点下「开始游戏」。
 const isJ2me = computed(() => isJ2mePlatform(romMeta.value?.platform))
 const engineChoice = ref('')
+const languageChoice = ref(J2ME_DEFAULT_LANGUAGE)
 const engineDialogOpen = ref(false)
 const engineDialogMode = ref('start')
 const engineConfirmed = ref(false)
@@ -349,26 +354,30 @@ const engineConfirmed = ref(false)
 watch([isJ2me, () => romMeta.value?.id], ([j2me, romId]) => {
   if (!j2me || romId == null) return
   engineChoice.value = readJ2meEngine(romId)
+  languageChoice.value = readJ2meLanguage()
   engineDialogMode.value = 'start'
   engineDialogOpen.value = true
 }, { immediate: true })
 
-function confirmEngine(engine) {
+function confirmEngine({ engine, language }) {
   const previous = engineChoice.value
+  const previousLanguage = languageChoice.value
   const restarting = engineDialogMode.value === 'restart'
   engineChoice.value = engine
+  languageChoice.value = language
   engineDialogOpen.value = false
   engineDialogMode.value = 'start'
   writeJ2meEngine(romMeta.value?.id, engine)
+  writeJ2meLanguage(language)
   if (!restarting) { engineConfirmed.value = true; return }
-  // 换档等于换核心：engine 变了由 EmulatorPortal 自己重启；选的还是同一档就手动重开一次。
-  if (engine === previous) void onReload()
+  // 换档等于换核心：engine 变了由 EmulatorPortal 自己重启；两项都没动就手动重开一次。
+  if (engine === previous && language === previousLanguage) void onReload()
 }
 
 function closeEngineDialog() {
   if (engineDialogMode.value === 'restart') { engineDialogOpen.value = false; engineDialogMode.value = 'start'; return }
   // 开局这一步不能取消：默认用上次那一档（或兼容库）直接进游戏。
-  confirmEngine(engineChoice.value || J2ME_ENGINE_CHOICES[0].id)
+  confirmEngine({ engine: engineChoice.value || J2ME_ENGINE_CHOICES[0].id, language: languageChoice.value })
 }
 
 // 「重载游戏」：J2ME 顺手给一次换类库的机会（换档必须重启，别把这条路藏在

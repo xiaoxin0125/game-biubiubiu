@@ -22,6 +22,21 @@ async function request(path, { method = 'GET', body, formData, headers = {} } = 
   return data
 }
 
+// 存档上传的压缩阈值：超过它的存档先试 gzip。keepalive fetch 的 64KB 上限是硬
+// 限制，压缩是让大存档也能挤进"关页面时最后存一次"这条路（2026-10 审计 L-5）。
+const SAVE_COMPRESS_THRESHOLD_BYTES = 16 * 1024
+
+/** 浏览器原生 gzip（老浏览器没有 CompressionStream 时返回 null，调用方照原样传）。 */
+async function gzipBlob(blob) {
+  if (typeof CompressionStream !== 'function') return null
+  try {
+    const stream = blob.stream().pipeThrough(new CompressionStream('gzip'))
+    return await new Response(stream).blob()
+  } catch {
+    return null
+  }
+}
+
 export const api = {
   // auth
   me: () => request('/api/auth/me'),
@@ -70,11 +85,24 @@ export const api = {
     return await res.blob()
   },
   saveUpload: async (romId, blob, slot = 0, { keepalive = false } = {}) => {
+    // 关标签页之前那最后一次自动存档走的是 keepalive fetch，而浏览器对 keepalive
+    // 请求体有 64KB 硬上限，超了会静默失败（只有一句 console.warn，玩家以为存上了）。
+    // 大存档先就地压成 gzip：服务端识别 Content-Encoding 后解压再落盘，存进去的
+    // 还是原样的字节（2026-10 审计 L-5）。
+    let body = blob
+    const headers = { 'Content-Type': 'application/octet-stream' }
+    if (blob && blob.size > SAVE_COMPRESS_THRESHOLD_BYTES) {
+      const compressed = await gzipBlob(blob)
+      if (compressed && compressed.size < blob.size) {
+        body = compressed
+        headers['Content-Encoding'] = 'gzip'
+      }
+    }
     const res = await fetch(`/api/saves/${romId}?slot=${slot}`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: blob,
+      headers,
+      body,
       // 关标签页之前最后一次自动存档用得上：普通 fetch 会被浏览器掐掉。
       keepalive,
     })

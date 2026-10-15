@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,6 +19,10 @@ import { J2ME_BUTTON_KEYS } from '../frontend/src/composables/player/j2meRuntime
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url))
 const runtimeDir = path.join(repoRoot, 'frontend/public/j2me')
+// 补丁脚本与集成文档刻意放在 public/ 之外：public/ 里的文件会被 vite 原样复制进
+// frontend/dist 当成静态资源对外提供（2026-10 审计 H-3）。
+const scriptsDir = path.join(repoRoot, 'frontend/scripts')
+const patchScript = path.join(scriptsDir, 'apply-j2me-patches.mjs')
 const read = (relative) => readFileSync(path.join(runtimeDir, relative), 'utf8')
 
 test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
@@ -41,6 +45,12 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.match(bundle, /var keyMap = \{1:-1, 2:-3, 5:-4, 6:-2, 8:53, 9:49, 10:51, 11:55, 12:57\};/)
   // 导航键与软键的负代码取不到名字时会落到 String.fromCharCode(-1) 上。
   assert.match(bundle, /"-1":"Up", "-2":"Down", "-3":"Left", "-4":"Right", "-5":"Select", "-6":"Softkey 1", "-7":"Softkey 2"/)
+  // microedition.locale 不能再直接把 navigator.language 交给 MIDlet：中文手机报的是
+  // zh-SG、zh-Hans-CN 这些浏览器写法，游戏按 /lang.<值> 精确取包，差一点就退回英文。
+  // 两处取值（System.getProperty0 与 Configuration.getProperty0）都要走 siteLocale。
+  assert.match(bundle, /function siteLocale\(\) \{/)
+  assert.equal((bundle.match(/value = siteLocale\(\);/g) || []).length, 2)
+  assert.doesNotMatch(bundle, /value = navigator\.language;/)
 
   const html = read('main.html')
   assert.match(html, /<script defer src="preload\.js"><\/script>/)
@@ -107,9 +117,9 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.doesNotMatch(engine, /console\.log\('createException'/)
 
   // 脚本自身必须幂等：第二次运行应当全部报告 ok 并以 0 退出。
-  const output = execFileSync(process.execPath, [path.join(runtimeDir, 'apply-site-patches.mjs')], { encoding: 'utf8' })
+  const output = execFileSync(process.execPath, [patchScript], { encoding: 'utf8' })
   assert.doesNotMatch(output, /FAILED/)
-  const patchCount = (read('apply-site-patches.mjs').match(/^ {4}label: '/gm) || []).length
+  const patchCount = (readFileSync(patchScript, 'utf8').match(/^ {4}label: '/gm) || []).length
   assert.equal((output.match(/^(ok|patched) /gm) || []).length, patchCount)
   // 高级界面（Form / List / Alert …）由 lcdui.js 画进运行时的 canvas，它必须紧跟
   // 运行时加载（覆盖那批空壳 native），所以这一行也是补丁的一部分而不是手改。
@@ -236,4 +246,17 @@ test('J2meJS 运行时页面允许同源内嵌，其余响应仍然禁止被内�
   const page = await collect('https://example.com/play/1')
   assert.equal(page['X-Frame-Options'], 'DENY')
   assert.match(page['Content-Security-Policy'], /frame-ancestors 'none'/)
+})
+
+test('开发期脚本与文档放在 public/ 之外，构建产物里也不该再出现', () => {
+  // 2026-10 审计 H-3：这两个文件曾经躺在 frontend/public/j2me/ 下，被 vite 原样
+  // 复制到 dist 并被访客直接下载（/j2me/apply-site-patches.mjs 返回 200）。
+  for (const name of ['apply-j2me-patches.mjs', 'j2me-integration.md']) {
+    assert.ok(existsSync(path.join(scriptsDir, name)), `${name} 应该在 frontend/scripts/ 下`)
+    assert.ok(!existsSync(path.join(runtimeDir, name)), `${name} 不该出现在 frontend/public/ 里`)
+  }
+
+  // 构建链里要有清理步骤：以后再有开发期文件被误放进 public/，也不会随 dist 上线。
+  const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'frontend/package.json'), 'utf8'))
+  assert.match(pkg.scripts.build, /prune-dist-devfiles\.js/)
 })

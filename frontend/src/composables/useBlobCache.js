@@ -98,7 +98,7 @@ export function declaredSizeOf(res) {
  * 把响应体读成 Blob，并沿途汇报进度。
  * @returns {Promise<{blob: Blob, bytes: number, declaredSize: number|null}>}
  */
-export async function readResponseBlob(res, { expectedSize = null, onProgress = null, preferCached = false } = {}) {
+export async function readResponseBlob(res, { expectedSize = null, onProgress = null } = {}) {
   const declared = declaredSizeOf(res)
   const expected = Number.isFinite(expectedSize) && expectedSize > 0 ? expectedSize : null
   const total = expected || declared

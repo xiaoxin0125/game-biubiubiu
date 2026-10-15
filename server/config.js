@@ -16,6 +16,13 @@ const CONFIGURABLE_KEYS = new Set([
   'MAX_STATE_BYTES',
   'USER_UPLOAD_QUOTA_BYTES',
   'MAX_SAVE_SLOT',
+  // 会话闲置过期天数（0 = 关闭；绝对有效期固定 30 天，见 middleware/auth.js）
+  'SESSION_IDLE_TIMEOUT_DAYS',
+  // 单实例启动锁（SINGLE_INSTANCE_LOCK=0 可跳过，见 instance-lock.js）
+  'SINGLE_INSTANCE_LOCK',
+  // 上传闸门：同时进行的上传数与每用户每分钟的上传次数（见 concurrency-limit.js）
+  'UPLOAD_CONCURRENCY',
+  'UPLOAD_RATE_LIMIT_PER_MINUTE',
   'UPLOADS_DIR',
   'BIOS_DIR',
   'SAVES_DIR',

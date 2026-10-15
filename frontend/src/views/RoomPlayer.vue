@@ -56,6 +56,7 @@
           :retroarch-config="retroarchConfig"
           :retroarch-core-config="retroarchCoreConfig"
           :engine="isJ2me && isHostMode ? engineChoice : null"
+          :language="isJ2me && isHostMode ? languageChoice : null"
           :cloud-save="cloudSave"
           @booted="onBooted"
           @config-reloaded="onInputConfigReloaded"
@@ -207,11 +208,12 @@
       @close="closeInputSettings"
     />
 
-    <!-- J2ME：房主开局（以及换类库重开）前的兼容库选择。客人看画面流，不弹。 -->
+    <!-- J2ME：房主开局（以及换类库重开）前的兼容库与语言选择。客人看画面流，不弹。 -->
     <J2meEngineDialog
       v-if="engineDialogOpen && isHostMode === true"
       :title="displayName"
       :model-value="engineChoice"
+      :language="languageChoice"
       :mode="engineDialogMode"
       @confirm="confirmEngine"
       @close="closeEngineDialog"
@@ -255,6 +257,7 @@ import { useVirtualPadOpacity } from '../composables/useVirtualPadOpacity.js'
 import { usePlayerEmulatorConfig } from '../composables/player/usePlayerEmulatorConfig.js'
 import { useJ2meCloudSave } from '../composables/player/useJ2meCloudSave.js'
 import { isJ2mePlatform, readJ2meEngine, writeJ2meEngine, J2ME_ENGINE_CHOICES } from '../composables/player/j2meEngines.js'
+import { readJ2meLanguage, writeJ2meLanguage, J2ME_DEFAULT_LANGUAGE } from '../composables/player/j2meLanguage.js'
 import { usePlayerRoomRuntime } from '../composables/player/usePlayerRoomRuntime.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { useTouchZoomGuard } from '../composables/useTouchZoomGuard.js'
@@ -437,9 +440,10 @@ const canControlEmulator = computed(() => isHostMode.value === true && !!rom.val
 const canCheat = computed(() => canControlEmulator.value)
 
 // 模拟器组件挂载条件：房主 + ROM/BIOS 就绪（核心下载就在组件内部发起）。
-// J2ME 还要等房主在开局弹窗里选完兼容库（enginemode）。
+// J2ME 还要等房主在开局弹窗里选完兼容库（enginemode）与游戏语言。
 const isJ2me = computed(() => isJ2mePlatform(romMeta.value?.platform))
 const engineChoice = ref('')
+const languageChoice = ref(J2ME_DEFAULT_LANGUAGE)
 const engineDialogOpen = ref(false)
 const engineDialogMode = ref('start')
 const engineConfirmed = ref(false)
@@ -447,25 +451,29 @@ const engineConfirmed = ref(false)
 watch([isJ2me, isHostMode, () => romMeta.value?.id], ([j2me, host, romId]) => {
   if (!j2me || host !== true || romId == null) return
   engineChoice.value = readJ2meEngine(romId)
+  languageChoice.value = readJ2meLanguage()
   engineDialogMode.value = 'start'
   engineDialogOpen.value = true
 }, { immediate: true })
 
-function confirmEngine(engine) {
+function confirmEngine({ engine, language }) {
   const previous = engineChoice.value
+  const previousLanguage = languageChoice.value
   const restarting = engineDialogMode.value === 'restart'
   engineChoice.value = engine
+  languageChoice.value = language
   engineDialogOpen.value = false
   engineDialogMode.value = 'start'
   writeJ2meEngine(romMeta.value?.id, engine)
+  writeJ2meLanguage(language)
   if (!restarting) { engineConfirmed.value = true; return }
-  if (engine === previous) void onReload()
+  if (engine === previous && language === previousLanguage) void onReload()
 }
 
 function closeEngineDialog() {
   if (engineDialogMode.value === 'restart') { engineDialogOpen.value = false; engineDialogMode.value = 'start'; return }
   // 开局这一步不能取消：默认用上次那一档（或兼容库）直接开局。
-  confirmEngine(engineChoice.value || J2ME_ENGINE_CHOICES[0].id)
+  confirmEngine({ engine: engineChoice.value || J2ME_ENGINE_CHOICES[0].id, language: languageChoice.value })
 }
 
 function reloadGame() {

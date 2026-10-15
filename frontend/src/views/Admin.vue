@@ -174,10 +174,23 @@
           <div class="field">
             <label class="label" for="webrtc-turn-username">TURN 用户名</label>
             <input id="webrtc-turn-username" v-model.trim="form.webrtcTurnUsername" class="input" maxlength="128" placeholder="和 TURN 服务器上的 user= 一致" />
+            <p class="field-hint">仅在没填下面的共享密钥时使用，且只下发给已登录用户。</p>
           </div>
           <div class="field">
             <label class="label" for="webrtc-turn-credential">TURN 密码</label>
             <input id="webrtc-turn-credential" v-model.trim="form.webrtcTurnCredential" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="和 TURN 服务器上的密码一致" />
+          </div>
+        </div>
+        <div class="site-fields">
+          <div class="field">
+            <label class="label" for="webrtc-turn-secret">共享密钥（推荐）</label>
+            <input id="webrtc-turn-secret" v-model.trim="form.webrtcTurnSecret" class="input" type="password" autocomplete="new-password" maxlength="256" placeholder="coturn 的 static-auth-secret，至少 16 位" />
+            <p class="field-hint">填了就走临时凭据：浏览器只拿到 <code>过期时间戳:用户名</code> 和一次性的签名密码，密钥留在服务端，泄露的凭据也会自动失效。</p>
+          </div>
+          <div class="field">
+            <label class="label" for="webrtc-turn-ttl">临时凭据有效期（秒）</label>
+            <input id="webrtc-turn-ttl" v-model.trim="form.webrtcTurnTtl" class="input" inputmode="numeric" maxlength="5" placeholder="留空用默认 3600（1 小时）" />
+            <p class="field-hint">300 ~ 86400 秒。客户端会在到期前自动重取，填太长等于把有效期外的窗口拉长。</p>
           </div>
         </div>
         <div class="remote-test">
@@ -496,6 +509,7 @@ import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useAppDialog } from '../composables/useAppDialog.js'
 import { useSettings } from '../composables/useSettings.js'
+import { loadRuntimeConfig } from '../composables/runtimeConfig.js'
 import { formatServerDateTime } from '../composables/formatTime.js'
 import { testStunIce } from '../composables/useIceGatheringTest.js'
 import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
@@ -523,6 +537,8 @@ const form = reactive({
   webrtcTurnUrls: '',
   webrtcTurnUsername: '',
   webrtcTurnCredential: '',
+  webrtcTurnSecret: '',
+  webrtcTurnTtl: '',
   remoteUploadUrl: '',
   remoteUploadToken: '',
   remoteDownloadUrl: '',
@@ -619,6 +635,8 @@ onMounted(async () => {
     form.webrtcTurnUrls = s.webrtcTurnUrls || ''
     form.webrtcTurnUsername = s.webrtcTurnUsername || ''
     form.webrtcTurnCredential = s.webrtcTurnCredential || ''
+    form.webrtcTurnSecret = s.webrtcTurnSecret || ''
+    form.webrtcTurnTtl = s.webrtcTurnTtl || ''
     form.remoteUploadUrl = s.remoteUploadUrl || ''
     form.remoteUploadToken = s.remoteUploadToken || ''
     form.remoteDownloadUrl = s.remoteDownloadUrl || ''
@@ -681,6 +699,8 @@ async function testTurn() {
       turnUrls: form.webrtcTurnUrls,
       turnUsername: form.webrtcTurnUsername,
       turnCredential: form.webrtcTurnCredential,
+      turnSecret: form.webrtcTurnSecret,
+      turnTtl: form.webrtcTurnTtl,
     })
     const probes = Array.isArray(res?.probes) ? res.probes : []
     const lines = []
@@ -696,7 +716,13 @@ async function testTurn() {
       }
     }
     if (!lines.length) lines.push(res?.error || '后端没有返回结果')
-    if (res?.authenticated === false && res?.ok) lines.push('提示：没填 TURN 用户名/密码，本次只验证了端口可达；填入后才能真正验证中继分配')
+    if (res?.mode === 'ephemeral') {
+      lines.push('本次用共享密钥现签了一份临时凭据去测（coturn 配置正确才会成功）')
+    } else if (res?.mode === 'static') {
+      lines.push('本次用静态用户名 + 密码去测；建议改成共享密钥，避免长期密码被匿名抓走')
+    } else if (res?.ok) {
+      lines.push('提示：没填 TURN 凭据，本次只验证了端口可达；填入共享密钥后才能验证中继分配')
+    }
     turnTestResult.value = { ok: !!res?.ok, text: lines.join('\n') }
   } catch (err) {
     turnTestResult.value = { ok: false, text: err?.message || '测试失败' }
@@ -829,6 +855,8 @@ async function saveSite() {
       webrtcTurnUrls: form.webrtcTurnUrls,
       webrtcTurnUsername: form.webrtcTurnUsername,
       webrtcTurnCredential: form.webrtcTurnCredential,
+      webrtcTurnSecret: form.webrtcTurnSecret,
+      webrtcTurnTtl: form.webrtcTurnTtl,
       remoteUploadUrl: form.remoteUploadUrl,
       remoteUploadToken: form.remoteUploadToken,
       remoteDownloadUrl: form.remoteDownloadUrl,
@@ -841,6 +869,8 @@ async function saveSite() {
     form.webrtcTurnUrls = next.webrtcTurnUrls || ''
     form.webrtcTurnUsername = next.webrtcTurnUsername || ''
     form.webrtcTurnCredential = next.webrtcTurnCredential || ''
+    form.webrtcTurnSecret = next.webrtcTurnSecret || ''
+    form.webrtcTurnTtl = next.webrtcTurnTtl || ''
     form.remoteUploadUrl = next.remoteUploadUrl || ''
     form.remoteUploadToken = next.remoteUploadToken || ''
     form.remoteDownloadUrl = next.remoteDownloadUrl || ''
@@ -851,15 +881,9 @@ async function saveSite() {
     const nextLegacyCoresEnabled = !!nextCoresBaseUrl && nextCoresBaseUrl !== 'none'
     form.coresBaseUrl = nextLegacyCoresEnabled ? nextCoresBaseUrl : ''
     form.coresRemoteEnabled = nextCoresFlag === '1' ? true : nextCoresFlag === '0' ? false : nextLegacyCoresEnabled
-    window.__APP_CONFIG__ = Object.freeze({
-      ...window.__APP_CONFIG__,
-      WEBRTC_STUN_URLS: form.webrtcStunUrls,
-      WEBRTC_TURN_URLS: form.webrtcTurnUrls,
-      WEBRTC_TURN_USERNAME: form.webrtcTurnUsername,
-      WEBRTC_TURN_CREDENTIAL: form.webrtcTurnCredential,
-      // 核心地址改了以后，新打开/刷新的页面直接生效（当前页面已经取过核心）。
-      CORES_BASE_URL: form.coresRemoteEnabled ? form.coresBaseUrl : '',
-    })
+    // 重新拉一次运行时配置：走临时凭据时用户名/密码是服务端现签的，不能拿表单里的
+    // 静态值顶上；核心地址的生效值同样以服务端计算的结果为准。
+    await loadRuntimeConfig()
     updateLocal({
       siteTitle: next.siteTitle,
       siteSubtitle: next.siteSubtitle,

@@ -96,16 +96,6 @@ function remoteConfigFor(platform, maxPlayers, state, maps) {
   return buildRemotePlayersRetroarchConfig(maxPlayers, state.reservedKeys, state.platformButtons, maps)
 }
 
-function activeConfigEntries(cfg, players) {
-  const pattern = new RegExp(`^input_player(${players.join('|')})_(up|down|left|right|a|b|x|y|l|r|l2|r2|l3|r3|start|select)$`)
-  const out = []
-  for (const [name, value] of Object.entries(cfg)) {
-    if (!pattern.test(name) || !value || value === 'nul') continue
-    out.push({ name, key: value })
-  }
-  return out
-}
-
 test('保留集覆盖房主保存的完整映射：按键设置里没有行的按钮也算', () => {
   const reserved = player1ReservedKeys(defaultPlayer1KeyboardForPlatform('nes'), { ...DEFAULT_KEYBOARD })
   // NES 用不到 L/R/L2/R2/L3/R3，按键设置里没有这些行，但键还在存档里。

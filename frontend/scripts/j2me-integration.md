@@ -8,7 +8,7 @@ of `main`, a fork of Mozilla's j2me.js), copied into `frontend/public/j2me/` and
 served from our own origin. There is no libretro core and no BIOS: the runtime
 loads its own Java class library from `frontend/public/j2me/java/`.
 
-Refreshing the vendored copy means re-applying `apply-site-patches.mjs` (see
+Refreshing the vendored copy means re-applying `apply-j2me-patches.mjs` (see
 below); upstream is the place the corresponding source lives for GPL-2.0.
 
 License: **GPL-2.0** (`frontend/public/j2me/LICENSE`, upstream README kept as
@@ -31,12 +31,16 @@ its `.info` requires. The prebuilt core and class library were removed from
 
 ## Site patches to the vendored runtime
 
-`apply-site-patches.mjs` in this directory re-applies every patch and is
-idempotent, so run it after refreshing the vendored copy:
+`apply-j2me-patches.mjs` (next to this file, under `frontend/scripts/`) re-applies
+every patch and is idempotent, so run it after refreshing the vendored copy:
 
 ```bash
-node frontend/public/j2me/apply-site-patches.mjs
+node frontend/scripts/apply-j2me-patches.mjs
 ```
+
+它不在 `frontend/public/` 里：`public/` 中的任何文件都会被 vite 复制到
+`frontend/dist` 当成静态资源对外提供，而这个脚本与本文档属于开发期资料，
+不该被访客下载（2026-10 安全审计 H-3）。
 
 Files the upstream copy carries but this integration never loads were dropped when
 vendoring: the standalone pages and their game list (`index.html`, `index2.html`,
@@ -431,7 +435,14 @@ The cross sends MIDP's navigation key codes (`Canvas.KEY_UP/DOWN/LEFT/RIGHT`),
 which is what a phone with a direction pad reports and what keypad-era MIDlets
 compare against in `keyPressed` (the sample below checks `-1`/`50` and `-2`/`56`
 in the same branches, so it answers to either convention). The face and shoulder
-buttons stay on the phone keypad, whose labels the virtual pad shows.
+buttons stay on the phone keypad, and their labels are what the PC keyboard
+settings show. On the touch pad the left-hand stick is swapped for the phone's
+own **cross**: four irregular pentagons (a rectangular arm plus the centre
+triangle) tile a seamless plus-shape whose width and height are equal, one per
+direction, with no centre button — the phone keypad's centre key (5 / MIDP FIRE,
+retropad `l2`) is already on the shoulder row as「5 确定」. PC keyboard defaults
+are the same as everywhere else (that row is key `7`); nothing J2ME-specific is
+bound.
 
 Only MIDlets that never look at the raw key code can tell the conventions apart:
 those ask `getGameAction()` / `GameCanvas.getKeyStates()`, and this build's

@@ -1,5 +1,3 @@
-import { relative, isAbsolute } from 'node:path'
-
 const TRUST_PROXY_VALUES = new Set(['1', 'true', 'yes', 'on'])
 const trustProxy = TRUST_PROXY_VALUES.has(String(process.env.TRUST_PROXY || '').toLowerCase())
 const isProduction = process.env.NODE_ENV === 'production'
@@ -18,8 +16,22 @@ function forwardedValue(c, header) {
   return c.req.header(header)?.split(',')[0]?.trim() || null
 }
 
+// X-Forwarded-For 取最后一段：那是"离我们最近的一跳"（可信反代）写进去的地址。
+// 取第一段会被客户端自带的假地址顶掉 —— `$proxy_add_x_forwarded_for` 这类常见配置
+// 会把客户端原样传来的 XFF 追加到前面，第一段完全由攻击者控制，限流与审计都会
+// 跟着失效（2026-10 审计 M-7）。协议头 X-Forwarded-Proto 相反，仍取第一段：
+// 那才是客户端到边缘那一跳的原始协议。
+function lastForwardedValue(c, header) {
+  if (!trustProxy) return null
+  const parts = String(c.req.header(header) || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return parts.length ? parts[parts.length - 1] : null
+}
+
 export function clientIp(c) {
-  return forwardedValue(c, 'x-forwarded-for')
+  return lastForwardedValue(c, 'x-forwarded-for')
     || (trustProxy ? c.req.header('x-real-ip') : null)
     || 'unknown'
 }

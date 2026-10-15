@@ -89,6 +89,39 @@ node deploy/build-cores.mjs        # 只有 data/cores 变过时才需要重新�
 sudo systemctl restart games-online
 ```
 
+## 备份、恢复与密钥轮换
+
+数据库与 `data/` 是全部状态，两者要么一起备份、要么一起恢复（ROM 记录指向 `data/uploads` 里的
+文件，只恢复一半会出现"记录在、文件不在"）。
+
+```bash
+# 备份：数据库 + data 目录（uploads / saves / bios 等），按日期归档
+sudo mysqldump --single-transaction --routines games_online | gzip > /root/backup/games-$(date +%F).sql.gz
+sudo tar czf /root/backup/games-data-$(date +%F).tar.gz -C /www/wwwroot/xbw.ppxin.com data
+sudo chmod 600 /root/backup/games-*
+
+# 恢复：先停服务，再按同样的顺序还原（数据库 → data 目录 → 起服务）
+sudo systemctl stop games-online
+gunzip -c /root/backup/games-2026-10-15.sql.gz | sudo mysql games_online
+sudo tar xzf /root/backup/games-data-2026-10-15.tar.gz -C /www/wwwroot/xbw.ppxin.com
+sudo chown -R www:www /www/wwwroot/xbw.ppxin.com/data
+sudo systemctl start games-online && curl -fsS http://127.0.0.1:3000/api/health
+```
+
+需要轮换的密钥与轮换动作（轮换后都要重启服务，并确认 `/api/health` 正常）：
+
+| 密钥/凭据 | 位置 | 轮换方式 |
+| --- | --- | --- |
+| 数据库口令 | `DATABASE_URL`（`.env`）、MySQL 用户 | `ALTER USER ... IDENTIFIED BY '新口令'` 后改 `.env` |
+| 首个管理员口令 | `ADMIN_PASSWORD`（`.env`） | 只在数据库为空时用于播种；改管理员口令请在站点里登录后改密（会让该账号其它会话立刻失效） |
+| TURN 共享密钥 | 后台「站点设置 → TURN 中继」+ coturn `static-auth-secret` | 两边同时改；临时凭据模式下旧凭据最多存活 `ttl` 秒 |
+| 远端存储密钥 | 后台「站点设置 → 远端存储」+ 远端 `config.json` | 两边同时改，改完点「测试远端存储」 |
+
+``.env` 里是数据库口令、TURN 与远端存储凭据，权限固定为 `640`、属主 `www`（运行服务的用户）、
+属组 `ubuntu`（服务器上跑测试与发版脚本的账号），同机其他用户读不到（2026-10 审计 L-4）。
+迁移服务器时不要用会放宽权限的拷贝方式：`git clone` 不会带上它，`cp -r` 之后记得
+`chown www:ubuntu .env && chmod 640 .env`。
+
 ## 常用命令
 
 ```bash
@@ -97,7 +130,9 @@ sudo journalctl -u games-online -n 100 --no-pager
 curl -fsS http://127.0.0.1:3000/api/health
 curl -fsS https://xbw.ppxin.com/api/health
 curl -fsS https://xbw.ppxin.com/api/cores/manifest | head -c 200   # 当前核心发布版本
-node --test "tests/*.test.js"      # 回归测试（不需要数据库）
+npm test                            # 回归测试（等价于 node --test "tests/*.test.js"，不需要数据库）
+npm run lint                        # ESLint（CI 同样会跑）
+npm run test:coverage               # 带覆盖率的测试报告（仅供参考，CI 不设阈值）
 ```
 
 ## 注意事项

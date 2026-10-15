@@ -35,6 +35,12 @@ services:
       - --external-ip=${TURN_PUBLIC_IP:?Set TURN_PUBLIC_IP in config/.env}/${TURN_RELAY_IP:?Set TURN_RELAY_IP in config/.env}
       - --realm=${TURN_REALM:-games-online}
       - --server-name=${TURN_REALM:-games-online}
+      # 静态账号：密码会随页面下发给登录用户。想彻底不下发长期密码，改成临时凭据
+      # （推荐，见 deploy/STUN.md §10.3.1）：把这一行换成
+      #   --use-auth-secret --static-auth-secret=${TURN_AUTH_SECRET}
+      # 并在 config/.env 里加 TURN_AUTH_SECRET=<32 位随机串>，主站后台
+      # 「站点设置 → TURN 中继」的共享密钥填同一串（用户名/密码留空）。
+      # 注意：coturn 一旦启用 static-auth-secret，--user= 的静态账号就不再生效。
       - --user=${TURN_USERNAME:?Set TURN_USERNAME in config/.env}:${TURN_PASSWORD:?Set TURN_PASSWORD in config/.env}
       - --fingerprint
       - --lt-cred-mech

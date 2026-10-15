@@ -1,19 +1,25 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, or, sql, sum } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNull, or, sql, sum } from 'drizzle-orm'
 import { z } from 'zod'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, createReadStream, statSync, unlinkSync, existsSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { writeFile, rename } from 'node:fs/promises'
+import { Readable } from 'node:stream'
 import { basename, join, extname, resolve } from 'node:path'
+import { bodyLimit } from 'hono/body-limit'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
 import { roms, users, favorites, romPlays, rooms, STATUS } from '../db/schema.js'
 import { requireAuth, currentUser } from '../middleware/auth.js'
+import { rateLimit } from '../middleware/rate-limit.js'
+import { clientIp } from '../middleware/security.js'
+import { uploadConcurrency } from '../middleware/concurrency-limit.js'
 import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { PLATFORM_CORES, PLATFORM_IDS, normalizePlatformId } from '../../shared/registry/platform-roms.js'
 import { assertInsideRoot } from '../storage.js'
+import { parseListWindow, listPage } from '../http-utils.js'
 import { audit } from '../audit.js'
 import { listRomCheats } from '../rom-cheats.js'
 import { remoteDelete, remoteOpenFile, remoteUpload, remoteStorageConfig, buildRemoteDownloadUrl } from '../remote-storage.js'
@@ -66,6 +72,12 @@ function normalizeDefaultCore(platform, value) {
 
 // Matches only live (non-soft-deleted) ROMs
 const liveRom = (extra) => extra ? and(eq(roms.status, STATUS.normal), extra) : eq(roms.status, STATUS.normal)
+
+// 列表接口的 total：与列表用同一组 where，只数行数（表都小、条件走索引）。
+async function romCount(where) {
+  const [row] = await db.select({ n: count() }).from(roms).where(where)
+  return Number(row?.n || 0)
+}
 
 export const romRoutes = new Hono()
 
@@ -157,15 +169,87 @@ async function favoriteSetFor(user, romIds) {
   return new Set(rows.map((r) => r.romId))
 }
 
+// 上传配额按「磁盘实际占用」统计：软删除的 ROM（回收站）文件还在磁盘上，也计入。
+// 否则「上传 → 软删除 → 再上传」就能无限占用磁盘（2026-10 审计 H-2）。远端存储的
+// ROM 同样计入：它占的是远端服务器的磁盘。
 async function usedUploadBytes(userId) {
   const [row] = await db.select({ total: sum(roms.fileSize) })
     .from(roms)
-    .where(and(eq(roms.userId, userId), eq(roms.status, STATUS.normal)))
+    .where(eq(roms.userId, userId))
   return Number(row?.total || 0)
 }
 
 function checkedUploadPath(...parts) {
   return assertInsideRoot(UPLOADS_DIR, join(UPLOADS_DIR, ...parts))
+}
+
+/*
+ * 平台是上传目录的一部分：data/uploads/<userId>/<platform>/<uuid>.<ext>。管理员改了
+ * ROM 的平台之后，如果文件还留在旧平台目录，记录与磁盘就会越走越远——旧目录里躺着
+ * 一份"没人认领"的文件，新目录却没有它（2026-10 审计 L-11）。
+ *
+ * 这里负责把一个版本家族的文件与封面一起搬到新平台目录。要么全搬成功、要么全部
+ * 复原：任一步失败都会把已经搬走的文件搬回去，然后把错误抛给调用方。
+ */
+function planPlatformMoves(rows, platform) {
+  const moves = []
+  // 原始路径 → 目标路径（不需要搬时记 null）。同一个封面被多个变体共用时，
+  // 这里保证它只被搬一次，且两条记录都指向同一个新路径。
+  const targets = new Map()
+  const planOne = (filePath, userId) => {
+    if (!filePath) return null
+    if (targets.has(filePath)) return targets.get(filePath)
+    let from
+    try {
+      from = resolveReadableUploadPath(filePath)
+    } catch {
+      // 文件已经不在磁盘上（历史上被清理过）：保留原记录，不凭空造路径。
+      targets.set(filePath, null)
+      return null
+    }
+    const targetDir = checkedUploadPath(String(userId), platform)
+    const to = assertInsideRoot(targetDir, join(targetDir, basename(from)))
+    if (to === from) {
+      targets.set(filePath, null)
+      return null
+    }
+    moves.push({ from, to, targetDir })
+    targets.set(filePath, to)
+    return to
+  }
+  const plan = rows.map((row) => ({
+    id: row.id,
+    defaultCore: row.defaultCore,
+    filePath: planOne(row.filePath, row.userId),
+    coverPath: planOne(row.coverPath, row.userId),
+  }))
+  return { moves, plan }
+}
+
+async function applyPlatformMoves(moves) {
+  const done = []
+  try {
+    for (const move of moves) {
+      if (existsSync(move.to)) {
+        const error = new Error(`目标文件已存在，未改动任何文件：${basename(move.to)}`)
+        error.status = 409
+        throw error
+      }
+      mkdirSync(move.targetDir, { recursive: true })
+      await rename(move.from, move.to)
+      done.push(move)
+    }
+  } catch (error) {
+    for (const move of done.reverse()) {
+      try {
+        await rename(move.to, move.from)
+      } catch (restoreError) {
+        console.error('[api] failed to roll back platform file move', move.from, restoreError)
+      }
+    }
+    throw error
+  }
+  return done
 }
 
 function resolveReadableUploadPath(filePath) {
@@ -198,9 +282,12 @@ function safeUnlinkCover(filePath) {
   try { safeUnlinkUpload(filePath) } catch {}
 }
 
-// Validates a cover upload (magic bytes, size) and writes it into `dir`.
-// Returns `{ filePath }` on success or `{ error, status }` for the caller.
-async function storeCoverFile(file, dir) {
+// Validates a cover upload (magic bytes, size) and keeps it in memory.
+// Returns `{ buf, ext }` on success or `{ error, status }` for the caller.
+// 刻意分成「先校验、后落盘」两步：上传 ROM 时必须先过封面校验再写 ROM 文件，
+// 否则封面被拒时磁盘上会留下一条没人认领的 ROM blob —— 它既不计配额、也不出现在
+// 任何列表里，反复调用就能写满磁盘（2026-10 审计 H-2）。
+async function readCoverUpload(file) {
   if (!file || typeof file === 'string') return { error: '未收到封面文件', status: 400 }
   const buf = Buffer.from(await file.arrayBuffer())
   if (buf.length > COVER_MAX_BYTES) {
@@ -208,39 +295,66 @@ async function storeCoverFile(file, dir) {
   }
   const ext = sniffCoverExt(buf)
   if (!ext) return { error: COVER_TYPE_HINT, status: 400 }
+  return { buf, ext }
+}
+
+async function writeCoverBuffer(buf, ext, dir) {
   const targetDir = resolve(dir)
   mkdirSync(targetDir, { recursive: true })
   const filePath = assertInsideRoot(targetDir, join(targetDir, `cover-${randomUUID()}${ext}`))
   await writeFile(filePath, buf)
-  return { filePath }
+  return filePath
+}
+
+// 校验并落盘一步到位（重设封面用：没有别的东西要写，失败只会留下封面自己）。
+async function storeCoverFile(file, dir) {
+  const read = await readCoverUpload(file)
+  if (read.error) return read
+  return { filePath: await writeCoverBuffer(read.buf, read.ext, dir) }
 }
 
 romRoutes.get('/mine', requireAuth, async (c) => {
   const user = c.get('user')
+  const { limit, offset } = parseListWindow(c)
   // `/mine` returns everything the user uploaded (parents + children) so they
   // can manage variants from one place. Gallery filters children separately.
+  const where = liveRom(eq(roms.userId, user.id))
   const rows = await db.select().from(roms)
-    .where(liveRom(eq(roms.userId, user.id)))
+    .where(where)
     .orderBy(desc(roms.createdAt))
+    .limit(limit)
+    .offset(offset)
+  const total = await romCount(where)
   const favSet = await favoriteSetFor(user, rows.map((r) => r.id))
   const counts = await childCountsFor(rows.filter((r) => !r.parentRomId).map((r) => r.id), user)
-  return c.json({ roms: rows.map((r) => serialize(r, null, {
-    isFavorite: favSet?.has(r.id),
-    versionCount: counts.get(r.id),
-  })) })
+  return c.json({
+    roms: rows.map((r) => serialize(r, null, {
+      isFavorite: favSet?.has(r.id),
+      versionCount: counts.get(r.id),
+    })),
+    ...listPage(rows, { total, limit, offset }),
+  })
 })
 
 // List the current user's soft-deleted ROMs — the "recycle bin" view.
 // Ordered by updatedAt (most recently deleted first) so the newest go to top.
 romRoutes.get('/trash', requireAuth, async (c) => {
   const user = c.get('user')
+  const { limit, offset } = parseListWindow(c)
+  const where = and(eq(roms.status, STATUS.deleted), eq(roms.userId, user.id))
   const rows = await db.select().from(roms)
-    .where(and(eq(roms.status, STATUS.deleted), eq(roms.userId, user.id)))
+    .where(where)
     .orderBy(desc(roms.updatedAt))
+    .limit(limit)
+    .offset(offset)
+  const total = await romCount(where)
   const counts = await childCountsFor(rows.filter((r) => !r.parentRomId).map((r) => r.id), user, STATUS.deleted)
-  return c.json({ roms: rows.map((r) => serialize(r, null, {
-    versionCount: counts.get(r.id),
-  })) })
+  return c.json({
+    roms: rows.map((r) => serialize(r, null, {
+      versionCount: counts.get(r.id),
+    })),
+    ...listPage(rows, { total, limit, offset }),
+  })
 })
 
 // Restore a soft-deleted ROM (user-owned only, or admin). Restoring a parent
@@ -273,40 +387,52 @@ romRoutes.post('/:id/restore', requireAuth, async (c) => {
 })
 
 romRoutes.get('/public', async (c) => {
+  const { limit, offset } = parseListWindow(c)
   // Only top-level parents show up in the public Gallery. Children are still
   // reachable via /api/roms/:parentId/versions for the version picker.
+  const where = liveRom(and(eq(roms.isPublic, true), isNull(roms.parentRomId)))
   const rows = await db.select({
     rom: roms,
     user: { id: users.id, username: users.username },
   })
     .from(roms)
     .innerJoin(users, eq(users.id, roms.userId))
-    .where(liveRom(and(eq(roms.isPublic, true), isNull(roms.parentRomId))))
+    .where(where)
     .orderBy(desc(roms.createdAt))
+    .limit(limit)
+    .offset(offset)
+  const total = await romCount(where)
   const me = await currentUser(c)
   const favSet = await favoriteSetFor(me, rows.map(({ rom }) => rom.id))
   const counts = await childCountsFor(rows.map(({ rom }) => rom.id), me)
-  return c.json({ roms: rows.map(({ rom, user }) => serialize(rom, user, {
-    isFavorite: favSet?.has(rom.id),
-    versionCount: counts.get(rom.id),
-  })) })
+  return c.json({
+    roms: rows.map(({ rom, user }) => serialize(rom, user, {
+      isFavorite: favSet?.has(rom.id),
+      versionCount: counts.get(rom.id),
+    })),
+    ...listPage(rows, { total, limit, offset }),
+  })
 })
 
 // List all versions (parent + children) for a given ROM id. Accepts either the
 // parent's id or any child's id — in both cases returns the full family.
 romRoutes.get('/:id/versions', async (c) => {
   const id = Number(c.req.param('id'))
+  const { limit, offset } = parseListWindow(c)
   const seed = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
-  if (!seed) return c.json({ versions: [] })
+  if (!seed) return c.json({ versions: [], ...listPage([], { total: 0, limit, offset }) })
   const parentId = seed.parentRomId ?? seed.id
+  const where = liveRom(or(eq(roms.id, parentId), eq(roms.parentRomId, parentId)))
   const rows = await db.select({
     rom: roms,
     user: { id: users.id, username: users.username },
   })
     .from(roms)
     .innerJoin(users, eq(users.id, roms.userId))
-    .where(liveRom(or(eq(roms.id, parentId), eq(roms.parentRomId, parentId))))
+    .where(where)
     .orderBy(roms.id)
+    .limit(limit)
+    .offset(offset)
   const me = await currentUser(c)
   const parentRow = rows.find(({ rom }) => rom.id === parentId)?.rom || null
   const inheritedCoverUrl = parentRow?.coverPath ? coverUrlFor({ id: parentId, coverPath: parentRow.coverPath }) : null
@@ -323,6 +449,7 @@ romRoutes.get('/:id/versions', async (c) => {
         }
         return payload
       }),
+    ...listPage(rows, { total: rows.length, limit, offset }),
   })
 })
 
@@ -330,6 +457,13 @@ romRoutes.get('/:id/versions', async (c) => {
 // is still live AND they can access (their own ROM, or isPublic).
 romRoutes.get('/favorites', requireAuth, async (c) => {
   const user = c.get('user')
+  const { limit, offset } = parseListWindow(c)
+  // 可见性条件下沉到 SQL：这样 limit/offset 与 total 统计的是同一批数据，
+  // 不会出现「先截断再过滤」导致某一页少几条的情况。
+  const visible = user.role === 'admin'
+    ? undefined
+    : or(eq(roms.isPublic, true), eq(roms.userId, user.id))
+  const where = and(eq(favorites.userId, user.id), eq(roms.status, STATUS.normal), visible)
   const rows = await db.select({
     rom: roms,
     user: { id: users.id, username: users.username },
@@ -337,21 +471,25 @@ romRoutes.get('/favorites', requireAuth, async (c) => {
     .from(favorites)
     .innerJoin(roms, eq(roms.id, favorites.romId))
     .innerJoin(users, eq(users.id, roms.userId))
-    .where(and(
-      eq(favorites.userId, user.id),
-      eq(roms.status, STATUS.normal),
-    ))
+    .where(where)
     .orderBy(desc(favorites.createdAt))
-  const visibleRows = rows.filter(({ rom }) => rom.isPublic || rom.userId === user.id || user.role === 'admin')
-  const counts = await childCountsFor(visibleRows
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() })
+    .from(favorites)
+    .innerJoin(roms, eq(roms.id, favorites.romId))
+    .where(where)
+  const total = Number(countRow?.n || 0)
+  const counts = await childCountsFor(rows
     .map(({ rom }) => rom)
     .filter((rom) => !rom.parentRomId)
     .map((rom) => rom.id), user)
   return c.json({
-    roms: visibleRows.map(({ rom, user: owner }) => serialize(rom, owner, {
+    roms: rows.map(({ rom, user: owner }) => serialize(rom, owner, {
       isFavorite: true,
       versionCount: counts.get(rom.id),
     })),
+    ...listPage(rows, { total, limit, offset }),
   })
 })
 
@@ -359,6 +497,11 @@ romRoutes.get('/favorites', requireAuth, async (c) => {
 // 由前端用这份数据现算（每个平台累计的次数），不再单开一个统计接口。
 romRoutes.get('/plays/mine', requireAuth, async (c) => {
   const user = c.get('user')
+  const { limit, offset } = parseListWindow(c, { defaultLimit: 200, maxLimit: 500 })
+  // 别人的私有 ROM 可能曾经公开过、后来收回：可见性同样下沉到 SQL，
+  // 让分页与计数保持一致。
+  const visible = or(eq(roms.isPublic, true), eq(roms.userId, user.id))
+  const where = and(eq(romPlays.userId, user.id), eq(roms.status, STATUS.normal), visible)
   const rows = await db.select({
     play: romPlays,
     rom: roms,
@@ -367,21 +510,38 @@ romRoutes.get('/plays/mine', requireAuth, async (c) => {
     .from(romPlays)
     .innerJoin(roms, eq(roms.id, romPlays.romId))
     .innerJoin(users, eq(users.id, roms.userId))
-    .where(and(eq(romPlays.userId, user.id), eq(roms.status, STATUS.normal)))
+    .where(where)
     .orderBy(desc(romPlays.lastPlayedAt))
-    .limit(200)
+    .limit(limit)
+    .offset(offset)
+  const [countRow] = await db.select({ n: count() })
+    .from(romPlays)
+    .innerJoin(roms, eq(roms.id, romPlays.romId))
+    .where(where)
+  const total = Number(countRow?.n || 0)
   return c.json({
-    plays: rows
-      // 别人的私有 ROM 可能曾经公开过、后来收回：列表里只留自己有权限看的那部分。
-      .filter(({ rom }) => canAccessRom(user, rom))
-      .map(({ play, rom, owner }) => ({
-        rom: serialize(rom, owner, { isFavorite: false }),
-        // 个人的游玩次数与最近一次时间，与 rom.playCount（全站热度）分开给。
-        playCount: Number(play.playCount || 0),
-        lastPlayedAt: play.lastPlayedAt,
-      })),
+    plays: rows.map(({ play, rom, owner }) => ({
+      rom: serialize(rom, owner, { isFavorite: false }),
+      // 个人的游玩次数与最近一次时间，与 rom.playCount（全站热度）分开给。
+      playCount: Number(play.playCount || 0),
+      lastPlayedAt: play.lastPlayedAt,
+    })),
+    ...listPage(rows, { total, limit, offset }),
   })
 })
+
+// 游玩记数的去重窗口：同一个人（登录按用户、游客按 IP）对同一盘卡带在窗口内只
+// 计一次。正常单机游玩不会在 30 秒内重复启动同一个游戏（播放页每次加载只调一次
+// 这个接口），而脚本刷热度会立刻撞上窗口（2026-10 审计 M-4 的延伸：不做频率限制
+// 也能挡住刷量，正常玩家完全无感）。
+const PLAY_COUNT_DEDUPE_MS = 30 * 1000
+const recentPlays = new Map()
+setInterval(() => {
+  const cutoff = Date.now() - PLAY_COUNT_DEDUPE_MS * 2
+  for (const [key, at] of recentPlays) {
+    if (at < cutoff) recentPlays.delete(key)
+  }
+}, 5 * 60 * 1000).unref?.()
 
 // 记一次游玩。播放页在模拟器真正启动起来之后才调用，所以它同时是「这盘卡带
 // 跑起来了」的凭据，不会因为打开页面没启动成功就凭空 +1。
@@ -403,6 +563,13 @@ romRoutes.post('/:id/play', async (c) => {
   } else if (!canAccessRom(user, rom)) {
     return c.json({ error: 'forbidden' }, 403)
   }
+
+  const dedupeKey = `${user ? `u${user.id}` : `ip${clientIp(c)}`}:${id}`
+  const nowMs = Date.now()
+  if (nowMs - (recentPlays.get(dedupeKey) || 0) < PLAY_COUNT_DEDUPE_MS) {
+    return c.json({ ok: true, playCount: Number(rom.playCount || 0), deduped: true })
+  }
+  recentPlays.set(dedupeKey, nowMs)
 
   // 全局热度：直接在这一行上自增，首页排序读它，不用每次聚合统计表。
   await db.update(roms)
@@ -473,12 +640,49 @@ romRoutes.get('/:id/cheats', async (c) => {
   return c.json({ cheats: await listRomCheats(id) })
 })
 
-romRoutes.post('/upload', requireAuth, async (c) => {
-  const contentLength = Number(c.req.header('content-length') || 0)
-  if (contentLength > MAX_SIZE + 1024 * 1024) {
-    return c.json({ error: `请求体超过 ${Math.round(MAX_SIZE / 1024 / 1024)}MB` }, 413)
-  }
-  const user = c.get('user')
+// 同一用户的上传串行化：配额检查与落盘之间存在窗口，并发请求会各自看到"还没超"
+// 然后一起写进去（TOCTOU）。单实例下用进程内队列兜住；日后改成多实例部署时，这里
+// 要换成数据库层的原子计数（见审计报告 M-6）。
+const uploadQueues = new Map()
+
+function withUserUploadQueue(userId, task) {
+  const key = String(userId)
+  const previous = uploadQueues.get(key) || Promise.resolve()
+  const current = previous.then(task, task)
+  const settled = current.then(() => {}, () => {})
+  uploadQueues.set(key, settled)
+  settled.then(() => { if (uploadQueues.get(key) === settled) uploadQueues.delete(key) })
+  return current
+}
+
+// 上传入口的三道闸（顺序就是执行顺序）：
+//   1) 限流：默认 10 次/分钟/用户，挡住循环上传；
+//   2) 并发闸门：同时最多 2 个上传在跑（UPLOAD_CONCURRENCY 可调），超出 429；
+//   3) bodyLimit：单请求体积上限，chunked 请求也拦得住（hono 边读边计数）。
+// 原先只看了 content-length，chunked 请求能把整个体积灌进内存（2026-10 审计 M-1）。
+const romUploadRateLimit = rateLimit({
+  name: 'rom-upload',
+  windowMs: 60_000,
+  max: Number(process.env.UPLOAD_RATE_LIMIT_PER_MINUTE) || 10,
+  key: (c) => String(c.get('user')?.id ?? clientIp(c)),
+})
+
+const romUploadBodyLimit = bodyLimit({
+  maxSize: MAX_SIZE + 1024 * 1024,
+  onError: (c) => c.json({ error: `请求体超过 ${Math.round(MAX_SIZE / 1024 / 1024)}MB` }, 413),
+})
+
+romRoutes.post('/upload',
+  requireAuth,
+  romUploadRateLimit,
+  uploadConcurrency.middleware,
+  romUploadBodyLimit,
+  async (c) => {
+    const user = c.get('user')
+    return withUserUploadQueue(user.id, () => handleRomUpload(c, user))
+  })
+
+async function handleRomUpload(c, user) {
   if (user.role !== 'admin' && (await getSetting('userUploadEnabled', '1')) !== '1') {
     return c.json({ error: '管理员已关闭普通用户上传' }, 403)
   }
@@ -489,7 +693,9 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   if (user.role !== 'admin') {
     const used = await usedUploadBytes(user.id)
     if (used + file.size > USER_UPLOAD_QUOTA_BYTES) {
-      return c.json({ error: `用户上传总量超过 ${Math.round(USER_UPLOAD_QUOTA_BYTES / 1024 / 1024)}MB` }, 413)
+      return c.json({
+        error: `用户上传总量超过 ${Math.round(USER_UPLOAD_QUOTA_BYTES / 1024 / 1024)}MB（回收站里的 ROM 也占配额，彻底删除后可继续上传）`,
+      }, 413)
     }
   }
 
@@ -536,71 +742,90 @@ romRoutes.post('/upload', requireAuth, async (c) => {
   let storage = 'local'
   let remoteFileId = null
   let storedPath = null
-  let storedBytes = 0
+  let storedBytes
   let storedSha = null
 
-  if (wantsRemote) {
-    const remote = await remoteStorageConfig()
-    if (!remote.configured) {
-      return c.json({ error: '尚未配置远端存储，请在站点设置里填写远端地址和密钥' }, 400)
-    }
-    const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
-    let uploaded
-    try {
-      uploaded = await remoteUpload({ buffer: fileBuffer, fileName: file.name, sha256 })
-    } catch (err) {
-      return c.json({ error: err?.message || '上传到远端服务器失败' }, 502)
-    }
-    storage = 'remote'
-    remoteFileId = String(uploaded.id)
-    storedPath = `remote:${remoteFileId}`
-    storedBytes = Number(uploaded.size || fileBuffer.length)
-    storedSha = uploaded.sha256 || sha256
-  } else {
-    mkdirSync(userDir, { recursive: true })
-    const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
-    const storedName = `${randomUUID()}${safeExt}`
-    storedPath = assertInsideRoot(userDir, join(userDir, storedName))
-    const buf = Buffer.from(await file.arrayBuffer())
-    await writeFile(storedPath, buf)
-    storedBytes = file.size
-  }
-
-  // Optional cover image. Variants may carry their own cover (the UI offers it
-  // as an optional extra); when they don't, /cover falls back to the parent's.
-  // Covers always stay on this server — they are small.
-  let coverPath = null
+  // 封面先校验（内存里嗅探魔数 + 体积），确认合法之后才开始写 ROM 文件：
+  // 反过来做的话，封面被拒时磁盘上会留下一条没人认领的 ROM blob。
+  let coverUpload = null
   if (body.cover && typeof body.cover !== 'string') {
-    const stored = await storeCoverFile(body.cover, userDir)
-    if (stored.error) return c.json({ error: stored.error }, stored.status)
-    coverPath = stored.filePath
+    coverUpload = await readCoverUpload(body.cover)
+    if (coverUpload.error) return c.json({ error: coverUpload.error }, coverUpload.status)
   }
 
-  const row = await insertAndFetch(roms, {
-    userId: user.id,
-    title: title.data,
-    platform,
-    fileName: file.name,
-    filePath: storedPath,
-    fileSize: storedBytes,
-    isPublic,
-    defaultCore: rowDefaultCore,
-    parentRomId,
-    versionLabel,
-    coverPath,
-    storage,
-    remoteFileId,
-  }, and(eq(roms.userId, user.id), eq(roms.filePath, storedPath)))
+  // 写盘阶段（本地文件 / 远端 blob / 封面）出任何错都要把已经写出去的字节清掉，
+  // 不留孤儿文件；否则它们不计配额、也不出现在任何列表里（2026-10 审计 H-2）。
+  let coverPath = null
+  const discardWrittenArtifacts = async () => {
+    if (storage === 'remote' && remoteFileId) await remoteDelete(remoteFileId)
+    else if (storedPath) safeUnlinkCover(storedPath)
+    if (coverPath) safeUnlinkCover(coverPath)
+  }
 
-  await audit(c, {
-    action: 'rom.upload',
-    targetType: 'rom',
-    targetId: row.id,
-    metadata: { platform, fileSize: storedBytes, isPublic, parentRomId, hasCover: !!coverPath, storage, sha256: storedSha },
-  })
-  return c.json(serialize(row))
-})
+  try {
+    if (wantsRemote) {
+      const remote = await remoteStorageConfig()
+      if (!remote.configured) {
+        return c.json({ error: '尚未配置远端存储，请在站点设置里填写远端地址和密钥' }, 400)
+      }
+      const fileBuffer = Buffer.from(await file.arrayBuffer())
+      const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
+      let uploaded
+      try {
+        uploaded = await remoteUpload({ buffer: fileBuffer, fileName: file.name, sha256 })
+      } catch (err) {
+        return c.json({ error: err?.message || '上传到远端服务器失败' }, 502)
+      }
+      storage = 'remote'
+      remoteFileId = String(uploaded.id)
+      storedPath = `remote:${remoteFileId}`
+      storedBytes = Number(uploaded.size || fileBuffer.length)
+      storedSha = uploaded.sha256 || sha256
+    } else {
+      mkdirSync(userDir, { recursive: true })
+      const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
+      const storedName = `${randomUUID()}${safeExt}`
+      storedPath = assertInsideRoot(userDir, join(userDir, storedName))
+      const buf = Buffer.from(await file.arrayBuffer())
+      await writeFile(storedPath, buf)
+      storedBytes = file.size
+    }
+
+    // Optional cover image. Variants may carry their own cover (the UI offers it
+    // as an optional extra); when they don't, /cover falls back to the parent's.
+    // Covers always stay on this server — they are small.
+    if (coverUpload) {
+      coverPath = await writeCoverBuffer(coverUpload.buf, coverUpload.ext, userDir)
+    }
+
+    const row = await insertAndFetch(roms, {
+      userId: user.id,
+      title: title.data,
+      platform,
+      fileName: file.name,
+      filePath: storedPath,
+      fileSize: storedBytes,
+      isPublic,
+      defaultCore: rowDefaultCore,
+      parentRomId,
+      versionLabel,
+      coverPath,
+      storage,
+      remoteFileId,
+    }, and(eq(roms.userId, user.id), eq(roms.filePath, storedPath)))
+
+    await audit(c, {
+      action: 'rom.upload',
+      targetType: 'rom',
+      targetId: row.id,
+      metadata: { platform, fileSize: storedBytes, isPublic, parentRomId, hasCover: !!coverPath, storage, sha256: storedSha },
+    })
+    return c.json(serialize(row))
+  } catch (error) {
+    await discardWrittenArtifacts()
+    throw error
+  }
+}
 
 // GET /api/roms/:id/cover — public covers are readable by anyone (the Gallery
 // is public); private ones only by their owner or an admin. A variant without
@@ -628,19 +853,22 @@ romRoutes.get('/:id/cover', async (c) => {
   c.header('Content-Length', String(file.stat.size))
   c.header('Cache-Control', rom.isPublic ? 'public, max-age=604800' : 'private, max-age=86400')
   return stream(c, async (s) => {
-    const fileStream = file.stream
-    await s.pipe(new ReadableStream({
-      start(controller) {
-        fileStream.on('data', (chunk) => controller.enqueue(chunk))
-        fileStream.on('end', () => controller.close())
-        fileStream.on('error', (err) => controller.error(err))
-      },
-    }))
+    // Readable.toWeb 把 Node 文件流直接接到 Web 流：背压与「客户端取消」由运行时
+    // 处理。手写 enqueue/close 的版本在客户端中途断开后会对已关闭的 controller
+    // 继续 enqueue/close，抛未捕获异常（线上实测 9 次 ERR_INVALID_STATE）。
+    await s.pipe(Readable.toWeb(file.stream))
   })
 })
 
 // POST /api/roms/:id/cover — replace the cover of an existing ROM
-romRoutes.post('/:id/cover', requireAuth, async (c) => {
+romRoutes.post('/:id/cover',
+  requireAuth,
+  uploadConcurrency.middleware,
+  bodyLimit({
+    maxSize: COVER_MAX_BYTES + 1024 * 1024,
+    onError: (c) => c.json({ error: `封面不能超过 ${Math.round(COVER_MAX_BYTES / 1024 / 1024)}MB` }, 413),
+  }),
+  async (c) => {
   const user = c.get('user')
   const id = Number(c.req.param('id'))
   const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
@@ -652,7 +880,13 @@ romRoutes.post('/:id/cover', requireAuth, async (c) => {
   if (stored.error) return c.json({ error: stored.error }, stored.status)
 
   const previousCover = rom.coverPath
-  await updateAndFetch(roms, { coverPath: stored.filePath }, eq(roms.id, id))
+  try {
+    await updateAndFetch(roms, { coverPath: stored.filePath }, eq(roms.id, id))
+  } catch (error) {
+    // 落库失败就把刚写进去的新封面删掉：不留没人认领的文件（审计 H-2）
+    safeUnlinkCover(stored.filePath)
+    throw error
+  }
   if (previousCover && previousCover !== stored.filePath) safeUnlinkCover(previousCover)
 
   const updated = (await db.select().from(roms).where(eq(roms.id, id)).limit(1))[0]
@@ -702,6 +936,7 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const wantsPlatform = user.role === 'admin'
     && !!requestedPlatform
     && requestedPlatform !== normalizePlatformId(rom.platform)
+  let movedFileCount = 0
   if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore && !wantsPlatform) {
     return c.json(serialize(rom))
   }
@@ -721,13 +956,24 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     if (foreignRows.length) {
       return c.json({ error: '该版本家族包含其他用户的 ROM，请联系管理员处理' }, 409)
     }
+    // 先搬磁盘文件、再改库：搬移中途失败会把已搬的复原，库里仍指向旧目录，
+    // 记录与磁盘始终一致。反过来（先改库再搬）失败时会留下指向空路径的记录。
+    let planned
+    try {
+      planned = planPlatformMoves(familyRows, requestedPlatform)
+      await applyPlatformMoves(planned.moves)
+    } catch (error) {
+      return c.json({ error: `搬移平台目录失败（已回滚）：${error?.message || error}` }, error?.status || 500)
+    }
+    movedFileCount = planned.moves.length
     // Cores are platform-specific, so a leftover default core that the new
     // platform does not offer is dropped instead of silently kept.
-    for (const row of familyRows) {
-      const keptCore = normalizeDefaultCore(requestedPlatform, row.defaultCore) ?? null
-      await db.update(roms)
-        .set({ platform: requestedPlatform, defaultCore: keptCore })
-        .where(eq(roms.id, row.id))
+    for (const entry of planned.plan) {
+      const keptCore = normalizeDefaultCore(requestedPlatform, entry.defaultCore) ?? null
+      const patch = { platform: requestedPlatform, defaultCore: keptCore }
+      if (entry.filePath) patch.filePath = entry.filePath
+      if (entry.coverPath) patch.coverPath = entry.coverPath
+      await db.update(roms).set(patch).where(eq(roms.id, entry.id))
     }
   }
 
@@ -787,6 +1033,7 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
         maxPlayers: updated.maxPlayers ?? null,
         defaultCore: updated.defaultCore ?? null,
       },
+      movedFiles: movedFileCount,
     },
   })
   return c.json(serialize(updated, null, { parentRom: parent }))
@@ -939,14 +1186,8 @@ async function serveRomFile(c) {
   c.header('Content-Length', String(file.stat.size))
   c.header('Content-Disposition', `inline; filename="${encodeURIComponent(rom.fileName)}"`)
   return stream(c, async (s) => {
-    const fileStream = file.stream
-    await s.pipe(new ReadableStream({
-      start(controller) {
-        fileStream.on('data', (chunk) => controller.enqueue(chunk))
-        fileStream.on('end', () => controller.close())
-        fileStream.on('error', (err) => controller.error(err))
-      },
-    }))
+    // 同上（封面/ROM 文件）：交给 Readable.toWeb，别再手写流包装。
+    await s.pipe(Readable.toWeb(file.stream))
   })
 }
 

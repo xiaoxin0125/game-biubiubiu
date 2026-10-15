@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import { existsSync, statSync, createReadStream, readdirSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { resolve, join, extname } from 'node:path'
 import { stream } from 'hono/streaming'
-import { currentUser } from '../middleware/auth.js'
+import { currentUser, requireAuth } from '../middleware/auth.js'
 import { entityTagFor, ifNoneMatchMatches } from '../http-utils.js'
 
 const BIOS_DIR = resolve(process.env.BIOS_DIR || 'data/bios')
@@ -40,18 +41,14 @@ biosRoutes.get('/:platform/:file', async (c) => {
   c.header('Content-Type', contentTypeFor(file))
   c.header('Content-Length', String(st.size))
   return stream(c, async (s) => {
-    const rs = createReadStream(full)
-    await s.pipe(new ReadableStream({
-      start(controller) {
-        rs.on('data', (chunk) => controller.enqueue(chunk))
-        rs.on('end', () => controller.close())
-        rs.on('error', (err) => controller.error(err))
-      },
-    }))
+    // 交给 Readable.toWeb：自带背压与取消处理（见审计报告 M-5）。
+    await s.pipe(Readable.toWeb(createReadStream(full)))
   })
 })
 
-biosRoutes.get('/:platform', (c) => {
+// 平台下的文件清单：和下载一样要登录。原先它匿名可读，等于把站点装了哪些 BIOS
+// 直接列给爬虫（2026-10 审计 M-8）；前端只用单文件下载，没有人依赖这个列表。
+biosRoutes.get('/:platform', requireAuth, (c) => {
   const platform = c.req.param('platform').replace(/[^a-z0-9_-]/gi, '')
   const dir = join(BIOS_DIR, platform)
   if (!existsSync(dir)) return c.json({ files: [] })

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from '../api/client.js'
+import { cacheCurrentUser, peekCurrentUser } from '../composables/authCache.js'
 
 const routes = [
   {
@@ -64,21 +65,19 @@ const router = createRouter({
   scrollBehavior() { return { top: 0 } },
 })
 
-let cachedUser = undefined
-
 async function getUser() {
-  if (cachedUser !== undefined) return cachedUser
+  const cached = peekCurrentUser()
+  if (cached !== undefined) return cached
   try {
-    const { user } = await api.me()
-    cachedUser = user
-  } catch { cachedUser = null }
-  return cachedUser
+    const user = (await api.me()).user ?? null
+    cacheCurrentUser(user)
+    return user
+  } catch {
+    // 接口失败（网络抖动/离线）不写进缓存：下一次导航再问一次，
+    // 别让一次偶发失败把人一直挡在门外。
+    return null
+  }
 }
-
-// invalidate cache on route changes with login/logout intent
-router.afterEach((to) => {
-  if (to.name === 'Auth') cachedUser = undefined
-})
 
 router.beforeEach(async (to) => {
   if (to.meta.requiresAuth || to.meta.requiresAdmin || to.meta.guestOnly) {
