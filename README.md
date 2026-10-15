@@ -4,7 +4,7 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.6.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.0`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.6.1**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.1`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
@@ -159,7 +159,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.0"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.1"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -210,7 +210,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.1`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可。
 
 **6. 备份与恢复**
 

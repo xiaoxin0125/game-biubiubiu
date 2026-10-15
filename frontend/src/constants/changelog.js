@@ -6,6 +6,20 @@
 //   - 每条按主题分组，items 写玩家/管理员能感知到的变化，不写纯重构细节。
 export const APP_CHANGELOG = [
   {
+    version: '1.6.1',
+    date: '2026-10-15',
+    title: '清理构建产物：不再下发被替换掉的 js2me 运行时与已删除的封面图',
+    groups: [
+      {
+        label: '构建与资源',
+        items: [
+          '站点不再下发早期 J2ME 集成留下的 js2me 运行时，以及随它一起带进来的 37 张封面图：`frontend/dist/j2me` 少掉 215 个文件（约 1.3 MB），`/j2me/vendor/*` 与 `/j2me/img/*` 现在回 404，整个构建产物从 11 MB 降到 8.9 MB。',
+          '构建前的清理改成按 `public/` 的条目逐个移除 `dist/` 里的对应项：从源码里删掉的文件，下次构建就会从站点上消失。以前它只删 `assets` 与 `index.html`，被删掉的文件会一直留在站点上 —— 上面那批 js2me 文件就是这么留下来的。hosting panel 写在 `dist` 里的目录（例如 `.well-known`）不属于 vite，仍然保持不动。',
+        ],
+      },
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-10-13',
     title: '新增 PC Engine / PCE-CD / Neo Geo CD / 3DO / NGP / 32X / J2ME 七个平台',

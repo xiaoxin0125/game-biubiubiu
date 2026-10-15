@@ -20,7 +20,7 @@ test('版本号三处一致', () => {
 
 test('更新日志覆盖 v1.0.0 起的所有版本，按新到旧排列', () => {
   const versions = APP_CHANGELOG.map((release) => release.version)
-  assert.deepEqual(versions, ['1.6.0', '1.5.2', '1.5.1', '1.5.0', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0'])
+  assert.deepEqual(versions, ['1.6.1', '1.6.0', '1.5.2', '1.5.1', '1.5.0', '1.4.0', '1.3.0', '1.2.0', '1.1.0', '1.0.0'])
 
   // 同一个小版本内的修订（1.5.1 在 1.5.0 之前）也要排对，所以要连补丁号一起比
   const sorted = [...versions].sort((a, b) => {

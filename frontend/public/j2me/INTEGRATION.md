@@ -38,6 +38,14 @@ idempotent, so run it after refreshing the vendored copy:
 node frontend/public/j2me/apply-site-patches.mjs
 ```
 
+Files the upstream copy carries but this integration never loads were dropped when
+vendoring: the standalone pages and their game list (`index.html`, `index2.html`,
+`indexbatch.html`, `gamelist.js`, `gc.html`, `gc.js`, `benchmark.js`, `timer.js`,
+`jar/`, `certs/`, the `kaios/` build) and `img/` — 37 covers for that game list,
+which nothing here references. `main.html` and the scripts it pulls in are the
+whole runtime; a refreshed copy therefore needs the same pruning, or the extras
+are served (and shipped) for nothing.
+
 1. `bld/main-all.js` — its boot list splits `config.jars` on `":"`, which breaks
    `blob:` URLs. The patched line prefers `window.__j2meJars` when set.
 2. `bld/main-all.js` — `window.onload` must never be stopped by the
