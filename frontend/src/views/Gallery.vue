@@ -42,6 +42,13 @@
     <div class="blog-tabs">
       <button
         class="tab"
+        :class="{ active: activeTab === 'name' }"
+        @click="activeTab = 'name'"
+      >
+        默认 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+      </button>
+      <button
+        class="tab"
         :class="{ active: activeTab === 'latest' }"
         @click="activeTab = 'latest'"
       >
@@ -53,6 +60,14 @@
         @click="activeTab = 'hot'"
       >
         最热 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+      </button>
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'random' }"
+        title="换个顺序看看，再点一次重新洗牌"
+        @click="pickTab('random')"
+      >
+        随机 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
       </button>
       <button
         v-if="isAuthed"
@@ -159,7 +174,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useAppDialog } from '../composables/useAppDialog.js'
-import { tabGroups, getPlatform } from '../constants/platforms.js'
+import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
 import { useSettings } from '../composables/useSettings.js'
 import VersionPickerDialog from '../components/VersionPickerDialog.vue'
 import RomCover from '../components/RomCover.vue'
@@ -176,12 +191,42 @@ const roms = ref([])
 const favoriteRoms = ref([])
 const loading = ref(true)
 const query = ref('')
-// 分类栏分两截：左边是「看哪一类」（最新 / 最热 / 收藏），右边下拉框是主机分类
-// 筛选（默认全部）。两者叠加生效，例如「收藏 + 任天堂」= 我收藏的任天堂游戏。
-const activeTab = ref('latest')
+// 分类栏分两截：左边是「怎么看」（默认 / 最新 / 最热 / 随机 / 收藏），右边下拉框
+// 是游戏机分类筛选（默认全部）。两者叠加生效，例如「收藏 + 任天堂红白机」= 我收藏的
+// FC 游戏。打开页面用的就是这个默认：按名字排，不另外标注排序规则。
+const activeTab = ref('name')
+// 「随机」的顺序由种子决定：点一下换一个新种子（重新洗一次），翻页、搜索、换分类时
+// 种子不变，所以已经翻过的顺序不会自己乱跳。
+const shuffleSeed = ref(0)
 const activeGroup = ref('all')
 const page = ref(1)
 const pageSize = 10
+
+function pickTab(tab) {
+  if (tab === 'random' && activeTab.value === 'random') shuffleSeed.value += 1
+  activeTab.value = tab
+}
+
+// Fisher-Yates 洗牌，随机数由种子迭代出来（不用 Math.random）：同一个种子 + 同一份
+// 列表洗出同一个顺序，computed 重算时页面不会莫名其妙换一批。
+function shuffled(list, seed) {
+  const out = [...list]
+  let state = (Math.imul(seed + 1, 0x9e3779b1) >>> 0) || 0x1f123bb5
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(next() * (i + 1))
+    const tmp = out[i]
+    out[i] = out[j]
+    out[j] = tmp
+  }
+  return out
+}
 
 async function loadPublic() {
   loading.value = true
@@ -209,37 +254,45 @@ watch(isAuthed, async (authed) => {
   if (authed) await loadFavorites()
   else {
     favoriteRoms.value = []
-    if (activeTab.value === 'favorites') activeTab.value = 'latest'
+    if (activeTab.value === 'favorites') activeTab.value = 'name'
   }
 })
 
-// 主机分类下拉框：默认「全部」，每一项后面跟这个分类在当前游戏库里的数量。
+const activeGroupIsAll = computed(() => activeGroup.value === 'all')
+
+// 主机分类下拉框：一台游戏机一项（标签就是平台表里的「中文 (英文)」），后面跟这台
+// 机器在当前游戏库里的数量。区域别名（FC / NES、SFC / SNES、MD / Genesis）已经并成
+// 一台机器，所以同一个名字不会出现两项，也不会出现「有这一项、下面一盘游戏都没有」
+// 的空分类 —— 列表只给出真有游戏的机器。当前选中的那台即使暂时没有游戏也留在选项里，
+// 触发器上不会忽然空掉（见 platformFacets 的 include）。
 const groupOptions = computed(() => [
   { value: 'all', label: `全部 ${roms.value.length}` },
-  ...Object.entries(tabGroups).map(([key, group]) => ({
-    value: key,
-    label: `${group.label} ${groupCount(roms.value, key)}`,
-  })),
+  ...platformFacets(roms.value, { include: activeGroupIsAll.value ? [] : [activeGroup.value] })
+    .map((machine) => ({ value: machine.id, label: `${machine.label} ${machine.count}` })),
 ])
+
+// ROM 记录上的平台按通用名比较：老记录里写着别名的也算进对应的游戏机。
+function inGroup(rom, key) {
+  if (!key || key === 'all') return true
+  return resolvePlatformId(rom.platform) === key
+}
 
 // 某个分类下一共有多少盘（key 为 all 时不筛）。列表里的数量都走这个函数，
 // 跟着下拉框选中的分类走：最新 / 最热两个标签显示游戏库的数量，收藏标签显示
 // 我收藏的数量，都是当前分类下的。
 function groupCount(list, key) {
   if (!key || key === 'all') return list.length
-  const allowed = new Set(tabGroups[key]?.platforms || [])
-  return list.filter((r) => allowed.has(r.platform)).length
+  return list.filter((rom) => inGroup(rom, key)).length
 }
 
 const favoriteGroupCount = computed(() => groupCount(favoriteRoms.value, activeGroup.value))
 
 // 空列表的文案要分得清是「搜不到」「这个分类没有」还是「本来就还没东西」。
-const activeGroupIsAll = computed(() => activeGroup.value === 'all')
-const activeGroupLabel = computed(() => (activeGroupIsAll.value ? '' : tabGroups[activeGroup.value]?.label || ''))
+const activeGroupLabel = computed(() => (activeGroupIsAll.value ? '' : getPlatform(activeGroup.value).displayName))
 const emptyTitle = computed(() => {
   if (query.value) return '没有匹配结果'
   if (!activeGroupIsAll.value) {
-    return activeTab.value === 'favorites' ? `收藏里没有${activeGroupLabel.value}的游戏` : `${activeGroupLabel.value}还没有游戏`
+    return activeTab.value === 'favorites' ? `收藏里没有 ${activeGroupLabel.value} 的游戏` : `${activeGroupLabel.value} 还没有游戏`
   }
   return activeTab.value === 'favorites' ? '还没有收藏' : '游戏库为空'
 })
@@ -252,16 +305,17 @@ const emptyHint = computed(() => {
 
 const filtered = computed(() => {
   let list = activeTab.value === 'favorites' ? favoriteRoms.value : roms.value
-  if (activeGroup.value !== 'all') {
-    const allowed = new Set(tabGroups[activeGroup.value]?.platforms || [])
-    list = list.filter((r) => allowed.has(r.platform))
-  }
+  if (!activeGroupIsAll.value) list = list.filter((r) => inGroup(r, activeGroup.value))
   const q = query.value.trim().toLowerCase()
   if (q) list = list.filter((r) => r.title.toLowerCase().includes(q))
   const out = [...list]
+  // 「默认」按游戏名排（中文按拼音、数字按自然序，和「我的 ROM」列表同一套规则）。
   // 「最新」直接用接口给的顺序：游戏库按上传时间倒序，收藏按收藏时间倒序。
   // 「最热」按游玩次数倒序；次数相同就保持上面的时间顺序（Array#sort 是稳定排序）。
+  // 「随机」按种子洗一遍牌，再点一次标签换种子、换一批。
+  if (activeTab.value === 'name') out.sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
   if (activeTab.value === 'hot') out.sort((a, b) => Number(b.playCount || 0) - Number(a.playCount || 0))
+  if (activeTab.value === 'random') return shuffled(out, shuffleSeed.value)
   return out
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
@@ -271,9 +325,11 @@ const pagedRoms = computed(() => {
 })
 
 watch([query, activeTab, activeGroup], () => { page.value = 1 })
+// 再点一次「随机」重新洗牌时也回到第一页，新的一批从头看
+watch(shuffleSeed, () => { page.value = 1 })
 // 换到没有收藏的分类时别把人留在空列表上（与取消最后一盘收藏时的处理一致）。
 watch(activeGroup, () => {
-  if (activeTab.value === 'favorites' && favoriteGroupCount.value === 0) activeTab.value = 'latest'
+  if (activeTab.value === 'favorites' && favoriteGroupCount.value === 0) activeTab.value = 'name'
 })
 watch(pageCount, (count) => {
   if (page.value > count) page.value = count
@@ -292,7 +348,7 @@ async function toggleFavorite(rom) {
     if (prev) {
       await api.romUnfavorite(rom.id)
       favoriteRoms.value = favoriteRoms.value.filter((r) => r.id !== rom.id)
-      if (activeTab.value === 'favorites' && favoriteRoms.value.length === 0) activeTab.value = 'latest'
+      if (activeTab.value === 'favorites' && favoriteRoms.value.length === 0) activeTab.value = 'name'
     } else {
       await api.romFavorite(rom.id)
       favoriteRoms.value = [{ ...rom, isFavorite: true }, ...favoriteRoms.value.filter((r) => r.id !== rom.id)]
@@ -545,7 +601,7 @@ function onVersionPicked(v) {
 .blog-tabs {
   display: flex;
   gap: 10px;
-  margin-bottom: 24px;
+  margin-bottom: 10px;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 2px 6px 12px 2px;
@@ -811,10 +867,11 @@ function onVersionPicked(v) {
     min-width: 0;
     width: auto;
   }
-  /* 分类只剩三个标签，窄屏放不下时让主机分类下拉框换到第二行，不横向滚动 */
+  /* 分类栏分两行：标签一排，游戏机下拉框自己占一整行 —— 名字都是「中文 (英文)」，
+     和标签挤在同一行只会被截断 */
   .blog-tabs { flex-wrap: wrap; overflow: visible; }
-  .group-select { margin-left: auto; }
-  /* 手机端标签不再带数量：三个标签本身已经占满一行，数字留给下拉框里的选项 */
+  .group-select { flex: 1 0 100%; --select-width: 100%; margin-left: 0; }
+  /* 手机端标签不再带数量：标签本身已经占满一行，数字留给下拉框里的选项 */
   .blog-tabs .tab .n { display: none; }
   .hero-actions .action-tab {
     flex: 0 0 auto;

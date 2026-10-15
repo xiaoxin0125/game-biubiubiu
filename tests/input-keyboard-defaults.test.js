@@ -104,7 +104,9 @@ const OLD_PLAYER_2_DEFAULT = {
   l3: 'kp_period', r3: 'numpad5', start: 'kp_enter', select: 'numpad0',
 }
 
-const PLATFORMS = ['nes', 'snes', 'gba', 'megadrive', 'genesis', 'arcade', 'psx', 'pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
+// 平台表里已经只有通用名（FC / SFC / MD），别名（famicom / snes / genesis）只作为
+// 老数据出现，由下面单独一条用例盯着「照样套用同一套键位」。
+const PLATFORMS = ['nes', 'sfc', 'gba', 'megadrive', 'arcade', 'psx', 'pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
 
 const PLAYER_BUTTON = '(up|down|left|right|a|b|x|y|l|r|l2|r2|l3|r3|start|select)'
 
@@ -151,6 +153,7 @@ test('默认 P1：左手 WASD 十字、右手 J K I O / U P、数字行肩键', 
 test('街机 / MD 六键按两排三列：下排 J K L、上排 U I O', () => {
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('arcade'), ARCADE_DEFAULT)
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('megadrive'), MEGADRIVE_DEFAULT)
+  // 老记录里的别名（genesis）收敛到 MD，照样套用六键键位，不掉回通用默认
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('genesis'), MEGADRIVE_DEFAULT)
 })
 
@@ -161,6 +164,7 @@ test('默认 P2：方向键十字 + 数字小键盘成对铺开', () => {
 test('街机 / MD 的 P2：六键占小键盘下排 1 2 3、上排 4 5 6', () => {
   assert.deepEqual(defaultLocalKeyboardForPlayer(2, 'arcade'), ARCADE_PLAYER_2_DEFAULT)
   assert.deepEqual(defaultLocalKeyboardForPlayer(2, 'megadrive'), MEGADRIVE_PLAYER_2_DEFAULT)
+  // 别名（genesis）算作 MD，P2 同样走六键那一套
   assert.deepEqual(defaultLocalKeyboardForPlayer(2, 'genesis'), MEGADRIVE_PLAYER_2_DEFAULT)
   for (const profile of [ARCADE_PLAYER_2_DEFAULT, MEGADRIVE_PLAYER_2_DEFAULT]) {
     const keys = Object.values(profile)
@@ -172,7 +176,9 @@ test('存的还是通用 P2 默认时，按平台套用对应变体；自己改�
   const stored = { keyboardP2: { ...PLAYER_2_DEFAULT } }
   assert.deepEqual(effectiveLocalKeyboardForPlayer(stored, 2, 'arcade'), ARCADE_PLAYER_2_DEFAULT)
   assert.deepEqual(effectiveLocalKeyboardForPlayer(stored, 2, 'megadrive'), MEGADRIVE_PLAYER_2_DEFAULT)
-  assert.deepEqual(effectiveLocalKeyboardForPlayer(stored, 2, 'snes'), PLAYER_2_DEFAULT)
+  // 别名（genesis）算作 MD；sfc 没有自己的变体，沿用通用 P2 默认
+  assert.deepEqual(effectiveLocalKeyboardForPlayer(stored, 2, 'genesis'), MEGADRIVE_PLAYER_2_DEFAULT)
+  assert.deepEqual(effectiveLocalKeyboardForPlayer(stored, 2, 'sfc'), PLAYER_2_DEFAULT)
 
   const customized = { keyboardP2: { ...PLAYER_2_DEFAULT, up: 'numpad9' } }
   assert.deepEqual(effectiveLocalKeyboardForPlayer(customized, 2, 'arcade'), { ...PLAYER_2_DEFAULT, up: 'numpad9' })

@@ -5,6 +5,7 @@ import {
   PLATFORM_ROM_REGISTRY,
   PLATFORM_AUTO_DETECT_BY_EXTENSION,
   autoDetectPlatform,
+  normalizePlatformId,
 } from '../shared/registry/platform-roms.js'
 import {
   BIOS_BY_PLATFORM,
@@ -12,7 +13,7 @@ import {
   biosMountPathFor,
 } from '../shared/registry/platform-bios.js'
 import { PLATFORM_DEFAULT_MAX_PLAYERS } from '../shared/registry/platform-players.js'
-import { platforms, tabGroups, getPlatform, pcButtonsForPlatform } from '../frontend/src/constants/platforms.js'
+import { platforms, platformOrder, platformFacets, getPlatform, pcButtonsForPlatform } from '../frontend/src/constants/platforms.js'
 import { coreDisplayName } from '../frontend/src/constants/cores.js'
 import { buildPlatformCoreOptions, getBiosUrls } from '../frontend/src/data/config.js'
 import { defaultRetroarchConfigForCore } from '../frontend/src/composables/nostalgist.js'
@@ -189,14 +190,16 @@ test('新平台的按键标签与核心的实际映射对得上', () => {
 
 test('虚拟手柄：新平台的布局摆得出自己的按键，且不会摆出不存在的键', () => {
   const layouts = gamepadSource.slice(gamepadSource.indexOf('const FACE_LAYOUTS'), gamepadSource.indexOf('const layoutType'))
-  // pickLayout 的分支：光盘机与街机共用四键、卡带机走各自的布局。
-  assert.match(gamepadSource, /platform === 'arcade' \|\| platform === 'neogeocd'\) return 'arcade'/)
-  assert.match(gamepadSource, /platform === 'pcengine' \|\| platform === 'pcecd'\) return 'pce'/)
-  assert.match(gamepadSource, /platform === '3do'\) return '3do'/)
-  assert.match(gamepadSource, /platform === 'j2me'\) return 'j2me'/)
-  assert.match(gamepadSource, /platform === 'sega32x'\) return 'md'/)
+  // pickLayout 的分支：光盘机与街机共用四键、卡带机走各自的布局。平台 id 先由
+  // resolvePlatformId 收敛到通用名，所以分支里只剩一台机器一个 id。
+  assert.match(gamepadSource, /const id = resolvePlatformId\(platform\)/)
+  assert.match(gamepadSource, /id === 'arcade' \|\| id === 'neogeocd'\) return 'arcade'/)
+  assert.match(gamepadSource, /id === 'pcengine' \|\| id === 'pcecd'\) return 'pce'/)
+  assert.match(gamepadSource, /id === '3do'\) return '3do'/)
+  assert.match(gamepadSource, /id === 'j2me'\) return 'j2me'/)
+  assert.match(gamepadSource, /id === 'sega32x'\) return 'md'/)
   // ngp 没有自己的布局行：它落到默认的两键布局（fc）上。
-  assert.match(gamepadSource, /return 'fc'  \/\/ nes, famicom, fds, gb, gbc, ngp, and everything else/)
+  assert.match(gamepadSource, /return 'fc'  \/\/ nes, fds, gb, gbc, ngp, and everything else/)
 
   // 每个新平台的面键必须真的在 FACE_LAYOUTS 里被摆出来 —— a/b/x/y 少摆一颗，
   // 手机端就按不出那颗键（PC 键盘与物理手柄不受影响）。
@@ -224,14 +227,45 @@ test('虚拟手柄：新平台的布局摆得出自己的按键，且不会摆�
   assert.match(gamepadSource, /t === 'pce' \|\| t === '3do' \|\| t === 'j2me'/)
 })
 
-test('游戏库分组把新平台都收进去了', () => {
-  const grouped = new Set(Object.values(tabGroups).flatMap((g) => g.platforms))
-  for (const id of Object.keys(PLATFORM_ROM_REGISTRY)) {
-    assert.ok(grouped.has(id), `平台 ${id} 没有出现在任何分组里`)
+test('游戏机分类：每台机器一项、通用名唯一，空分类不出现', () => {
+  // 平台表里再没有别名条目，一台机器只有一个 id。
+  for (const alias of ['famicom', 'snes', 'genesis']) {
+    assert.equal(platforms[alias], undefined, `平台表里不该再有别名 ${alias}`)
+    assert.equal(PLATFORM_ROM_REGISTRY[alias], undefined, `共享表里不该再有别名 ${alias}`)
   }
-  assert.deepEqual(tabGroups.sega.platforms.includes('sega32x'), true)
-  assert.deepEqual(tabGroups.nec.platforms, ['pcengine', 'pcecd'])
-  assert.deepEqual(tabGroups.snk.platforms, ['neogeocd', 'ngp'])
+  assert.equal(normalizePlatformId('famicom'), 'nes')
+  assert.equal(normalizePlatformId('snes'), 'sfc')
+  assert.equal(normalizePlatformId('genesis'), 'megadrive')
+  assert.equal(normalizePlatformId('nes'), 'nes')
+  assert.equal(normalizePlatformId(''), '')
+  // 通用名就是玩家嘴里的名字：FC / SFC / MD。
+  assert.equal(getPlatform('nes').shortLabel, 'FC')
+  assert.equal(getPlatform('sfc').shortLabel, 'SFC')
+  assert.equal(getPlatform('megadrive').shortLabel, 'MD')
+  // 别名读旧数据时照样落到同一台机器上（摆放布局、按键标签都不掉默认值）。
+  assert.equal(getPlatform('famicom'), getPlatform('nes'))
+  assert.equal(getPlatform('snes'), getPlatform('sfc'))
+  assert.equal(getPlatform('genesis'), getPlatform('megadrive'))
+
+  // 分类聚合：别名与通用名合成一项，没有游戏的机器不出现在下拉框里。
+  const facets = platformFacets([
+    { platform: 'nes' }, { platform: 'famicom' },
+    { platform: 'sfc' }, { platform: 'snes' },
+    { platform: 'megadrive' },
+  ])
+  assert.deepEqual(facets.map((f) => [f.id, f.count]), [['nes', 2], ['sfc', 2], ['megadrive', 1]])
+  // 标签一律「中文 (英文)」，筛选里两台看起来像但其实是同一台机器的名字不会再各占一项。
+  for (const facet of facets) {
+    assert.match(facet.label, /^[^()]+ \([^)]+\)$/, `${facet.id} 的名字不是中文 + 英文：${facet.label}`)
+  }
+  assert.equal(facets[0].label, '任天堂红白机 (FC / NES)')
+  // 平台表里每一台机器都能被聚合成一项（顺序与平台表一致，家族挨在一起）。
+  const all = platformFacets(Object.keys(platforms).map((platform) => ({ platform })))
+  assert.deepEqual(all.map((f) => f.id), platformOrder)
+  assert.deepEqual([...all.map((f) => f.id)].sort(), [...Object.keys(PLATFORM_ROM_REGISTRY)].sort())
+  // 当前选中的那台即使一盘都没有也要留在选项里，触发器上不会空掉。
+  assert.deepEqual(platformFacets([], { include: ['psx'] }).map((f) => [f.id, f.count]), [['psx', 0]])
+  assert.deepEqual(platformFacets([], { include: ['nes'] }), [{ id: 'nes', label: '任天堂红白机 (FC / NES)', shortLabel: 'FC', color: platforms.nes.color, count: 0 }])
 })
 
 test('新平台的按键表按核心接口给：J2ME 才有 l2，NGP 没有 select', () => {

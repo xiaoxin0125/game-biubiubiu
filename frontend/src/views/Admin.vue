@@ -498,7 +498,7 @@ import { useAppDialog } from '../composables/useAppDialog.js'
 import { useSettings } from '../composables/useSettings.js'
 import { formatServerDateTime } from '../composables/formatTime.js'
 import { testStunIce } from '../composables/useIceGatheringTest.js'
-import { getPlatform } from '../constants/platforms.js'
+import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import UploadDialog from '../components/UploadDialog.vue'
 import EditRomDialog from '../components/EditRomDialog.vue'
@@ -553,12 +553,9 @@ const adminRomPlatform = ref('all')
 const adminRomVisibility = ref('all')
 const adminRomPage = ref(1)
 
-const adminRomPlatformOptions = computed(() => {
-  const ids = [...new Set(roms.value.map((r) => r.platform).filter(Boolean))]
-  return ids
-    .map((id) => ({ id, label: platLabel(id) }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
-})
+// 平台筛选项：一台游戏机一项（中文 + 英文），只列真上传过的机器。区域别名
+// （famicom / snes / genesis）已经并到通用名上，同一台机器不会出现两项。
+const adminRomPlatformOptions = computed(() => platformFacets(roms.value))
 const adminRomPlatformSelectOptions = computed(() => [
   { value: 'all', label: '全部平台' },
   ...adminRomPlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
@@ -583,7 +580,7 @@ function coreSelectOptionsFor(rom) {
 const filteredAdminRoms = computed(() => {
   const q = adminRomSearch.value.trim().toLowerCase()
   return roms.value
-    .filter((rom) => adminRomPlatform.value === 'all' || rom.platform === adminRomPlatform.value)
+    .filter((rom) => adminRomPlatform.value === 'all' || resolvePlatformId(rom.platform) === adminRomPlatform.value)
     .filter((rom) => {
       if (adminRomVisibility.value === 'public') return !!rom.isPublic
       if (adminRomVisibility.value === 'private') return !rom.isPublic

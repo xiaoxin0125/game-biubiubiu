@@ -139,7 +139,7 @@ const busy = ref(false)
 
 const coreOptions = computed(() => platforms[platform.value]?.cores || [])
 const platformSelectOptions = computed(() => platformList.value
-  .map(([id, p]) => ({ value: id, label: `${p.displayName}（${p.shortLabel}）` })))
+  .map(([id, p]) => ({ value: id, label: p.displayName })))
 const maxPlayerOptions = computed(() => [
   { value: '', label: `自动（${props.rom.effectiveMaxPlayers || 4}P）` },
   ...[1, 2, 3, 4].map((n) => ({ value: String(n), label: `${n}P` })),

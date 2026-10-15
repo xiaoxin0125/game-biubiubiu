@@ -1,3 +1,7 @@
+// 区域别名（famicom / snes / genesis）在读取旧数据时按通用名处理：单人机判断、
+// 默认人数、核心级例外都以通用名为键，不给别名再各写一份。
+import { normalizePlatformId } from './platform-roms.js'
+
 export const MAX_ROOM_PLAYERS = 4
 
 export const PLATFORM_DEFAULT_CORES = Object.freeze({
@@ -15,15 +19,12 @@ export const PLATFORM_CORE_DEFAULT_MAX_PLAYERS = Object.freeze({
 export const PLATFORM_DEFAULT_MAX_PLAYERS = Object.freeze({
   arcade: 4,
   nes: 2,
-  famicom: 2,
   fds: 2,
   sfc: 2,
-  snes: 2,
   gb: 1,
   gbc: 1,
   gba: 1,
   megadrive: 2,
-  genesis: 2,
   sms: 1,
   gamegear: 1,
   psx: 2,
@@ -55,5 +56,5 @@ export const PLATFORM_SINGLE_PLAYER = Object.freeze(new Set([
 ]))
 
 export function isSinglePlayerPlatform(platform) {
-  return PLATFORM_SINGLE_PLAYER.has(String(platform ?? ''))
+  return PLATFORM_SINGLE_PLAYER.has(normalizePlatformId(platform))
 }

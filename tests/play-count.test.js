@@ -28,7 +28,7 @@ test('roms.play_count 与 rom_plays 表都有迁移，服务启动时能建出�
   // drizzle 只按 _journal.json 里的条目跑迁移，漏登记等于线上没有这张表
   const journal = JSON.parse(project('server/db/migrations/meta/_journal.json'))
   const tags = journal.entries.map((entry) => entry.tag)
-  assert.equal(tags.at(-1), '0007_rom_plays')
+  assert.ok(tags.includes('0007_rom_plays'), '_journal 里没有登记 0007 迁移')
   assert.deepEqual(tags, [...tags].sort(), '_journal 必须按顺序追加')
 })
 
@@ -70,26 +70,51 @@ test('播放页在模拟器启动成功后记一次游玩，单人房与联机�
   }
 })
 
-test('首页分类栏是「最新 / 最热 / 收藏」加主机分类下拉框，默认全部', () => {
-  assert.match(gallery, /const activeTab = ref\('latest'\)/)
-  assert.match(gallery, /const activeGroup = ref\('all'\)/)
+test('首页分类栏是「默认 / 最新 / 最热 / 随机 / 收藏」加游戏机下拉框，默认全部', () => {
+  // 打开页面默认就是「默认」（按名称），它在分类栏最前面
+  assert.match(gallery, /const activeTab = ref\('name'\)/)
+  assert.match(gallery, /<div class="blog-tabs">\n\s*<button[\s\S]{0,160}默认 <span class="n">/)
+  assert.match(gallery, />\s*默认 <span class="n">/)
   assert.match(gallery, />\s*最新 <span class="n">/)
   assert.match(gallery, />\s*最热 <span class="n">/)
+  assert.match(gallery, />\s*随机 <span class="n">/)
   assert.doesNotMatch(gallery, /v-for="\[key, group\] in Object\.entries\(tabGroups\)"/, '主机分类不再平铺成标签')
 
-  // 下拉框用站点统一的 ClaySelect，选项是「全部 + 各主机分类」
+  // 下拉框用站点统一的 ClaySelect，选项是「全部 + 各游戏机」，标签是平台表里的
+  // 中文 + 英文名（别名已并成一台机器），后面跟这台机器的数量
   assert.match(gallery, /<ClaySelect[\s\S]*?v-model="activeGroup"/)
   assert.match(gallery, /import ClaySelect from '\.\.\/components\/ClaySelect\.vue'/)
   assert.match(gallery, /label: `全部 \$\{roms\.value\.length\}`/)
-  assert.match(gallery, /label: `\$\{group\.label\} \$\{groupCount\(roms\.value, key\)\}`/)
+  assert.match(gallery, /platformFacets\(roms\.value, \{ include: activeGroupIsAll\.value \? \[\] : \[activeGroup\.value\] \}\)/)
+  assert.match(gallery, /label: `\$\{machine\.label\} \$\{machine\.count\}`/)
+  assert.doesNotMatch(gallery, /tabGroups/, '主机分类不再按厂商分组，而是一台游戏机一项')
+  // 分类比较走通用名：老记录里写着别名的也算进对应的游戏机
+  assert.match(gallery, /function inGroup\(rom, key\) \{\n\s*if \(!key \|\| key === 'all'\) return true\n\s*return resolvePlatformId\(rom\.platform\) === key/)
+  assert.match(gallery, /if \(!activeGroupIsAll\.value\) list = list\.filter\(\(r\) => inGroup\(r, activeGroup\.value\)\)/)
 
-  // 最热按游玩次数倒序；最新直接用接口的顺序（上传 / 收藏时间倒序）
+  // 默认按名字排（中文拼音、数字自然序，与「我的 ROM」同一套比较规则）；
+  // 最热按游玩次数倒序；最新直接用接口的顺序（上传 / 收藏时间倒序）；随机按种子洗牌
+  assert.match(gallery, /if \(activeTab\.value === 'name'\) out\.sort\(\(a, b\) => a\.title\.localeCompare\(b\.title, 'zh-Hans-CN', \{ numeric: true, sensitivity: 'base' \}\)\)/)
   assert.match(gallery, /if \(activeTab\.value === 'hot'\) out\.sort\(\(a, b\) => Number\(b\.playCount \|\| 0\) - Number\(a\.playCount \|\| 0\)\)/)
+  assert.match(gallery, /if \(activeTab\.value === 'random'\) return shuffled\(out, shuffleSeed\.value\)/)
+  // 退出登录 / 取消最后一盘收藏时回到默认，不再回到「最新」
+  assert.equal((gallery.match(/activeTab\.value = 'name'/g) || []).length, 3)
+  assert.doesNotMatch(gallery, /activeTab\.value = 'latest'/)
+  // 再点一次「随机」换种子重新洗牌，并回到第一页
+  assert.match(gallery, /if \(tab === 'random' && activeTab\.value === 'random'\) shuffleSeed\.value \+= 1/)
+  assert.match(gallery, /watch\(shuffleSeed, \(\) => \{ page\.value = 1 \}\)/)
+  // 洗牌用种子迭代出的随机数（不是直接调 Math.random），翻页 / 搜索时顺序才稳定
+  assert.doesNotMatch(gallery, /Math\.random\(/)
+  assert.match(gallery, /function shuffled\(list, seed\) \{/)
+  assert.match(gallery, /for \(let i = out\.length - 1; i > 0; i -= 1\) \{/)
 
-  // 手机端三个标签不显示数量（数量在下拉框的选项里还有）
+  // 手机端三个标签不显示数量（数量在下拉框的选项里还有），下拉框自己占一整行
   assert.match(gallery, /\.blog-tabs \.tab \.n \{ display: none; \}/)
   const mobileBlock = gallery.slice(gallery.indexOf('@media (max-width: 768px)'))
   assert.match(mobileBlock, /\.blog-tabs \.tab \.n \{ display: none; \}/)
+  assert.match(mobileBlock, /\.group-select \{ flex: 1 0 100%; --select-width: 100%; margin-left: 0; \}/)
+  // PC 端仍贴着分类栏右端（只有手机端整行）
+  assert.match(gallery, /--select-shadow: var\(--clay-in-sm\);\n\s*margin-left: auto;\n\s*flex: 0 0 auto;/)
 })
 
 test('卡片末端的热度是图标 + 次数，标签排在内容流里', () => {
@@ -125,8 +150,9 @@ test('导航有「我的」，页面记录最近游玩、平台分布与收藏',
   const myInfo = project('frontend/src/views/MyInfo.vue')
   assert.match(myInfo, /api\.romPlaysMine\(\)/)
   assert.match(myInfo, /api\.romsFavorites\(\)/)
-  // 分布按平台累加个人游玩次数，次数多的排前面
-  assert.match(myInfo, /counts\.set\(platform, \(counts\.get\(platform\) \|\| 0\) \+ Number\(item\.playCount \|\| 0\)\)/)
+  // 分布按游戏机累加个人游玩次数（区域别名算进通用名，同一台机器只占一行），次数多的排前面
+  assert.match(myInfo, /const id = resolvePlatformId\(platform\)\n\s*counts\.set\(id, \(counts\.get\(id\) \|\| 0\) \+ Number\(item\.playCount \|\| 0\)\)/)
+  assert.doesNotMatch(myInfo, /counts\.set\(platform,/)
   assert.match(myInfo, /\.sort\(\(a, b\) => b\.count - a\.count/)
 
   // 最近游玩 5 条、平台分布 5 条，两块并排一行且等高（少的那块在框内下方留白）

@@ -131,9 +131,19 @@ function firstEnabledIndex() {
   return normalizedOptions.value.findIndex((option) => !option.disabled)
 }
 
-function positionPanel() {
+// 面板宽度按内容自适应（width: max-content）：最长的那条选项也要完整摆下，所以不
+// 再用触发器的宽度当面板宽度，否则「任天堂红白机 (FC / NES) 43」这种长条目会被
+// 省略号截断。宽度由浏览器按内容算，落完样式再读回真实宽度把面板夹进视口；宽度
+// 不小于触发器、不大于视口（视口也放不下时，才由选项自己的省略号兜底）。
+// 每次定位带一个序号：连续滚动 / 缩放时，旧的测量结果不再覆盖新的定位。
+let positionToken = 0
+
+async function positionPanel() {
   const el = trigger.value
-  if (!el) return
+  // 注意别写成 `const panel = panel.value` —— 同名声明会遮蔽上面的模板 ref，取值时抛 TDZ
+  const panelEl = panel.value
+  if (!el || !panelEl || !open.value) return
+  const token = (positionToken += 1)
   const rect = el.getBoundingClientRect()
   const gap = 8
   const maxHeight = 280
@@ -141,15 +151,29 @@ function positionPanel() {
   const spaceAbove = rect.top - gap
   const flipUp = spaceBelow < Math.min(maxHeight, 180) && spaceAbove > spaceBelow
   const available = Math.max(120, Math.min(maxHeight, flipUp ? spaceAbove : spaceBelow))
-  const width = Math.max(rect.width, 140)
-  const left = Math.min(Math.max(rect.left, 8), Math.max(8, window.innerWidth - width - 8))
+  const maxWidth = Math.max(140, window.innerWidth - 16)
   panelStyle.value = {
     position: 'fixed',
-    left: `${Math.round(left)}px`,
-    width: `${Math.round(width)}px`,
+    // 先按触发器左缘落一个近似位置（这时还没有面板宽度），读到真实宽度后再右对齐
+    left: `${Math.round(Math.max(rect.left, 8))}px`,
+    width: 'max-content',
+    minWidth: `${Math.round(Math.min(rect.width, maxWidth))}px`,
+    maxWidth: `${Math.round(maxWidth)}px`,
     maxHeight: `${Math.round(available)}px`,
     ...(flipUp ? { bottom: `${Math.round(window.innerHeight - rect.top + gap)}px` } : { top: `${Math.round(rect.bottom + gap)}px` }),
   }
+  await nextTick()
+  if (token !== positionToken || !open.value || !panelEl.isConnected) return
+  const width = panelEl.getBoundingClientRect().width
+  // 水平方向与触发器的右缘对齐：首页分类栏这类下拉框本来就挨着右边界，条目比触发器
+  // 宽时向左展开，面板不会一头顶到屏幕上被推偏。面板太宽、左缘要出屏时，才退回
+  // 「触发器左缘」并夹进视口（视口本身就放不下时，由选项的省略号兜底）。
+  const maxLeft = Math.max(8, window.innerWidth - width - 8)
+  const rightAlignedLeft = rect.right - width
+  const left = rightAlignedLeft >= 8
+    ? Math.min(rightAlignedLeft, maxLeft)
+    : Math.min(Math.max(rect.left, 8), maxLeft)
+  panelStyle.value = { ...panelStyle.value, left: `${Math.round(left)}px` }
 }
 
 function pick(option) {

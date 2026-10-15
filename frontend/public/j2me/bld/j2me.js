@@ -3387,6 +3387,13 @@ var J2ME;
                         release || J2ME.traceWriter && J2ME.traceWriter.writeLn("<< I Unwind");
                         break;
                     case FrameType.ExitInterpreter:
+                        // Site patch (quiet handled exceptions): the search walked every
+                        // frame without finding a handler, so nothing in the MIDlet will
+                        // catch this and the interpreter is about to stop. That is the
+                        // one Java exception worth reporting.
+                        console.error("Uncaught Java exception: " +
+                            (e && e.classInfo ? e.classInfo._name : String(e)) +
+                            (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
                         this.popMarkerFrame(FrameType.ExitInterpreter);
                         throw e;
                     case FrameType.PushPendingFrames:
@@ -5104,10 +5111,29 @@ var J2ME;
                                 case 184 /* INVOKESTATIC */:
                                     calleeTargetMethodInfo = calleeMethodInfo;
                                     break;
+                                // Site patch (virtual call null check): the INVOKESPECIAL
+                                // case above checks the receiver, but the virtual and interface
+                                // cases dereferenced classInfo, which the invoke path sets to null
+                                // when the receiver is null. The result was a JavaScript TypeError
+                                // that only became a Java NullPointerException at the interpreter's
+                                // catch (translateException) -- a red console error on every such
+                                // call, and a JS exception unwinding through code that expects a
+                                // Java one. Throw it here, like INVOKESPECIAL does; throwException
+                                // never returns for a NullPointerException.
                                 case 182 /* INVOKEVIRTUAL */:
+                                    if (address === 0 /* NULL */) {
+                                        thread.throwException(fp, sp, opPC, 3 /* NullPointerException */);
+                                        calleeTargetMethodInfo = calleeMethodInfo;
+                                        break;
+                                    }
                                     calleeTargetMethodInfo = classInfo.vTable[calleeMethodInfo.vTableIndex];
                                     break;
                                 case 185 /* INVOKEINTERFACE */:
+                                    if (address === 0 /* NULL */) {
+                                        thread.throwException(fp, sp, opPC, 3 /* NullPointerException */);
+                                        calleeTargetMethodInfo = calleeMethodInfo;
+                                        break;
+                                    }
                                     calleeTargetMethodInfo = classInfo.iTable[calleeMethodInfo.mangledName];
                                     break;
                                 default:
@@ -5260,12 +5286,17 @@ var J2ME;
 
                 if(e && e.constructor && e.constructor.prototype && e.constructor.prototype.classInfo && e.constructor.prototype.classInfo._name)
                 {
+                    // Site patch (quiet handled exceptions): a Java exception passing
+                    // through here is the normal case -- MIDlets raise and catch them
+                    // constantly, and this fork printed a warning plus an object dump for
+                    // every one of them. Keep it on the debug channel, which the devtools
+                    // console hides unless verbose logging is switched on; the uncaught
+                    // case is reported once by exceptionUnwind instead.
                     var detailMessage=''
                     if(e.detailMessage){
                         detailMessage=J2ME.fromStringAddr(e.detailMessage);
                     }
-                    console.warn("error occurs at : "+e.constructor.prototype.classInfo._name +" detailMessage: "+detailMessage);
-                    console.error(e); 
+                    console.debug("error occurs at : "+e.constructor.prototype.classInfo._name +" detailMessage: "+detailMessage, e);
                 }else{
                     console.error(e);
                 } 
@@ -10683,7 +10714,7 @@ var J2ME;
                 message = "";
             }
 
-            console.log('createException',className,message);
+            // Site patch (no debug logging): the fork printed a line for every exception created.
             // return J2ME.Constants.NULL;
  
             message = "" + message;

@@ -1,10 +1,11 @@
 // 表里没列出的平台在前端会回落到这里的默认值；扩展名与核心是前后端共用的唯一
 // 来源（frontend/src/constants/platforms.js 里写的那两份会被覆盖）。
 //
-// 三对区域别名（nes/famicom、sfc/snes、megadrive/genesis）在本表里是两条完全
-// 相同的记录：同一台硬件、同一套扩展名、同一批核心。改动其中一边（新增扩展名、
-// 调整核心顺序）必须同步另一边，否则同一款游戏会因为上传时选了不同叫法而落到
-// 不同核心上。
+// 同一台硬件的两个区域叫法只保留通用名那一条：红白机 / NES 记作 nes，超任 / SNES
+// 记作 sfc，世嘉五代 / MD / Genesis 记作 megadrive。三种叫法的机器、扩展名、核心
+// 完全一样，各留一条只会让同一台机器在分类筛选里出现两项，其中一项一盘游戏都没有。
+// 旧记录里的别名（famicom / snes / genesis）由下面的 PLATFORM_ALIASES 收敛到通用名：
+// 上传、改平台时用 normalizePlatformId() 先归一，读旧数据时也按同一张表合并。
 export const PLATFORM_ROM_REGISTRY = Object.freeze({
   arcade: {
     fileExtensions: ['.zip'],
@@ -14,19 +15,11 @@ export const PLATFORM_ROM_REGISTRY = Object.freeze({
     fileExtensions: ['.nes', '.unif', '.unf', '.zip'],
     cores: ['nestopia', 'fceumm', 'quicknes'],
   },
-  famicom: {
-    fileExtensions: ['.nes', '.unif', '.unf', '.zip'],
-    cores: ['nestopia', 'fceumm', 'quicknes'],
-  },
   fds: {
     fileExtensions: ['.fds', '.zip'],
     cores: ['nestopia', 'fceumm'],
   },
   sfc: {
-    fileExtensions: ['.smc', '.sfc', '.zip'],
-    cores: ['snes9x'],
-  },
-  snes: {
     fileExtensions: ['.smc', '.sfc', '.zip'],
     cores: ['snes9x'],
   },
@@ -43,10 +36,6 @@ export const PLATFORM_ROM_REGISTRY = Object.freeze({
     cores: ['mgba', 'mgba2', 'vba_next'],
   },
   megadrive: {
-    fileExtensions: ['.md', '.gen', '.smd', '.bin', '.zip'],
-    cores: ['genesis_plus_gx', 'picodrive'],
-  },
-  genesis: {
     fileExtensions: ['.md', '.gen', '.smd', '.bin', '.zip'],
     cores: ['genesis_plus_gx', 'picodrive'],
   },
@@ -140,6 +129,22 @@ export function autoDetectPlatform(fileName) {
 }
 
 export const PLATFORM_IDS = Object.freeze(Object.keys(PLATFORM_ROM_REGISTRY))
+
+// 区域别名 → 通用平台 id。NES 与 FC（红白机）、SNES 与 SFC（超任）、Genesis 与
+// MD（世嘉五代）分别是同一台硬件的两个叫法，注册表里只留通用名那一条，别名只在
+// 读旧数据时用得上：历史 ROM 记录、旧客户端上传时填的平台、玩家浏览器里存下来的
+// 设置都可能还写着别名。写入数据库之前一律先 normalizePlatformId()。
+export const PLATFORM_ALIASES = Object.freeze({
+  famicom: 'nes',
+  snes: 'sfc',
+  genesis: 'megadrive',
+})
+
+/** 把平台 id 收敛到通用名；不是别名的（含空值、未知 id）原样返回。 */
+export function normalizePlatformId(platform) {
+  const id = String(platform ?? '').trim()
+  return PLATFORM_ALIASES[id] || id
+}
 
 export const PLATFORM_CORES = Object.freeze(Object.fromEntries(
   Object.entries(PLATFORM_ROM_REGISTRY).map(([platform, info]) => [platform, Object.freeze([...info.cores])]),

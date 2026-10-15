@@ -57,6 +57,13 @@
       "when": 1791943200000,
       "tag": "0007_rom_plays",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1792032610306,
+      "tag": "0008_platform_aliases",
+      "breakpoints": true
     }
   ]
 }

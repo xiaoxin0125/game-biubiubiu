@@ -12,7 +12,7 @@ import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
-import { PLATFORM_CORES, PLATFORM_IDS } from '../../shared/registry/platform-roms.js'
+import { PLATFORM_CORES, PLATFORM_IDS, normalizePlatformId } from '../../shared/registry/platform-roms.js'
 import { assertInsideRoot } from '../storage.js'
 import { audit } from '../audit.js'
 import { listRomCheats } from '../rom-cheats.js'
@@ -493,7 +493,9 @@ romRoutes.post('/upload', requireAuth, async (c) => {
     }
   }
 
-  const platform = String(body.platform || '')
+  // 区域别名（famicom / snes / genesis）先收敛到通用名再校验：库里存的平台必须是
+  // 通用名 —— 分类筛选、父子版本、上传目录都按它比，留着别名会分出两个分类。
+  const platform = normalizePlatformId(String(body.platform || ''))
   if (!ALLOWED_PLATFORMS.has(platform)) return c.json({ error: '不支持的平台' }, 400)
 
   const titleSchema = z.string().min(1).max(128)
@@ -695,9 +697,11 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   const wantsDefaultCore = Object.prototype.hasOwnProperty.call(body, 'defaultCore')
   // Platform is an admin-only fix-up: the upload platform is guessed from the
   // file, and a wrong guess leaves the ROM tied to the wrong core set.
+  // 区域别名（famicom / snes / genesis）写进库前先收敛到通用名。
+  const requestedPlatform = typeof body.platform === 'string' ? normalizePlatformId(body.platform) : ''
   const wantsPlatform = user.role === 'admin'
-    && typeof body.platform === 'string'
-    && body.platform !== rom.platform
+    && !!requestedPlatform
+    && requestedPlatform !== normalizePlatformId(rom.platform)
   if (!nextTitle && !wantsVisibility && !wantsMaxPlayers && !wantsDefaultCore && !wantsPlatform) {
     return c.json(serialize(rom))
   }
@@ -711,7 +715,7 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
   }
 
   if (wantsPlatform) {
-    if (!ALLOWED_PLATFORMS.has(body.platform)) return c.json({ error: '不支持的平台' }, 400)
+    if (!ALLOWED_PLATFORMS.has(requestedPlatform)) return c.json({ error: '不支持的平台' }, 400)
     const { root, rows: familyRows } = await familyRowsFor(rom)
     const foreignRows = foreignFamilyRowsFor(user, root, familyRows.filter((row) => row.id !== root.id))
     if (foreignRows.length) {
@@ -720,9 +724,9 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     // Cores are platform-specific, so a leftover default core that the new
     // platform does not offer is dropped instead of silently kept.
     for (const row of familyRows) {
-      const keptCore = normalizeDefaultCore(body.platform, row.defaultCore) ?? null
+      const keptCore = normalizeDefaultCore(requestedPlatform, row.defaultCore) ?? null
       await db.update(roms)
-        .set({ platform: body.platform, defaultCore: keptCore })
+        .set({ platform: requestedPlatform, defaultCore: keptCore })
         .where(eq(roms.id, row.id))
     }
   }
@@ -753,7 +757,7 @@ romRoutes.patch('/:id', requireAuth, async (c) => {
     await updateAndFetch(roms, { maxPlayers: nextMaxPlayers }, eq(roms.id, id))
   }
   if (wantsDefaultCore) {
-    const effectivePlatform = wantsPlatform ? body.platform : rom.platform
+    const effectivePlatform = wantsPlatform ? requestedPlatform : rom.platform
     const nextDefaultCore = normalizeDefaultCore(effectivePlatform, body.defaultCore)
     if (nextDefaultCore === undefined) return c.json({ error: '默认核心不支持该平台' }, 400)
     await updateAndFetch(roms, { defaultCore: nextDefaultCore }, eq(roms.id, id))

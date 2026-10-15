@@ -66,11 +66,38 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   // the original interpreter only did this for reference arrays.
   assert.match(engine, /case 46 \/\* IALOAD \*\/:\n                    case 48 \/\* FALOAD \*\/:\n[\s\S]*?arrayAddr === 0 \/\* NULL \*\/[\s\S]*?case 51 \/\* BALOAD \*\/:/)
   assert.match(engine, /BaselineCompiler\.prototype\.emitStoreIndexed = function \(kind\) \{[\s\S]*?this\.emitNullPointerCheck\(array\);\n            this\.emitBoundsCheck\(array, index\);/)
+  // 虚调用与接口调用也要在接收者为 null 时就抛 Java 空指针：上游只给 INVOKESPECIAL
+  // 做了检查，另外两条会去读 null 的 vTable/iTable，抛出的 JS TypeError 只能在解释器
+  // 的 catch 里被翻译成 NPE —— 每次都是控制台里的一条红色报错。
+  assert.match(engine, /case 182 \/\* INVOKEVIRTUAL \*\/:\n                                    if \(address === 0 \/\* NULL \*\/\) \{\n                                        thread\.throwException\(fp, sp, opPC, 3 \/\* NullPointerException \*\/\);/)
+  assert.match(engine, /case 185 \/\* INVOKEINTERFACE \*\/:\n                                    if \(address === 0 \/\* NULL \*\/\) \{/)
+  // MIDlet 自己捕获的 Java 异常是常态，不该打警告与对象转储；只有没人接的异常报一次。
+  assert.match(engine, /console\.debug\("error occurs at : "/)
+  assert.match(engine, /console\.error\("Uncaught Java exception: "/)
+  assert.doesNotMatch(engine, /console\.warn\("error occurs at : "/)
+
+  // 这些 MIDP 内部调用在这个运行时里本来就是空操作（标题栏的信任图标、套件锁、显示
+  // 状态、CHAPI 记账），逐次警告只会把真正的问题淹掉。
+  assert.doesNotMatch(bundle, /console\.warn\("Display\.drawTrustedIcon0/)
+  assert.doesNotMatch(bundle, /console\.warn\("MIDletSuiteImpl\.lockMIDletSuite/)
+  assert.doesNotMatch(bundle, /console\.warn\("DisplayDevice\.displayStateChanged0/)
+  assert.doesNotMatch(bundle, /console\.warn\("SuspendSystem\$MIDPSystem\.allMidletsKilled/)
+  assert.doesNotMatch(bundle, /addUnimplementedNative\("com\/sun\/j2me\/content\/InvocationStore\.setCleanup0/)
+  // 作者遗留的调试输出：键码、config 与 manifest 对象、未定义的配置值。
+  assert.doesNotMatch(bundle, /console\.log\(keyCode\);/)
+  assert.doesNotMatch(bundle, /console\.log\(config\)/)
+  assert.doesNotMatch(bundle, /console\.log\(MIDP\.manifest\)/)
+  assert.doesNotMatch(bundle, /config\.gamepadSize "\+config\.gamepadSize/)
+  assert.doesNotMatch(engine, /console\.log\('createException'/)
 
   // 脚本自身必须幂等：第二次运行应当全部报告 ok 并以 0 退出。
   const output = execFileSync(process.execPath, [path.join(runtimeDir, 'apply-site-patches.mjs')], { encoding: 'utf8' })
   assert.doesNotMatch(output, /FAILED/)
-  assert.equal((output.match(/^(ok|patched) /gm) || []).length, 16)
+  const patchCount = (read('apply-site-patches.mjs').match(/^ {4}label: '/gm) || []).length
+  assert.equal((output.match(/^(ok|patched) /gm) || []).length, patchCount)
+  // 高级界面（Form / List / Alert …）由 lcdui.js 画进运行时的 canvas，它必须紧跟
+  // 运行时加载（覆盖那批空壳 native），所以这一行也是补丁的一部分而不是手改。
+  assert.match(read('main.html'), /<script defer src="bld\/main-all\.js"><\/script>\n<script defer src="lcdui\.js"><\/script>/)
 })
 
 // 播放页的十字键发手机的导航键代码（-1..-4），面键与肩键发手机键盘代码（5 当确定、

@@ -69,6 +69,42 @@ are served (and shipped) for nothing.
 8. `main.html` — loads `preload.js` (which turns the `?jar=` parameter into
    `window.__j2meJars`) right after the config scripts, and `bridge.js` after the
    runtime scripts.
+9. `bld/j2me.js` — a virtual or interface call on a null receiver throws a Java
+   `NullPointerException` from the interpreter, instead of reading `vTable` off a
+   null `classInfo` (see "Console output" below).
+10. `bld/j2me.js` — a Java exception passing through the interpreter is logged on
+    the debug channel; only an exception that unwinds past every frame without
+    finding a handler is reported as an error.
+11. `bld/j2me.js` — the fork's `createException` line (one per exception created)
+    is gone.
+12. `bld/main-all.js` — the fork's value dumps are gone: every key code, the
+    `config` and manifest objects, and an always-undefined `config.gamepadSize`.
+13. `bld/main-all.js` — the MIDP internals that are no-ops on this runtime stop
+    warning on every call.
+14. `main.html` — loads `lcdui.js` right after the runtime scripts (see "MIDP high
+    level UI" below).
+
+## Console output
+
+A game used to be unusable for diagnosis: `.jar` play printed a red
+`TypeError: Cannot read properties of null (reading 'vTable')`, a
+`createException` line and an object dump after every Java exception, a bare key
+code per key press, whole objects per load, and eight `not implemented` warnings
+from MIDP internals that are no-ops here. 仙剑奇侠传 printed 74 messages for two
+boots, 2 of them errors and 18 warnings.
+
+Patches 9 to 13 cut that to the runtime's own informational output: 44 messages,
+**no errors and no warnings**, with the same game still booting in ~0.7–1.1 s and
+still answering input. The two exceptions the game raises and catches itself stay
+visible on the debug channel (the devtools console hides `debug` unless verbose
+logging is on), so nothing was thrown away for support purposes.
+
+Reproduce with the external-ROM probe — it records `Runtime.consoleAPICalled` and
+`Runtime.exceptionThrown` into `runtime-log.json`:
+
+```bash
+J2ME_TEST_CHROME=/path/to/chrome node tests/j2me-real-game.mjs /path/game.jar /tmp/evidence
+```
 
 `bridge.js` forwards uncaught runtime errors to the player and exposes
 `window.__j2mePlayer` (key press/release, the VM canvas, boot state, pause). The
@@ -78,6 +114,43 @@ the runtime drives its scheduler, sleeps and screen blits through those timers.
 
 The page must be named `main.html`: the runtime decides between its "index" and
 "player" modes by looking for that name in the URL.
+
+## MIDP high level UI (`lcdui.js`)
+
+MIDlets that open with a `Form`, `List`, `TextBox` or `Alert` used to show
+nothing: the vendored runtime implements the high level LCDUI natives as empty
+shells (`addUnimplementedNative`, plus a DOM-based `ChoiceGroupLFImpl` that
+reads fields off the wrong object), and the elements it does build live in the
+runtime's own page, which the player never shows — it mirrors only `#canvas`.
+A game that started on such a screen therefore failed the player's "did it
+paint yet" check and died at boot with a timeout.
+
+`lcdui.js` loads after `bld/main-all.js` and replaces those natives, drawing the
+screens into the runtime's canvas at 4 px padding with the runtime's own font
+objects. It also covers two things the build leaves to "the native side":
+
+- **soft keys**: `NativeMenu.updateCommands` gets the displayable's `Command`s,
+  draws them as a left/right soft key bar and dispatches a press with
+  `MIDP.sendCommandEvent(id)` (command dispatch itself is Java:
+  `Display.handleCommandEvent` → `uCallCommandEvent`). `-6`/`-7` — the codes
+  `select`/`start` already send — are routed to it from a `MIDP.sendKeyPress`
+  wrapper.
+- **`List` navigation**: this fork has no `ListLFImpl` — a `List` is a one-item
+  `Form` holding a `ChoiceGroup`, and nobody on the Java side moves the selection
+  (`DisplayableLFImpl.uCallKeyPressed` is empty, `ChoiceGroupLFImpl` has no key
+  handling). Up/down from the d-pad move the highlight here, and the fire key
+  selects: the `List`'s own `selectCommand` when the app set one, otherwise the
+  first non-back command. Java reads the selection back through
+  `getSelectedIndex0` when the MIDlet asks for it.
+
+Sizes are answered from this file too, and they decide the whole layout: MIDP's
+`LayoutManager` only stretches an item when its layout carries `LAYOUT_EXPAND`,
+so `List` rows, `TextField`s and `Gauge`s report the available width themselves.
+Two traps worth remembering: the size natives take the item's **native id** as
+their first argument (`getPreferredWidth0(int nativeId, int availableWidth)`),
+and a font's `height`/`baseline` hang off the Java `Font` object rather than the
+2D context `NativeMap` returns — without those two, every item collapses to a
+100×20 box in the top-left corner.
 
 ## Mobile: the WebKit boot failure (fixed 2026-10-14)
 

@@ -1,4 +1,4 @@
-import { PLATFORM_ROM_REGISTRY } from '../../../shared/registry/platform-roms.js'
+import { PLATFORM_ROM_REGISTRY, normalizePlatformId } from '../../../shared/registry/platform-roms.js'
 import { PLATFORM_DEFAULT_MAX_PLAYERS } from '../../../shared/registry/platform-players.js'
 
 // Platform registry. Trimmed to the platforms actually played in the CN market
@@ -7,20 +7,19 @@ import { PLATFORM_DEFAULT_MAX_PLAYERS } from '../../../shared/registry/platform-
 // Neo Geo CD、3DO、Super 32X、J2ME）是 v1.6.0 加回来的：核心来自 libretro 的
 // v1.22.2 构建，BIOS 需要的文件见 shared/registry/platform-bios.js。
 //
-// Each entry: displayName (cn), shortLabel (tab badge), manufacturer,
-// releaseDate, libretroName, fileExtensions, cores (priority order — first is
-// default), buttons (which retropad buttons the platform actually uses).
+// Each entry: displayName (中文 + 英文，也是分类筛选的标签), shortLabel (卡片徽章 /
+// 上传页的平台按钮), manufacturer, releaseDate, libretroName, fileExtensions,
+// cores (priority order — first is default), buttons (which retropad buttons the
+// platform actually uses).
 //
-// 三对「区域别名」：nes = famicom（红白机 / NES）、sfc = snes（超任 / SNES）、
-// megadrive = genesis（日版 MD / 美版 Genesis）。同组两边是同一台硬件 —— 扩展名、
-// 核心、默认人数、按键、虚拟手柄布局、键盘默认值全部逐项相同，只有给玩家看的
-// displayName / shortLabel / color 不一样（nes 与 famicom 连 color 都一样）。
-// 所以不要把它俩当两台机器写分支：要按机器判断的地方一律用一份判断覆盖两边，
-// 例如下面的 NES_PLATFORM_IDS、VirtualGamepad 的 pickLayout、tabGroups 的分组。
-// 保留两个 id 只是让上传者能自己选日版还是美版叫法。代价是 platform 是 ROM 记录
-// 上的字段兼分组键（父子版本要求同平台、上传目录按平台分），同一款游戏一份标
-// nes、一份标 famicom 就不能互为版本，卡片标签也会不一致 —— 但上传页的自动识别
-// 按本表顺序取第一个匹配，只会给出 nes / sfc / megadrive，别名得手动选。
+// 一台机器只有一条记录：红白机 / NES 记作 nes，超任 / SNES 记作 sfc，世嘉五代 /
+// MD / Genesis 记作 megadrive。区域叫法不同的两种名字合并成一项之后，分类筛选里
+// 不会再出现「同一台机器两个名字、其中一个一盘游戏都没有」。displayName 一律写成
+// 「中文 (英文)」，分类筛选（首页的主机下拉框、我的 ROM 与后台的平台筛选）直接用它
+// 当标签；shortLabel 是卡片上的小徽章与上传页的平台按钮（FC / SFC / MD 这些通用名）。
+// 旧记录里的别名由 shared/registry/platform-roms.js 的 normalizePlatformId() 收敛，
+// getPlatform() 也认别名，所以读到带 famicom / snes / genesis 的老数据不会掉默认值。
+//
 // releaseDate 与 libretroName 目前没有任何代码读取，只是资料性字段。
 
 const DPAD = ['up', 'down', 'left', 'right']
@@ -55,7 +54,7 @@ const BTN_3DO   = [...DPAD, 'a', 'b', 'y', 'l', 'r', 'start', 'select']
 const BTN_J2ME  = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'start', 'select']
 const withTurbo = (buttons) => [...buttons]
 const NES_PC_TURBO_BUTTONS = Object.freeze({ x: 'a', y: 'b' })
-const NES_PLATFORM_IDS = new Set(['nes', 'famicom', 'fds'])
+const NES_PLATFORM_IDS = new Set(['nes', 'fds'])
 
 // 键盘用的行：FC/NES 系列在电脑上多出 x/y 两行（连发 A / 连发 B），FDS 再多出
 // L / R 两行（换面 / 换盘）。触屏手柄不摆这两颗键，换面 / 换盘由播放页的动作按钮
@@ -75,7 +74,7 @@ export function turboTargetForPlatform(button, platform) {
 
 export const platforms = {
   arcade: {
-    displayName: '街机',
+    displayName: '街机 (Arcade)',
     shortLabel: 'ARCADE',
     manufacturer: '多厂商',
     releaseDate: '1971-10-15',
@@ -88,8 +87,8 @@ export const platforms = {
 
   // Nintendo
   nes: {
-    displayName: 'Nintendo Entertainment System',
-    shortLabel: 'NES',
+    displayName: '任天堂红白机 (FC / NES)',
+    shortLabel: 'FC',
     manufacturer: 'Nintendo',
     releaseDate: '1983-07-15',
     libretroName: 'Nintendo - Nintendo Entertainment System',
@@ -98,20 +97,8 @@ export const platforms = {
     cores: ['nestopia', 'fceumm', 'quicknes'],
     buttons: withTurbo(BTN_NES),
   },
-  // 别名：与上面的 nes 同一台硬件（日版叫红白机 / FC），配置逐项相同。
-  famicom: {
-    displayName: '任天堂红白机 (Famicom)',
-    shortLabel: 'FC',
-    manufacturer: 'Nintendo',
-    releaseDate: '1983-07-15',
-    libretroName: 'Nintendo - Famicom',
-    color: '#ff3b30',
-    fileExtensions: ['.nes', '.unif', '.unf', '.zip'],
-    cores: ['nestopia', 'fceumm', 'quicknes'],
-    buttons: withTurbo(BTN_NES),
-  },
   fds: {
-    displayName: '任天堂磁碟机',
+    displayName: '任天堂磁碟机 (FDS)',
     shortLabel: 'FDS',
     manufacturer: 'Nintendo',
     releaseDate: '1986-02-21',
@@ -122,7 +109,7 @@ export const platforms = {
     buttons: withTurbo(BTN_FDS),
   },
   sfc: {
-    displayName: 'Super Famicom',
+    displayName: '超级任天堂 (SFC / SNES)',
     shortLabel: 'SFC',
     manufacturer: 'Nintendo',
     releaseDate: '1990-11-21',
@@ -131,19 +118,8 @@ export const platforms = {
     fileExtensions: ['.smc', '.sfc', '.zip'],
     cores: ['snes9x'],
   },
-  // 别名：与上面的 sfc 同一台硬件（美版叫 SNES），只有颜色深浅不同。
-  snes: {
-    displayName: 'Super Nintendo',
-    shortLabel: 'SNES',
-    manufacturer: 'Nintendo',
-    releaseDate: '1991-08-23',
-    libretroName: 'Nintendo - Super Nintendo Entertainment System',
-    color: '#409fff',
-    fileExtensions: ['.smc', '.sfc', '.zip'],
-    cores: ['snes9x'],
-  },
   gb: {
-    displayName: 'Game Boy',
+    displayName: '任天堂 Game Boy (GB)',
     shortLabel: 'GB',
     manufacturer: 'Nintendo',
     releaseDate: '1989-04-21',
@@ -153,7 +129,7 @@ export const platforms = {
     cores: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
   },
   gbc: {
-    displayName: 'Game Boy Color',
+    displayName: '任天堂 Game Boy Color (GBC)',
     shortLabel: 'GBC',
     manufacturer: 'Nintendo',
     releaseDate: '1998-10-21',
@@ -163,7 +139,7 @@ export const platforms = {
     cores: ['mgba', 'gambatte', 'gearboy', 'tgbdual'],
   },
   gba: {
-    displayName: 'Game Boy Advance',
+    displayName: '任天堂 Game Boy Advance (GBA)',
     shortLabel: 'GBA',
     manufacturer: 'Nintendo',
     releaseDate: '2001-06-11',
@@ -175,7 +151,7 @@ export const platforms = {
 
   // Sega
   megadrive: {
-    displayName: 'Mega Drive',
+    displayName: '世嘉五代 (MD / Genesis)',
     shortLabel: 'MD',
     manufacturer: 'Sega',
     releaseDate: '1988-10-29',
@@ -184,19 +160,8 @@ export const platforms = {
     fileExtensions: ['.md', '.gen', '.smd', '.bin', '.zip'],
     cores: ['genesis_plus_gx', 'picodrive'],
   },
-  // 别名：与上面的 megadrive 同一台硬件（美版叫 Genesis），配置逐项相同。
-  genesis: {
-    displayName: 'Genesis',
-    shortLabel: 'GEN',
-    manufacturer: 'Sega',
-    releaseDate: '1989-08-14',
-    libretroName: 'Sega - Genesis',
-    color: '#ff9500',
-    fileExtensions: ['.md', '.gen', '.smd', '.bin', '.zip'],
-    cores: ['genesis_plus_gx', 'picodrive'],
-  },
   sms: {
-    displayName: 'Master System',
+    displayName: '世嘉 Master System (SMS)',
     shortLabel: 'SMS',
     manufacturer: 'Sega',
     releaseDate: '1985-10-20',
@@ -206,7 +171,7 @@ export const platforms = {
     cores: ['genesis_plus_gx', 'picodrive', 'gearsystem'],
   },
   gamegear: {
-    displayName: 'Game Gear',
+    displayName: '世嘉 Game Gear (GG)',
     shortLabel: 'GG',
     manufacturer: 'Sega',
     releaseDate: '1990-10-06',
@@ -216,7 +181,7 @@ export const platforms = {
     cores: ['genesis_plus_gx', 'gearsystem'],
   },
   sega32x: {
-    displayName: 'Super 32X',
+    displayName: '世嘉 Super 32X (32X)',
     shortLabel: '32X',
     manufacturer: 'Sega',
     releaseDate: '1994-11-21',
@@ -229,7 +194,7 @@ export const platforms = {
 
   // Sony
   psx: {
-    displayName: 'PlayStation',
+    displayName: '索尼 PlayStation (PS1)',
     shortLabel: 'PS1',
     manufacturer: 'Sony',
     releaseDate: '1994-12-03',
@@ -241,7 +206,7 @@ export const platforms = {
 
   // NEC
   pcengine: {
-    displayName: 'PC Engine',
+    displayName: 'NEC PC Engine (PCE)',
     shortLabel: 'PCE',
     manufacturer: 'NEC',
     releaseDate: '1987-10-30',
@@ -252,7 +217,7 @@ export const platforms = {
     buttons: withTurbo(BTN_PCE),
   },
   pcecd: {
-    displayName: 'PC Engine CD',
+    displayName: 'NEC PC Engine CD (PCE-CD)',
     shortLabel: 'PCE-CD',
     manufacturer: 'NEC',
     releaseDate: '1988-12-04',
@@ -266,7 +231,7 @@ export const platforms = {
 
   // SNK
   neogeocd: {
-    displayName: 'Neo Geo CD',
+    displayName: 'SNK Neo Geo CD (NEOCD)',
     shortLabel: 'NEOCD',
     manufacturer: 'SNK',
     releaseDate: '1994-09-09',
@@ -278,7 +243,7 @@ export const platforms = {
     buttons: withTurbo(BTN_NEOGEO),
   },
   ngp: {
-    displayName: 'Neo Geo Pocket / Color',
+    displayName: 'SNK Neo Geo Pocket / Color (NGP)',
     shortLabel: 'NGP',
     manufacturer: 'SNK',
     releaseDate: '1998-10-28',
@@ -290,7 +255,7 @@ export const platforms = {
 
   // 3DO
   '3do': {
-    displayName: '3DO Interactive Multiplayer',
+    displayName: '3DO 主机 (3DO)',
     shortLabel: '3DO',
     manufacturer: 'The 3DO Company',
     releaseDate: '1993-10-04',
@@ -304,7 +269,7 @@ export const platforms = {
 
   // 手机游戏
   j2me: {
-    displayName: 'Java ME (J2ME 手机游戏)',
+    displayName: '手机游戏 (J2ME)',
     shortLabel: 'J2ME',
     manufacturer: '各手机厂商',
     releaseDate: '2000-05-01',
@@ -317,16 +282,40 @@ export const platforms = {
   },
 }
 
-// Tab grouping by manufacturer (for Gallery tabs)
-export const tabGroups = {
-  arcade:   { label: '街机',   platforms: ['arcade'] },
-  nintendo: { label: '任天堂', platforms: ['nes', 'famicom', 'fds', 'sfc', 'snes', 'gb', 'gbc', 'gba'] },
-  sega:     { label: '世嘉',   platforms: ['megadrive', 'genesis', 'sega32x', 'sms', 'gamegear'] },
-  sony:     { label: '索尼',   platforms: ['psx'] },
-  nec:      { label: 'NEC',    platforms: ['pcengine', 'pcecd'] },
-  snk:      { label: 'SNK',    platforms: ['neogeocd', 'ngp'] },
-  '3do':    { label: '3DO',    platforms: ['3do'] },
-  j2me:     { label: '手机游戏', platforms: ['j2me'] },
+// 游戏机分类：一台机器一项，分类筛选（首页主机下拉框、我的 ROM 与后台的筛选）都
+// 按它列。顺序就是下面 platforms 表的定义顺序 —— 大致按厂商聚在一起（任天堂的几台
+// 挨着、世嘉的几台挨着），比按游戏数量排更稳，玩家找机器时位置不会天天变。
+export const platformOrder = Object.keys(platforms)
+
+/**
+ * 把 ROM 列表按游戏机聚合，供分类筛选与统计使用。
+ *
+ * - 区域别名（famicom / snes / genesis）算进各自的通用名，所以同一台机器只会出现
+ *   一项，不会出现「一个名字有游戏、另一个名字一盘都没有」；
+ * - 只给出真有游戏的机器，空分类不摆进下拉框；include 里的 id 无论有没有游戏都会
+ *   保留（比如当前选中的那台，触发器上不会忽然空掉）。
+ * 返回 [{ id, label, shortLabel, color, count }]，label 是「中文 (英文)」。
+ */
+export function platformFacets(list = [], { include = [] } = {}) {
+  const counts = new Map()
+  for (const item of list) {
+    const id = resolvePlatformId(item?.platform)
+    if (!platforms[id]) continue
+    counts.set(id, (counts.get(id) || 0) + 1)
+  }
+  for (const raw of include) {
+    const id = resolvePlatformId(raw)
+    if (id && platforms[id] && !counts.has(id)) counts.set(id, 0)
+  }
+  return platformOrder
+    .filter((id) => counts.has(id))
+    .map((id) => ({
+      id,
+      label: platforms[id].displayName,
+      shortLabel: platforms[id].shortLabel,
+      color: platforms[id].color,
+      count: counts.get(id),
+    }))
 }
 
 // Button profile per platform — attached after definition to keep the registry
@@ -334,15 +323,12 @@ export const tabGroups = {
 const BUTTON_PROFILES = {
   arcade:     withTurbo(BTN_ARCADE),
   nes:        withTurbo(BTN_NES),
-  famicom:    withTurbo(BTN_NES),
   fds:        withTurbo(BTN_FDS),
   sfc:        withTurbo(BTN_SNES),
-  snes:       withTurbo(BTN_SNES),
   gb:         withTurbo(BTN_GB),
   gbc:        withTurbo(BTN_GB),
   gba:        withTurbo(BTN_GBA),
   megadrive:  withTurbo(BTN_MD),
-  genesis:    withTurbo(BTN_MD),
   sms:        withTurbo(BTN_SIMPLE),
   gamegear:   withTurbo(BTN_SIMPLE),
   psx:        withTurbo(BTN_PSX),
@@ -391,8 +377,7 @@ const BUTTON_LABELS = {
   // "C" sits. Labeling a→'B' / b→'A' (what we had) made the on-screen "A" fire
   // the game's B and so on.
   megadrive: { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
-  genesis:   { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
-  // 32X 用的就是 MD 的六键手柄，映射与上面两行逐项相同。
+  // 32X 用的就是 MD 的六键手柄，映射与上面一行逐项相同。
   sega32x:   { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
 
   // Sega Master System / Game Gear — retropad_b is Button 1 (primary)
@@ -406,7 +391,6 @@ const BUTTON_LABELS = {
   // which is the native hardware labeling. FC/NES 系列在 PC 上多出 X/Y 两行，
   // 它们是 core 的「连发 A / 连发 B」，这里把标签写明，避免玩家以为 X/Y 是普通按键。
   nes:       { x: '连发A', y: '连发B' },
-  famicom:   { x: '连发A', y: '连发B' },
   // FDS 的 L / R 不是手柄上的肩键，而是磁碟机的两个动作：L = 换面（A / B 面），
   // R = 换盘（弹出 / 插回，多盘游戏用来换到另一张盘）。标签直接写成动作名，
   // 按键设置里才不会出现「L / R 是干什么的」这种疑问。
@@ -440,6 +424,18 @@ for (const [id, p] of Object.entries(platforms)) {
   p.buttonLabels = BUTTON_LABELS[id] || null
 }
 
+/**
+ * 把平台 id 收敛到通用名：区域别名 famicom → nes、snes → sfc、genesis → megadrive，
+ * 其余（含空值与未知 id）原样返回。别名只可能出现在旧数据里（历史 ROM 记录、老客户端
+ * 上传的平台），写库前后端已经归一，这里再兜一层，免得读到老记录时掉进默认值。
+ */
+export function resolvePlatformId(id) {
+  const key = String(id ?? '')
+  if (platforms[key]) return key
+  const normalized = normalizePlatformId(key)
+  return platforms[normalized] ? normalized : key
+}
+
 export function getPlatform(id) {
-  return platforms[id] || platforms.nes
+  return platforms[resolvePlatformId(id)] || platforms.nes
 }

@@ -987,7 +987,8 @@ Native["com/sun/cldc/isolate/Isolate.getIsolates0.()[Lcom/sun/cldc/isolate/Isola
 Native["com/sun/cldc/isolate/Isolate.setPriority0.(I)V"] = function(addr, newPriority) {
 };
 Native["com/sun/j2me/content/AppProxy.midletIsAdded.(ILjava/lang/String;)V"] = function(addr, suiteId, classNameAddr) {
-  console.warn("com/sun/j2me/content/AppProxy.midletIsAdded.(ILjava/lang/String;)V not implemented");
+  // Site patch (silent MIDP internals): CHAPI bookkeeping for the AMS list of installed
+  // MIDlets. This runtime does not keep one, so there is nothing to add.
 };
 Native["com/nokia/mid/impl/jms/core/Launcher.handleContent.(Ljava/lang/String;)V"] = function(addr, contentAddr) {
   var fileName = J2ME.fromStringAddr(contentAddr);
@@ -1467,7 +1468,7 @@ if (typeof module === "object") {
     var zip = new ZipFile(jarData, false);
     if(jarName!="java/classes.jar")
     {
-      console.log(config)
+      // Site patch (no debug logging): the fork printed the whole config object here.
       var jar = zip.directory;
       mffile = jar['META-INF/MANIFEST.MF'];
       
@@ -1483,7 +1484,7 @@ if (typeof module === "object") {
       mfdata=new TextDecoder('utf-8').decode(mfdata);
       console.log(mfdata);
       processJAD(mfdata);
-      console.log(MIDP.manifest)
+      // Site patch (no debug logging): the fork printed the whole manifest object here.
       var a=MIDP.manifest['MIDlet-1'];
       console.log(a)
       a=a.substr(a.lastIndexOf(',')+1).trim()
@@ -6871,15 +6872,20 @@ if (typeof module !== "undefined" && module.exports) {
     return 0;
   };
   Native["com/sun/midp/midletsuite/MIDletSuiteImpl.lockMIDletSuite.(IZ)V"] = function(addr, id, lock) {
-    console.warn("MIDletSuiteImpl.lockMIDletSuite.(IZ)V not implemented (" + id + ", " + lock + ")");
+    // Site patch (silent MIDP internals): the AMS locks a suite's storage while it
+    // installs or deletes one. One MIDlet runs at a time here and nothing else touches
+    // its suite directory, so there is no lock to take.
   };
   Native["com/sun/midp/midletsuite/MIDletSuiteImpl.unlockMIDletSuite.(I)V"] = function(addr, suiteId) {
-    console.warn("MIDletSuiteImpl.unlockMIDletSuite.(I)V not implemented (" + suiteId + ")");
+    // Site patch (silent MIDP internals): pairs with lockMIDletSuite above, which never
+    // takes a lock.
   };
   Native["com/sun/midp/midletsuite/InstallInfo.load.()V"] = function(addr) {
     var self = getHandle(addr);
+    // Site patch (silent MIDP internals): the suite record only carries the trust flag
+    // so far; the installer asks for nothing else. Keep it quiet until something reads
+    // a field that is really missing.
     self.trusted = 1;
-    console.warn("com/sun/midp/midletsuite/InstallInfo.load.()V incomplete");
   };
   Native["com/sun/midp/midletsuite/SuiteProperties.load.()[Ljava/lang/String;"] = function(addr) {
     var keys = Object.keys(manifest);
@@ -7248,7 +7254,9 @@ if (typeof module !== "undefined" && module.exports) {
     return J2ME.newString(value);
   };
   Native["javax/microedition/lcdui/Display.drawTrustedIcon0.(IZ)V"] = function(addr, dispId, drawTrusted) {
-    console.warn("Display.drawTrustedIcon0.(IZ)V not implemented (" + dispId + ", " + drawTrusted + ")");
+    // Site patch (silent MIDP internals): shows or hides the "trusted MIDlet" icon in
+    // the platform's title bar. This runtime draws the MIDlet's display area and no
+    // title bar of its own, so both directions are a no-op.
   };
   Native["com/sun/midp/events/EventQueue.sendShutdownEvent.()V"] = function(addr) {
     sendNativeEvent({type:EVENT_QUEUE_SHUTDOWN}, $.ctx.runtime.isolateId);
@@ -7259,7 +7267,8 @@ if (typeof module !== "undefined" && module.exports) {
     exit();
   };
   Native["com/sun/midp/suspend/SuspendSystem$MIDPSystem.allMidletsKilled.()Z"] = function(addr) {
-    console.warn("SuspendSystem$MIDPSystem.allMidletsKilled.()Z not implemented");
+    // Site patch (silent MIDP internals): answers whether the platform killed every
+    // MIDlet behind the app's back. It never does here, so the answer is always false.
     return 0;
   };
   var SYSTEM_KEY_POWER = 1;
@@ -7294,7 +7303,7 @@ if (typeof module !== "undefined" && module.exports) {
   // codes the cross sends are in the table next to them.
   var gameKeys = {119:1, 97:2, 115:6, 100:5, 32:8, 113:9, 101:10, 122:11, 99:12 , "-1":1, "-2":6, "-3":2, "-4":5, "-5":8, "-6":11,37:2,38:1,39:5,40:6,13:8,81:8,69:11,50:1,52:2,54:5,56:6,53:8,49:9,51:10,55:11,57:12}; //
   Native["javax/microedition/lcdui/KeyConverter.getGameAction.(I)I"] = function(addr, keyCode) {
-    console.log(keyCode);
+    // Site patch (no debug logging): the fork printed every key code here.
     return gameKeys[keyCode] ||gameKeys[keyCode.toString()] || 0;
     //return keyCode;
     //游戏键盘？？屏蔽
@@ -8325,7 +8334,9 @@ var currentlyFocusedTextEditor;
     return offscreenCanvas.height;
   };
   Native["com/sun/midp/lcdui/DisplayDevice.displayStateChanged0.(II)V"] = function(addr, hardwareId, state) {
-    console.warn("DisplayDevice.displayStateChanged0.(II)V not implemented (" + hardwareId + ", " + state + ")");
+    // Site patch (silent MIDP internals): the phone's display power and rotation state
+    // belong to the host page here, and the MIDlet's canvas is drawn at a fixed size.
+    // Nothing to reconfigure.
   };
   Native["com/sun/midp/lcdui/DisplayDevice.gainedForeground0.(II)V"] = function(addr, hardwareId, displayId) {
     hideSplashScreen();
@@ -9627,7 +9638,8 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
 	mytitle = J2ME.fromStringAddr(titleAddr);
   };
   Native["javax/microedition/lcdui/CanvasLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I"] = function(addr, titleAddr, tickerAddr) {
-    console.warn("javax/microedition/lcdui/CanvasLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I not implemented");
+    // Site patch (silent MIDP internals): handing the LFImpl a fresh displayable id is
+    // the whole implementation -- the id is what the other LFImpl natives receive back.
     curDisplayableId = nextMidpDisplayableId++;
     return curDisplayableId;
   };
@@ -13651,7 +13663,12 @@ var Content = function() {
     return 1;
   };
   
-  addUnimplementedNative("com/sun/j2me/content/InvocationStore.setCleanup0.(ILjava/lang/String;Z)V");
+  // Site patch (silent MIDP internals): CHAPI asks whether an invocation should be
+  // cleaned up when the MIDlet exits. Nothing here keeps an invocation between runs,
+  // so there is nothing to clean up. addUnimplementedNative cannot say that: it warns
+  // on its first call whatever body it is given, so register the native directly.
+  Native["com/sun/j2me/content/InvocationStore.setCleanup0.(ILjava/lang/String;Z)V"] = function(addr, suiteId, classNameAddr, cleanup) {
+  };
   Native["com/sun/j2me/content/InvocationStore.getByTid0.(Lcom/sun/j2me/content/InvocationImpl;II)I"] = function(addr, invocAddr, tid, mode) {
     var invoc = getHandle(invocAddr);
     getInvocationCalled = true;
@@ -14205,7 +14222,7 @@ var jvm = new JVM;
 if ("gamepad" in config && !/no|0/.test(config.gamepad)) {
   document.documentElement.classList.add("gamepad");
 }  
-console.log("config.gamepadSize "+config.gamepadSize);
+// Site patch (no debug logging): the fork printed this config value, always undefined.
 if(config.gamepad)
 {
   if(config.gamepadSize)
@@ -14282,7 +14299,7 @@ if(!isIndex)
   { 
     JARStore.loadJAR(config.localjar).then(
       function(res){
-        console.log(res);
+        // Site patch (no debug logging): the fork printed the JAR store result object here.
         mffile = res.jar['META-INF/MANIFEST.MF'];
         mfdata=''
         switch(mffile.compression_method) {

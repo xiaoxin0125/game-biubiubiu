@@ -272,13 +272,13 @@ CORES_DIR=/www/wwwroot/game/data/cores
 | 平台 | ROM 扩展名 | 核心顺序 | 默认人数 |
 |---|---|---|---|
 | `arcade` | `.zip` | `fbneo`、`mame2003_plus` | 4P |
-| `nes` / `famicom` | `.nes`、`.unif`、`.unf`、`.zip` | `nestopia`、`fceumm`、`quicknes` | 2P |
+| `nes` | `.nes`、`.unif`、`.unf`、`.zip` | `nestopia`、`fceumm`、`quicknes` | 2P |
 | `fds` | `.fds`、`.zip` | `nestopia`、`fceumm` | 2P |
-| `sfc` / `snes` | `.smc`、`.sfc`、`.zip` | `snes9x` | 2P |
+| `sfc` | `.smc`、`.sfc`、`.zip` | `snes9x` | 2P |
 | `gb` | `.gb`、`.zip` | `mgba`、`gambatte`、`gearboy`、`tgbdual` | 1P |
 | `gbc` | `.gb`、`.gbc`、`.cgb`、`.sgb`、`.zip` | `mgba`、`gambatte`、`gearboy`、`tgbdual` | 1P |
 | `gba` | `.gba`、`.zip` | `mgba`、`mgba2`、`vba_next` | 1P，`mgba2` 为 4P 特例 |
-| `megadrive` / `genesis` | `.md`、`.gen`、`.smd`、`.bin`、`.zip` | `genesis_plus_gx`、`picodrive` | 2P |
+| `megadrive` | `.md`、`.gen`、`.smd`、`.bin`、`.zip` | `genesis_plus_gx`、`picodrive` | 2P |
 | `sms` | `.sms`、`.zip` | `genesis_plus_gx`、`picodrive`、`gearsystem` | 1P |
 | `gamegear` | `.gg`、`.zip` | `genesis_plus_gx`、`gearsystem` | 1P |
 | `sega32x` | `.32x`、`.bin`、`.gen`、`.md`、`.zip` | `picodrive` | 2P |
@@ -290,7 +290,7 @@ CORES_DIR=/www/wwwroot/game/data/cores
 | `3do` | `.chd`、`.cue`、`.iso`、`.bin` | `opera` | 2P |
 | `j2me` | `.jar` | 本机托管的 `j2mejs` | 1P |
 
-表里 `nes` / `famicom`、`sfc` / `snes`、`megadrive` / `genesis` 是三对区域别名：同一台硬件、同一套扩展名、同一批核心、同样的默认人数与按键，只有界面上给玩家看的叫法不同（红白机 / NES、超任 / SNES、日版 MD / 美版 Genesis）。注意平台 id 是 ROM 记录上的字段，同时也是分组键：上传页按扩展名自动识别只认「一个扩展名基本只可能属于一台机器」的情况（`.nes`、`.unif`、`.unf` → `nes`，`.smc`、`.sfc` → `sfc`，`.md`、`.gen`、`.smd` → `megadrive`，`.pce` → `pcengine`，`.32x` → `sega32x`，`.ngp` / `.ngc` / `.ngpc` / `.npc` → `ngp`，`.jar` → `j2me`，任何 `.zip` → `arcade`），光盘镜像（`.cue` / `.chd` / `.iso`）与 `.bin` 多台机器共用，不再自动识别，要手动选；三对别名同样要手动选。父子版本要求平台一致，所以同一款游戏不要一半标 `nes`、一半标 `famicom`，那样两者无法互为版本。
+一台机器在表里只有一条记录：红白机 / NES 记作 `nes`（界面显示「任天堂红白机 (FC / NES)」，徽章 `FC`），超任 / SNES 记作 `sfc`（`SFC`），世嘉五代 / MD / Genesis 记作 `megadrive`（`MD`）。区域叫法不再各占一条平台记录，否则分类筛选里同一台机器会出现两项、其中一项一盘游戏都没有，同一款游戏一半标 `nes`、一半标 `famicom` 时也无法互为版本。历史数据里的旧别名（`famicom`、`snes`、`genesis`）由迁移 `0008_platform_aliases` 并到通用名上，后端收到老客户端上传的别名也会先归一（见 `shared/registry/platform-roms.js` 的 `normalizePlatformId()`）。注意平台 id 是 ROM 记录上的字段，同时也是分组键：上传页按扩展名自动识别只认「一个扩展名基本只可能属于一台机器」的情况（`.nes`、`.unif`、`.unf` → `nes`，`.smc`、`.sfc` → `sfc`，`.md`、`.gen`、`.smd` → `megadrive`，`.pce` → `pcengine`，`.32x` → `sega32x`，`.ngp` / `.ngc` / `.ngpc` / `.npc` → `ngp`，`.jar` → `j2me`，任何 `.zip` → `arcade`），光盘镜像（`.cue` / `.chd` / `.iso`）与 `.bin` 多台机器共用，不再自动识别，要手动选。首页的主机分类下拉框、我的 ROM 与后台的平台筛选都以「机器」为单位（每台机器一项、标签是平台表里的「中文 (英文)」，只列真有游戏的机器），所以不会再出现空分类。
 
 BIOS 按平台放在 `data/bios/<平台>/` 下：FDS 需要 `disksys.rom`；PSX 常用 BIOS 为 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`；PCE-CD 需要 `syscard3.pce`（去掉 512 字节 copier 头后的本体，MD5 `38179df8f4ac870017db21ebcbf53114`）；Neo Geo CD 需要 `neocd_f.rom` 与 `ng-lo.rom`（核心按 `system/neocd/` 找，挂载时的子目录由 `shared/registry/platform-bios.js` 的挂载表补上）；3DO 用日版 FZ-1 的 `panafz1j.bin` 与日版字库 `panafz1j-kanji.bin`（核心选项里已点名这两份）；J2ME 改用前端本机托管的 J2meJS，不需要 BIOS；当前上传格式只接受 `.jar`，JAD/JAM 描述文件需要先取得对应 JAR 后再上传；`.sqc` 不受支持。J2meJS 的 MIDP/厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；不支持即时存档/读档，游戏内 RMS 存档仅在当前运行会话有效。后台「BIOS 文件」页会列出每个平台的必填项与缺失文件。
 

@@ -163,7 +163,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { platforms } from '../constants/platforms.js'
+import { platforms, resolvePlatformId } from '../constants/platforms.js'
 import { autoDetectPlatform } from '../../../shared/registry/platform-roms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import { api } from '../api/client.js'
@@ -248,7 +248,9 @@ const coverLabel = computed(() => (asVariant.value ? '封面图片（可选，�
 
 const sameCandidates = computed(() => {
   if (!platform.value) return []
-  return existingRoms.value.filter((r) => r.platform === platform.value)
+  // 平台按通用名比较：父 ROM 是老记录、写着别名（famicom / snes / genesis）时也能选。
+  const id = resolvePlatformId(platform.value)
+  return existingRoms.value.filter((r) => resolvePlatformId(r.platform) === id)
 })
 
 const selectedParent = computed(() => sameCandidates.value.find((r) => r.id === parentRomId.value) || null)

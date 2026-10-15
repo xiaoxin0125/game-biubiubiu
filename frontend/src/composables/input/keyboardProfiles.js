@@ -1,5 +1,6 @@
 import { RETROPAD_BUTTON_DEFS, RETROPAD_BUTTON_KEYS } from './buttons.js'
 import { normalizeRetroarchKey } from './keyboardKeys.js'
+import { resolvePlatformId } from '../../constants/platforms.js'
 
 // 默认键位按“手区 + 方位”排：P1 用左手十字 + 右手按键，P2 用右手十字 + 数字
 // 小键盘。同一块键盘上所有参与者的键必须互不重叠（见 remotePlayers.js 与
@@ -34,13 +35,12 @@ const MEGADRIVE_KEYBOARD = {
 const PLATFORM_DEFAULT_KEYBOARDS = {
   arcade: ARCADE_KEYBOARD,
   megadrive: MEGADRIVE_KEYBOARD,
-  genesis: MEGADRIVE_KEYBOARD,
 }
 
 export const DEFAULT_PLAYER1_RUNTIME_KEYBOARD = { ...DEFAULT_KEYBOARD }
 
 export function defaultPlayer1KeyboardForPlatform(platform = null) {
-  return PLATFORM_DEFAULT_KEYBOARDS[platform] || DEFAULT_KEYBOARD
+  return PLATFORM_DEFAULT_KEYBOARDS[resolvePlatformId(platform)] || DEFAULT_KEYBOARD
 }
 
 // 历史默认键位。存下来的映射只要和某一版历史默认完全一致，就当成“用户没改过”，
@@ -199,12 +199,11 @@ const MEGADRIVE_LOCAL_PLAYER2_KEYBOARD = {
 const PLATFORM_LOCAL_PLAYER2_DEFAULT_KEYBOARDS = {
   arcade: ARCADE_LOCAL_PLAYER2_KEYBOARD,
   megadrive: MEGADRIVE_LOCAL_PLAYER2_KEYBOARD,
-  genesis: MEGADRIVE_LOCAL_PLAYER2_KEYBOARD,
 }
 
 export function defaultLocalKeyboardForPlayer(player = 1, platform = null) {
   if (Number(player) === 2) {
-    return (platform && PLATFORM_LOCAL_PLAYER2_DEFAULT_KEYBOARDS[platform]) || LOCAL_PLAYER2_DEFAULT_KEYBOARD
+    return PLATFORM_LOCAL_PLAYER2_DEFAULT_KEYBOARDS[resolvePlatformId(platform)] || LOCAL_PLAYER2_DEFAULT_KEYBOARD
   }
   return defaultPlayer1KeyboardForPlatform(platform)
 }

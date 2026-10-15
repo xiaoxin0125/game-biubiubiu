@@ -103,7 +103,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
-import { getPlatform } from '../../constants/platforms.js'
+import { getPlatform, resolvePlatformId } from '../../constants/platforms.js'
 import { isTouchDeviceLayout } from '../../composables/touchLayout.js'
 import { useInputMapping, TURBO_BUTTON_TARGETS, TURBO_FIRE_MS } from '../../composables/useInputMapping.js'
 import { dispatchKeyboardEvent } from '../../composables/dispatchKeyboardEvent.js'
@@ -172,9 +172,10 @@ function labelOf(key, fallback) {
 
 // Face-button layout presets. Each layout lists retropad keys in render order
 // with its color. Physical positioning is CSS-driven via `.face-<layout>`.
-// The Chinese-market platforms are: arcade / nes+famicom+fds / sfc / snes /
-// gb / gbc / gba / megadrive+genesis+sega32x / sms / gamegear / psx /
-// pcengine+pcecd / neogeocd / ngp / 3do / j2me.
+// The Chinese-market platforms are: arcade / nes+fds / sfc / gb / gbc / gba /
+// megadrive+sega32x / sms / gamegear / psx / pcengine+pcecd / neogeocd / ngp /
+// 3do / j2me. 区域别名（famicom / snes / genesis）先收敛到通用名再挑布局 ——
+// 老记录里的别名照样摆出机器本来的手柄。
 // Colors roughly match the real hardware pads: FC-era A = 黄/橙, B = 红
 // (classic 小霸王 2-button look); SNES Japan version has multi-colored
 // buttons; PlayStation uses its iconic symbol colors.
@@ -215,16 +216,17 @@ const FACE_LAYOUTS = {
 }
 
 function pickLayout(platform) {
-  if (platform === 'arcade' || platform === 'neogeocd') return 'arcade'
-  if (platform === 'psx') return 'ps'
-  if (platform === 'sfc' || platform === 'snes') return 'snes'
-  if (platform === 'megadrive' || platform === 'genesis' || platform === 'sega32x') return 'md'
-  if (platform === 'sms' || platform === 'gamegear') return 'sms'
-  if (platform === 'gba') return 'gba'
-  if (platform === 'pcengine' || platform === 'pcecd') return 'pce'
-  if (platform === '3do') return '3do'
-  if (platform === 'j2me') return 'j2me'
-  return 'fc'  // nes, famicom, fds, gb, gbc, ngp, and everything else
+  const id = resolvePlatformId(platform)
+  if (id === 'arcade' || id === 'neogeocd') return 'arcade'
+  if (id === 'psx') return 'ps'
+  if (id === 'sfc') return 'snes'
+  if (id === 'megadrive' || id === 'sega32x') return 'md'
+  if (id === 'sms' || id === 'gamegear') return 'sms'
+  if (id === 'gba') return 'gba'
+  if (id === 'pcengine' || id === 'pcecd') return 'pce'
+  if (id === '3do') return '3do'
+  if (id === 'j2me') return 'j2me'
+  return 'fc'  // nes, fds, gb, gbc, ngp, and everything else
 }
 
 const layoutType = computed(() => pickLayout(props.platform))

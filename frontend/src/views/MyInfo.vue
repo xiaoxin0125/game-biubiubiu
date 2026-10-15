@@ -100,7 +100,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
-import { getPlatform, platforms } from '../constants/platforms.js'
+import { getPlatform, resolvePlatformId } from '../constants/platforms.js'
 import { formatServerTime } from '../composables/formatTime.js'
 import RomCover from '../components/RomCover.vue'
 
@@ -125,13 +125,15 @@ onMounted(async () => {
 
 const totalPlays = computed(() => plays.value.reduce((sum, item) => sum + Number(item.playCount || 0), 0))
 
-// 平台分布：把每盘游戏的游玩次数按平台累加起来，再按次数从多到少排。
+// 平台分布：把每盘游戏的游玩次数按游戏机累加起来，再按次数从多到少排。区域别名
+// （famicom / snes / genesis）算进通用名，同一台机器只占一行。
 const distribution = computed(() => {
   const counts = new Map()
   for (const item of plays.value) {
     const platform = item.rom?.platform
     if (!platform) continue
-    counts.set(platform, (counts.get(platform) || 0) + Number(item.playCount || 0))
+    const id = resolvePlatformId(platform)
+    counts.set(id, (counts.get(id) || 0) + Number(item.playCount || 0))
   }
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0)
   return [...counts.entries()]
@@ -141,7 +143,7 @@ const distribution = computed(() => {
       label: getPlatform(platform).shortLabel,
       // 并排一行后这一列只剩几十像素，短名显示、全名挂在 title 上
       name: getPlatform(platform).displayName,
-      color: platforms[platform]?.color || 'var(--accent)',
+      color: getPlatform(platform).color,
       // 最少的也留 4% 宽度，不然长尾的平台条会细到看不见
       percent: total ? Math.max(4, Math.round((count / total) * 100)) : 0,
     }))

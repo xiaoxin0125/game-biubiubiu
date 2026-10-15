@@ -12,6 +12,12 @@
 //   6. bld/j2me.js              — keep Java bounds/null/array-store checks active
 //   7. bld/j2me.js              — turn failed array allocation into OutOfMemoryError
 //   8. bld/j2me.js              — disable the optional compiled-method cache
+//   9. bld/j2me.js              — a null receiver throws Java NullPointerException, not a JS TypeError
+//  10. bld/j2me.js              — only uncaught Java exceptions are reported
+//  11. bld/j2me.js              — no createException line per exception created
+//  12. bld/main-all.js          — debug value dumps (key codes, config, manifest) removed
+//  13. bld/main-all.js          — MIDP internals that are no-ops here stop warning
+//  14. main.html                — load lcdui.js (the canvas LCDUI) after the runtime
 //
 // Usage: node frontend/public/j2me/apply-site-patches.mjs
 import fs from 'node:fs'
@@ -300,6 +306,263 @@ if (config.jars || window.__j2meJars) {
       anchor: '<script defer src="bld/main-all.js"></script>',
       replacement: `<script defer src="bld/main-all.js"></script>
 <script defer src="bridge.js"></script>`,
+    },
+  },
+  {
+    // The MIDP high-level screens (Form / List / Alert / Gauge …) are drawn into the
+    // runtime's canvas by lcdui.js. The runtime's own implementation builds DOM
+    // elements inside its page; the player mirrors only `#canvas`, so a game that
+    // opens with a Form or List showed nothing at all (and timed out at boot).
+    // lcdui.js has to load after main-all.js, whose LCDUI natives it replaces.
+    label: 'main.html: lcdui.js',
+    file: 'main.html',
+    applied: (text) => text.includes('lcdui.js'),
+    anchor: '<script defer src="bld/main-all.js"></script>\n<script defer src="bridge.js"></script>',
+    replacement: `<script defer src="bld/main-all.js"></script>
+<script defer src="lcdui.js"></script>
+<script defer src="bridge.js"></script>`,
+  },
+  {
+    label: 'bld/j2me.js: a null receiver throws Java NullPointerException, not a JS TypeError',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (virtual call null check)'),
+    anchor: `                                case 182 /* INVOKEVIRTUAL */:
+                                    calleeTargetMethodInfo = classInfo.vTable[calleeMethodInfo.vTableIndex];
+                                    break;
+                                case 185 /* INVOKEINTERFACE */:
+                                    calleeTargetMethodInfo = classInfo.iTable[calleeMethodInfo.mangledName];
+                                    break;`,
+    replacement: `                                // Site patch (virtual call null check): the INVOKESPECIAL
+                                // case above checks the receiver, but the virtual and interface
+                                // cases dereferenced classInfo, which the invoke path sets to null
+                                // when the receiver is null. The result was a JavaScript TypeError
+                                // that only became a Java NullPointerException at the interpreter's
+                                // catch (translateException) -- a red console error on every such
+                                // call, and a JS exception unwinding through code that expects a
+                                // Java one. Throw it here, like INVOKESPECIAL does; throwException
+                                // never returns for a NullPointerException.
+                                case 182 /* INVOKEVIRTUAL */:
+                                    if (address === 0 /* NULL */) {
+                                        thread.throwException(fp, sp, opPC, 3 /* NullPointerException */);
+                                        calleeTargetMethodInfo = calleeMethodInfo;
+                                        break;
+                                    }
+                                    calleeTargetMethodInfo = classInfo.vTable[calleeMethodInfo.vTableIndex];
+                                    break;
+                                case 185 /* INVOKEINTERFACE */:
+                                    if (address === 0 /* NULL */) {
+                                        thread.throwException(fp, sp, opPC, 3 /* NullPointerException */);
+                                        calleeTargetMethodInfo = calleeMethodInfo;
+                                        break;
+                                    }
+                                    calleeTargetMethodInfo = classInfo.iTable[calleeMethodInfo.mangledName];
+                                    break;`,
+  },
+  {
+    label: 'bld/j2me.js: only uncaught Java exceptions reach the console',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (quiet handled exceptions)'),
+    anchor: `                if(e && e.constructor && e.constructor.prototype && e.constructor.prototype.classInfo && e.constructor.prototype.classInfo._name)
+                {
+                    var detailMessage=''
+                    if(e.detailMessage){
+                        detailMessage=J2ME.fromStringAddr(e.detailMessage);
+                    }
+                    console.warn("error occurs at : "+e.constructor.prototype.classInfo._name +" detailMessage: "+detailMessage);
+                    console.error(e); 
+                }else{
+                    console.error(e);
+                } `,
+    replacement: `                if(e && e.constructor && e.constructor.prototype && e.constructor.prototype.classInfo && e.constructor.prototype.classInfo._name)
+                {
+                    // Site patch (quiet handled exceptions): a Java exception passing
+                    // through here is the normal case -- MIDlets raise and catch them
+                    // constantly, and this fork printed a warning plus an object dump for
+                    // every one of them. Keep it on the debug channel, which the devtools
+                    // console hides unless verbose logging is switched on; the uncaught
+                    // case is reported once by exceptionUnwind instead.
+                    var detailMessage=''
+                    if(e.detailMessage){
+                        detailMessage=J2ME.fromStringAddr(e.detailMessage);
+                    }
+                    console.debug("error occurs at : "+e.constructor.prototype.classInfo._name +" detailMessage: "+detailMessage, e);
+                }else{
+                    console.error(e);
+                } `,
+    then: {
+      anchor: `                    case FrameType.ExitInterpreter:
+                        this.popMarkerFrame(FrameType.ExitInterpreter);
+                        throw e;`,
+      replacement: `                    case FrameType.ExitInterpreter:
+                        // Site patch (quiet handled exceptions): the search walked every
+                        // frame without finding a handler, so nothing in the MIDlet will
+                        // catch this and the interpreter is about to stop. That is the
+                        // one Java exception worth reporting.
+                        console.error("Uncaught Java exception: " +
+                            (e && e.classInfo ? e.classInfo._name : String(e)) +
+                            (e && e.detailMessage ? ", detailMessage: " + J2ME.fromStringAddr(e.detailMessage) : ""));
+                        this.popMarkerFrame(FrameType.ExitInterpreter);
+                        throw e;`,
+    },
+  },
+  {
+    // The fork leaves its author's debugging in the shipped build: a bare key code on
+    // every key press, the whole manifest and JAR-store objects on every load, and an
+    // undefined config value at boot. The runtime's own informational output (boot
+    // progress, media lifecycle, thread ids) is deliberately left alone; only these
+    // repeating value dumps go.
+    label: 'main-all.js: debug value dumps stop printing',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (no debug logging)'),
+    transform: (text) => {
+      const drops = [
+        {
+          anchor: `      console.log(config)`,
+          replacement: `      // Site patch (no debug logging): the fork printed the whole config object here.`,
+        },
+        {
+          anchor: `      console.log(MIDP.manifest)`,
+          replacement: `      // Site patch (no debug logging): the fork printed the whole manifest object here.`,
+        },
+        {
+          anchor: `        console.log(res);`,
+          replacement: `        // Site patch (no debug logging): the fork printed the JAR store result object here.`,
+        },
+        {
+          anchor: `    console.log(keyCode);`,
+          replacement: `    // Site patch (no debug logging): the fork printed every key code here.`,
+        },
+        {
+          anchor: `console.log("config.gamepadSize "+config.gamepadSize);`,
+          replacement: `// Site patch (no debug logging): the fork printed this config value, always undefined.`,
+        },
+      ]
+      let next = text
+      for (const { anchor, replacement } of drops) {
+        if (!next.includes(anchor)) {
+          throw new Error('anchor not found in bld/main-all.js: ' + anchor.trim().slice(0, 90))
+        }
+        next = next.split(anchor).join(replacement)
+      }
+      return next
+    },
+  },
+  {
+    label: 'bld/j2me.js: the createException debug line stops printing',
+    file: 'bld/j2me.js',
+    applied: (text) => !text.includes(`console.log('createException',className,message);`),
+    anchor: `            console.log('createException',className,message);`,
+    replacement: `            // Site patch (no debug logging): the fork printed a line for every exception created.`,
+  },
+  {
+    // These natives are no-ops (or already answer correctly) on a runtime that draws
+    // only the MIDlet's display area, runs one MIDlet at a time and keeps no AMS list.
+    // The fork still warns on every call, which buries real problems: 仙剑奇侠传 alone
+    // prints eight of them before its title screen. Each replacement records why the
+    // no-op is right, so the next reader does not have to guess.
+    label: 'main-all.js: no-op MIDP internals stop warning',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (silent MIDP internals)'),
+    transform: (text) => {
+      const silent = [
+        {
+          anchor: `Native["com/sun/j2me/content/AppProxy.midletIsAdded.(ILjava/lang/String;)V"] = function(addr, suiteId, classNameAddr) {
+  console.warn("com/sun/j2me/content/AppProxy.midletIsAdded.(ILjava/lang/String;)V not implemented");
+};`,
+          replacement: `Native["com/sun/j2me/content/AppProxy.midletIsAdded.(ILjava/lang/String;)V"] = function(addr, suiteId, classNameAddr) {
+  // Site patch (silent MIDP internals): CHAPI bookkeeping for the AMS list of installed
+  // MIDlets. This runtime does not keep one, so there is nothing to add.
+};`,
+        },
+        {
+          anchor: `  Native["com/sun/midp/midletsuite/MIDletSuiteImpl.lockMIDletSuite.(IZ)V"] = function(addr, id, lock) {
+    console.warn("MIDletSuiteImpl.lockMIDletSuite.(IZ)V not implemented (" + id + ", " + lock + ")");
+  };`,
+          replacement: `  Native["com/sun/midp/midletsuite/MIDletSuiteImpl.lockMIDletSuite.(IZ)V"] = function(addr, id, lock) {
+    // Site patch (silent MIDP internals): the AMS locks a suite's storage while it
+    // installs or deletes one. One MIDlet runs at a time here and nothing else touches
+    // its suite directory, so there is no lock to take.
+  };`,
+        },
+        {
+          anchor: `  Native["com/sun/midp/midletsuite/MIDletSuiteImpl.unlockMIDletSuite.(I)V"] = function(addr, suiteId) {
+    console.warn("MIDletSuiteImpl.unlockMIDletSuite.(I)V not implemented (" + suiteId + ")");
+  };`,
+          replacement: `  Native["com/sun/midp/midletsuite/MIDletSuiteImpl.unlockMIDletSuite.(I)V"] = function(addr, suiteId) {
+    // Site patch (silent MIDP internals): pairs with lockMIDletSuite above, which never
+    // takes a lock.
+  };`,
+        },
+        {
+          anchor: `    self.trusted = 1;
+    console.warn("com/sun/midp/midletsuite/InstallInfo.load.()V incomplete");`,
+          replacement: `    // Site patch (silent MIDP internals): the suite record only carries the trust flag
+    // so far; the installer asks for nothing else. Keep it quiet until something reads
+    // a field that is really missing.
+    self.trusted = 1;`,
+        },
+        {
+          anchor: `  Native["javax/microedition/lcdui/Display.drawTrustedIcon0.(IZ)V"] = function(addr, dispId, drawTrusted) {
+    console.warn("Display.drawTrustedIcon0.(IZ)V not implemented (" + dispId + ", " + drawTrusted + ")");
+  };`,
+          replacement: `  Native["javax/microedition/lcdui/Display.drawTrustedIcon0.(IZ)V"] = function(addr, dispId, drawTrusted) {
+    // Site patch (silent MIDP internals): shows or hides the "trusted MIDlet" icon in
+    // the platform's title bar. This runtime draws the MIDlet's display area and no
+    // title bar of its own, so both directions are a no-op.
+  };`,
+        },
+        {
+          anchor: `  Native["com/sun/midp/suspend/SuspendSystem$MIDPSystem.allMidletsKilled.()Z"] = function(addr) {
+    console.warn("SuspendSystem$MIDPSystem.allMidletsKilled.()Z not implemented");
+    return 0;
+  };`,
+          replacement: `  Native["com/sun/midp/suspend/SuspendSystem$MIDPSystem.allMidletsKilled.()Z"] = function(addr) {
+    // Site patch (silent MIDP internals): answers whether the platform killed every
+    // MIDlet behind the app's back. It never does here, so the answer is always false.
+    return 0;
+  };`,
+        },
+        {
+          anchor: `  Native["com/sun/midp/lcdui/DisplayDevice.displayStateChanged0.(II)V"] = function(addr, hardwareId, state) {
+    console.warn("DisplayDevice.displayStateChanged0.(II)V not implemented (" + hardwareId + ", " + state + ")");
+  };`,
+          replacement: `  Native["com/sun/midp/lcdui/DisplayDevice.displayStateChanged0.(II)V"] = function(addr, hardwareId, state) {
+    // Site patch (silent MIDP internals): the phone's display power and rotation state
+    // belong to the host page here, and the MIDlet's canvas is drawn at a fixed size.
+    // Nothing to reconfigure.
+  };`,
+        },
+        {
+          anchor: `  Native["javax/microedition/lcdui/CanvasLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I"] = function(addr, titleAddr, tickerAddr) {
+    console.warn("javax/microedition/lcdui/CanvasLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I not implemented");
+    curDisplayableId = nextMidpDisplayableId++;
+    return curDisplayableId;
+  };`,
+          replacement: `  Native["javax/microedition/lcdui/CanvasLFImpl.createNativeResource0.(Ljava/lang/String;Ljava/lang/String;)I"] = function(addr, titleAddr, tickerAddr) {
+    // Site patch (silent MIDP internals): handing the LFImpl a fresh displayable id is
+    // the whole implementation -- the id is what the other LFImpl natives receive back.
+    curDisplayableId = nextMidpDisplayableId++;
+    return curDisplayableId;
+  };`,
+        },
+        {
+          anchor: '  addUnimplementedNative("com/sun/j2me/content/InvocationStore.setCleanup0.(ILjava/lang/String;Z)V");',
+          replacement: `  // Site patch (silent MIDP internals): CHAPI asks whether an invocation should be
+  // cleaned up when the MIDlet exits. Nothing here keeps an invocation between runs,
+  // so there is nothing to clean up. addUnimplementedNative cannot say that: it warns
+  // on its first call whatever body it is given, so register the native directly.
+  Native["com/sun/j2me/content/InvocationStore.setCleanup0.(ILjava/lang/String;Z)V"] = function(addr, suiteId, classNameAddr, cleanup) {
+  };`,
+        },
+      ]
+      let next = text
+      for (const { anchor, replacement } of silent) {
+        if (!next.includes(anchor)) {
+          throw new Error('anchor not found: ' + anchor.split('\n')[0].trim().slice(0, 90))
+        }
+        next = next.split(anchor).join(replacement)
+      }
+      return next
     },
   },
 ]

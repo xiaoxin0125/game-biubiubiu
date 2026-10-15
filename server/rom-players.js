@@ -5,6 +5,7 @@ import {
   PLATFORM_DEFAULT_MAX_PLAYERS,
   isSinglePlayerPlatform,
 } from '../shared/registry/platform-players.js'
+import { normalizePlatformId } from '../shared/registry/platform-roms.js'
 
 export function normalizeMaxPlayers(value) {
   if (value === null || value === undefined || value === '') return null
@@ -27,15 +28,17 @@ export function inferMaxPlayers(rom = {}) {
 }
 
 export function defaultMaxPlayersForPlatform(platform) {
-  if (isSinglePlayerPlatform(platform)) return 1
-  return PLATFORM_DEFAULT_MAX_PLAYERS[platform] || 1
+  const id = normalizePlatformId(platform)
+  if (isSinglePlayerPlatform(id)) return 1
+  return PLATFORM_DEFAULT_MAX_PLAYERS[id] || 1
 }
 
 export function defaultMaxPlayersForPlatformCore(platform, core = null) {
-  if (isSinglePlayerPlatform(platform)) return 1
-  const selectedCore = core || PLATFORM_DEFAULT_CORES[platform]
-  return PLATFORM_CORE_DEFAULT_MAX_PLAYERS[platform]?.[selectedCore]
-    || defaultMaxPlayersForPlatform(platform)
+  const id = normalizePlatformId(platform)
+  if (isSinglePlayerPlatform(id)) return 1
+  const selectedCore = core || PLATFORM_DEFAULT_CORES[id]
+  return PLATFORM_CORE_DEFAULT_MAX_PLAYERS[id]?.[selectedCore]
+    || defaultMaxPlayersForPlatform(id)
 }
 
 export function resolveMaxPlayersInfo(rom = {}, parent = null) {

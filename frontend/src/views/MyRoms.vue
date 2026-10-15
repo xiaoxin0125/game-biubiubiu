@@ -156,7 +156,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAppDialog } from '../composables/useAppDialog.js'
-import { getPlatform } from '../constants/platforms.js'
+import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
 import { formatServerTime } from '../composables/formatTime.js'
 import UploadDialog from '../components/UploadDialog.vue'
 import ClaySelect from '../components/ClaySelect.vue'
@@ -181,12 +181,7 @@ const activePlatform = ref('all')
 const activeVisibility = ref('all')
 const activePage = ref(1)
 
-const activePlatformOptions = computed(() => {
-  const ids = [...new Set(roms.value.map((r) => r.platform).filter(Boolean))]
-  return ids
-    .map((id) => ({ id, label: platformLabel(id) }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
-})
+const activePlatformOptions = computed(() => platformFacets(roms.value))
 const activePlatformSelectOptions = computed(() => [
   { value: 'all', label: '全部平台' },
   ...activePlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
@@ -200,7 +195,7 @@ const activeVisibilitySelectOptions = [
 const filteredRoms = computed(() => {
   const q = activeSearch.value.trim().toLowerCase()
   return roms.value
-    .filter((rom) => activePlatform.value === 'all' || rom.platform === activePlatform.value)
+    .filter((rom) => activePlatform.value === 'all' || resolvePlatformId(rom.platform) === activePlatform.value)
     .filter((rom) => {
       if (activeVisibility.value === 'public') return !!rom.isPublic
       if (activeVisibility.value === 'private') return !rom.isPublic

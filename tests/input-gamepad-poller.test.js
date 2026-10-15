@@ -246,7 +246,7 @@ test('resolver receives every pad and aggregates same logical room input', async
       seen.push([device.key, devices.length])
       return 1
     },
-    platform: ref('snes'),
+    platform: ref('sfc'),
     platformButtons: ref(['a', 'b']),
     pressButton(button, player) { events.push(['down', button, player]) },
     releaseButton(button, player) { events.push(['up', button, player]) },
@@ -280,7 +280,7 @@ test('enabled ref releases and suspends physical output', async () => {
   const mounted = mountGamepad({
     mapping: freshMapping(),
     enabled,
-    platform: ref('snes'),
+    platform: ref('sfc'),
     platformButtons: ref(['a']),
     pressButton(button, player) { events.push(['down', button, player]) },
     releaseButton(button, player) { events.push(['up', button, player]) },
@@ -313,7 +313,7 @@ test('映射或座位变化会先释放旧逻辑按钮，再采用新映射', as
   const events = []
   const mounted = mountGamepad({
     mapping,
-    platform: ref('snes'),
+    platform: ref('sfc'),
     platformButtons: ref(['a', 'b']),
     pressButton(button, player) { events.push(['down', button, player]) },
     releaseButton(button, player) { events.push(['up', button, player]) },
@@ -344,7 +344,7 @@ test('标准手柄的 A/B/X/Y 各自独立，不会合并成 A+B 或对调', asy
   const events = []
   const mounted = mountGamepad({
     mapping: freshMapping(),
-    platform: ref('snes'),
+    platform: ref('sfc'),
     platformButtons: ref(['up', 'down', 'left', 'right', 'a', 'b', 'x', 'y']),
     pressButton(button, player) { events.push(['down', button, player]) },
     releaseButton(button, player) { events.push(['up', button, player]) },
@@ -412,7 +412,7 @@ test('模拟器看不到手柄时，网站的输入层照旧收到手柄输入',
   const events = []
   const mounted = mountGamepad({
     mapping: freshMapping(),
-    platform: ref('snes'),
+    platform: ref('sfc'),
     platformButtons: ref(['a', 'b']),
     pressButton(button, player) { events.push(['down', button, player]) },
     releaseButton(button, player) { events.push(['up', button, player]) },
