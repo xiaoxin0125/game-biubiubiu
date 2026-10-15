@@ -1,11 +1,11 @@
 {
   "name": "games-online-frontend",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
-    "build": "node scripts/clean-dist.js && vite build",
+    "build": "node scripts/clean-dist.js && vite build && node scripts/stamp-j2me-runtime.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {

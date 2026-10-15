@@ -92,10 +92,13 @@ export function useEmulator() {
     } catch {}
   }
 
-  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader, progress = null }) {
+  async function boot({ core, rom, romUrl, romFileName, bios = [], retroarchConfig = {}, retroarchCoreConfig = {}, shader, progress = null, onRuntimeError = null }) {
     if (!wrapperRef.value) throw new Error('wrapper not mounted')
     if (instance.value) return instance.value
     const generation = ++bootGeneration
+    let prepared = null
+    let bootComplete = false
+    let runtimeFailure = null
     booting.value = true
     error.value = null
     try {
@@ -107,7 +110,18 @@ export function useEmulator() {
       // 阶段只由真实事件驱动：核心/ROM 的字节进度由各自的下载回调汇报，这里
       // 只标记"开始取资源"和"资源齐了，开始初始化模拟器"。
       progress?.setStage('resources')
-      const emu = await prepareEmulator({ core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader, progress })
+      const emu = await prepareEmulator({
+        core, rom: romInput, bios, retroarchConfig, retroarchCoreConfig, shader, progress,
+        onRuntimeError(err) {
+          runtimeFailure = err
+          if (!bootComplete || generation !== bootGeneration) return
+          error.value = err
+          progress?.setStage('failed')
+          void destroy()
+          onRuntimeError?.(err)
+        },
+      })
+      prepared = emu
 
       // Re-check mount: prepareEmulator is async (seconds), the component may
       // have been torn down while we waited (e.g. guest role arrived and the
@@ -141,15 +155,33 @@ export function useEmulator() {
       attachWakeLockListeners()
       await acquireWakeLock()
 
+      if (runtimeFailure) throw runtimeFailure
+      bootComplete = true
       progress?.setStage('ready')
       return emu
     } catch (err) {
-      error.value = err
-      progress?.setStage('failed')
+      // A failed core may already have a canvas, audio and a running menu loop.
+      // Release that instance so retry really boots a new game instead of
+      // returning the failed instance from the early guard above.
+      if (generation === bootGeneration) {
+        if (instance.value === prepared) {
+          instance.value = null
+          try { currentCanvas?.remove?.() } catch {}
+          currentCanvas = null
+        }
+        error.value = err
+        progress?.setStage('failed')
+      }
+      silenceEmulatorAudio(prepared)
+      try { await prepared?.exit() } catch {}
       throw err
     } finally {
       if (generation === bootGeneration) booting.value = false
     }
+  }
+
+  function coreSupportsSaveState() {
+    return !!instance.value && instance.value.capabilities?.saveState !== false
   }
 
   async function saveState() {
@@ -292,6 +324,7 @@ export function useEmulator() {
     syncCheats,
     readCheats,
     coreSupportsCheats,
+    coreSupportsSaveState,
     pressButton,
     releaseButton,
     canvas,

@@ -209,10 +209,10 @@ export function useResourceLoadProgress({ flushIntervalMs = FLUSH_INTERVAL_MS } 
   }
 
   // 核心任务是唯一"提前知道体积"的部分：清单里写着原始体积与 sha256，
-  // 于是核心下载可以显示准确百分比，也能在完成后校验内容。
-  function registerCoreTasks(core) {
-    return registerCoreTasksFor(api, core)
-  }
+  // 于是核心下载可以显示准确百分比，也能在完成后校验内容。实现挂在 api 上
+  // （见文件底部）：必须把 reactive 包装后的对象交给它，否则迭代的是 tasks 这个
+  // ref 对象 —— Chromium 抛 "object is not iterable"、WebKit 抛 "undefined is
+  // not a function"，核心任务登记不上，进度面板只剩 ROM 那几项。
 
   const overall = computed(() => {
     let totalBytes = 0
@@ -274,6 +274,7 @@ export function useResourceLoadProgress({ flushIntervalMs = FLUSH_INTERVAL_MS } 
 
   if (getCurrentInstance()) onBeforeUnmount(() => { abortSession() })
 
+  let progress = null
   const api = {
     stage,
     tasks,
@@ -291,7 +292,7 @@ export function useResourceLoadProgress({ flushIntervalMs = FLUSH_INTERVAL_MS } 
     taskFailed,
     dropTask,
     setStage,
-    registerCoreTasks,
+    registerCoreTasks: (core) => registerCoreTasksFor(progress, core),
     statusTextFor,
     reset,
     // 测试与特殊场景：立刻落盘挂起的进度
@@ -299,5 +300,6 @@ export function useResourceLoadProgress({ flushIntervalMs = FLUSH_INTERVAL_MS } 
   }
   // reactive() 会把内部的 ref / computed 解包，模板和控制台里直接读
   // progress.stage / progress.overall 就是当前值，不用再 .value。
-  return reactive(api)
+  progress = reactive(api)
+  return progress
 }

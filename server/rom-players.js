@@ -3,6 +3,7 @@ import {
   PLATFORM_CORE_DEFAULT_MAX_PLAYERS,
   PLATFORM_DEFAULT_CORES,
   PLATFORM_DEFAULT_MAX_PLAYERS,
+  isSinglePlayerPlatform,
 } from '../shared/registry/platform-players.js'
 
 export function normalizeMaxPlayers(value) {
@@ -17,6 +18,8 @@ export function clampMaxPlayers(value) {
 }
 
 export function inferMaxPlayers(rom = {}) {
+  // 单人机不猜：标题里的「2P / 4人」是别的机器上的写法，这些平台一律一席。
+  if (isSinglePlayerPlatform(rom?.platform)) return 1
   const text = `${rom.title || ''} ${rom.fileName || ''}`.toLowerCase()
   const match = text.match(/(?:^|[^0-9])([1-4])\s*(?:p|players?|人|玩家)(?:[^0-9]|$)/i)
   if (match) return clampMaxPlayers(Number(match[1]))
@@ -24,16 +27,22 @@ export function inferMaxPlayers(rom = {}) {
 }
 
 export function defaultMaxPlayersForPlatform(platform) {
+  if (isSinglePlayerPlatform(platform)) return 1
   return PLATFORM_DEFAULT_MAX_PLAYERS[platform] || 1
 }
 
 export function defaultMaxPlayersForPlatformCore(platform, core = null) {
+  if (isSinglePlayerPlatform(platform)) return 1
   const selectedCore = core || PLATFORM_DEFAULT_CORES[platform]
   return PLATFORM_CORE_DEFAULT_MAX_PLAYERS[platform]?.[selectedCore]
     || defaultMaxPlayersForPlatform(platform)
 }
 
 export function resolveMaxPlayersInfo(rom = {}, parent = null) {
+  const platform = rom?.platform || parent?.platform
+  // 单人机的平台级限制压过 ROM 字段与父版本继承：上传者填的 4 人也只开一席。
+  if (isSinglePlayerPlatform(platform)) return { maxPlayers: 1, sourceRomId: rom?.id ?? parent?.id ?? null }
+
   const self = normalizeMaxPlayers(rom?.maxPlayers)
   if (self) return { maxPlayers: self, sourceRomId: rom?.id ?? null }
 

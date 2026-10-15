@@ -164,6 +164,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { platforms } from '../constants/platforms.js'
+import { autoDetectPlatform } from '../../../shared/registry/platform-roms.js'
 import { coreDisplayName } from '../constants/cores.js'
 import { api } from '../api/client.js'
 import { useSettings } from '../composables/useSettings.js'
@@ -320,11 +321,7 @@ function clearCover() {
 }
 
 function guessPlatform(name) {
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  for (const [id, p] of Object.entries(platforms)) {
-    if (p.fileExtensions.includes('.' + ext)) return id
-  }
-  return ''
+  return autoDetectPlatform(name)
 }
 
 function fmtSize(b) {

@@ -32,7 +32,7 @@ import {
 //   - 吞键（interceptRoomRemoteSeatKey）兜住其余情况，比如 P2 用的就是房主键盘上的
 //     z x v n q y 这些普通字母，房主一按就会打到 P2。
 
-const PLATFORMS = ['arcade', 'nes', 'famicom', 'fds', 'snes', 'gba', 'megadrive', 'genesis', 'sms', 'gamegear', 'gb', 'gbc', 'psx']
+const PLATFORMS = ['arcade', 'nes', 'famicom', 'fds', 'snes', 'gba', 'megadrive', 'genesis', 'sms', 'gamegear', 'gb', 'gbc', 'psx', 'pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
 
 // 房主改过键位的两种存档：一种把 A 挪到 z，一种把「右」从 d 挪到 k。
 const CUSTOM_KEYBOARDS = [

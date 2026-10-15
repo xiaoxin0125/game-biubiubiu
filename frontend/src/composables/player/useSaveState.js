@@ -8,6 +8,7 @@ export function useSaveState({ romMeta, platformInfo, portalRef, isAuthed, isGue
 
   async function onSaveState() {
     if (isGuestMode.value) return showToast('客人模式不支持存档')
+    if (portalRef.value?.coreSupportsSaveState?.() === false) return showToast('当前运行时不支持即时存档；Java 游戏内存档仅在当前会话有效')
     try {
       const data = await portalRef.value?.saveState()
       if (!data) return showToast('存档失败')
@@ -36,6 +37,7 @@ export function useSaveState({ romMeta, platformInfo, portalRef, isAuthed, isGue
 
   async function onLoadState() {
     if (isGuestMode.value) return showToast('客人模式不支持读档')
+    if (portalRef.value?.coreSupportsSaveState?.() === false) return showToast('当前运行时不支持即时读档；请使用 Java 游戏内的继续功能')
     if (!romMeta.value) return
     try {
       if (isAuthed.value) {

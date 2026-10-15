@@ -29,6 +29,7 @@ const {
   syncCheats,
   readCheats,
   coreSupportsCheats,
+  coreSupportsSaveState,
   pressButton,
   releaseButton,
   canvas,
@@ -43,14 +44,16 @@ let lastCheatList = []
 
 async function start() {
   try {
-    await boot({
+    const emu = await boot({
       core: props.core,
       rom: props.rom,
       bios: props.bios,
       retroarchConfig: props.retroarchConfig,
       retroarchCoreConfig: props.retroarchCoreConfig,
       progress: props.progress,
+      onRuntimeError: (err) => emit('error', err),
     })
+    if (!emu) return
     if (lastCheatList.length) syncCheats(lastCheatList)
     emit('booted')
   } catch (err) {
@@ -90,6 +93,7 @@ defineExpose({
   syncCheats: applyCheats,
   readCheats,
   coreSupportsCheats,
+  coreSupportsSaveState,
   pressButton,
   releaseButton,
   captureAudioStream,

@@ -121,6 +121,10 @@ export const roms = mysqlTable('roms', {
   // back through this API. `filePath` then holds a `remote:<id>` placeholder.
   storage: varchar('storage', { length: 16 }).notNull().default('local'),
   remoteFileId: varchar('remote_file_id', { length: 128 }),
+  // 游玩次数：模拟器在播放页启动成功时 +1（见 POST /api/roms/:id/play）。
+  // 首页的「最热」排序与卡片上的热度标签都读这一列，所以它是全局累计值、
+  // 不区分用户；每个用户自己的记录在 rom_plays 表里。
+  playCount: int('play_count').notNull().default(0),
   status: int('status').notNull().default(STATUS.normal),
   createdAt: ts('created_at'),
   updatedAt: ts('updated_at').$onUpdateFn(() => new Date()),
@@ -164,4 +168,20 @@ export const saveStates = mysqlTable('save_states', {
   updatedAt: ts('updated_at').$onUpdateFn(() => new Date()),
 }, (t) => [
   uniqueIndex('idx_save_states_unique_slot').on(t.userId, t.romId, t.slot),
+])
+
+// 每个用户对每个 ROM 的游玩记录：一行一台游戏，playCount 是这个人玩过的次数，
+// lastPlayedAt 用来排「我的信息」页的最近游玩列表、以及统计各平台玩了多少次。
+// 全局热度不读这张表，而是读 roms.play_count —— 游客与房间里的客人没有账号，
+// 但他们的游玩也该算进热度里。
+export const romPlays = mysqlTable('rom_plays', {
+  userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  romId: int('rom_id').notNull().references(() => roms.id, { onDelete: 'cascade' }),
+  playCount: int('play_count').notNull().default(0),
+  lastPlayedAt: ts('last_played_at'),
+  createdAt: ts('created_at'),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.romId] }),
+  index('idx_rom_plays_user').on(t.userId, t.lastPlayedAt),
+  index('idx_rom_plays_rom').on(t.romId),
 ])

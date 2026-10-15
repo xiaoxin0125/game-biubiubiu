@@ -42,31 +42,34 @@
     <div class="blog-tabs">
       <button
         class="tab"
-        :class="{ active: activeTab === 'all' }"
-        @click="activeTab = 'all'"
+        :class="{ active: activeTab === 'latest' }"
+        @click="activeTab = 'latest'"
       >
-        全部 <span class="n">{{ total }}</span>
+        最新 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+      </button>
+      <button
+        class="tab"
+        :class="{ active: activeTab === 'hot' }"
+        @click="activeTab = 'hot'"
+      >
+        最热 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
       </button>
       <button
         v-if="isAuthed"
         class="tab tab-fav"
         :class="{ active: activeTab === 'favorites' }"
-        :disabled="favoriteCount === 0"
+        :disabled="favoriteGroupCount === 0"
         @click="activeTab = 'favorites'"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.3 5.82 21l1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z"/></svg>
-        收藏 <span class="n">{{ favoriteCount }}</span>
+        收藏 <span class="n">{{ favoriteGroupCount }}</span>
       </button>
-      <button
-        v-for="[key, group] in Object.entries(tabGroups)"
-        :key="key"
-        class="tab"
-        :class="{ active: activeTab === key }"
-        :disabled="tabCount(key) === 0"
-        @click="activeTab = key"
-      >
-        {{ group.label }} <span class="n">{{ tabCount(key) }}</span>
-      </button>
+      <ClaySelect
+        v-model="activeGroup"
+        class="group-select"
+        aria-label="主机分类"
+        :options="groupOptions"
+      />
     </div>
 
     <div v-if="loading" class="rom-card-grid">
@@ -80,12 +83,14 @@
       </article>
     </div>
     <div v-else-if="!filtered.length" class="empty-state blog-empty">
-      <h3>{{ query ? '没有匹配结果' : '游戏库为空' }}</h3>
-      <p v-if="!query">{{ isAuthed ? '上传你的第一个 ROM' : '登录后可以上传自己的 ROM' }}</p>
-      <p v-else>换个关键词试试</p>
-      <router-link v-if="!query && isAuthed" to="/my" class="tab action-tab">去上传</router-link>
-      <router-link v-if="!query && !isAuthed" to="/auth" class="tab action-tab">登录 / 注册</router-link>
+      <h3>{{ emptyTitle }}</h3>
+      <p>{{ emptyHint }}</p>
       <button v-if="query" class="tab action-tab" @click="query = ''">清除搜索</button>
+      <button v-else-if="!activeGroupIsAll" class="tab action-tab" @click="activeGroup = 'all'">查看全部主机</button>
+      <template v-else-if="activeTab !== 'favorites'">
+        <router-link v-if="isAuthed" to="/my" class="tab action-tab">去上传</router-link>
+        <router-link v-else to="/auth" class="tab action-tab">登录 / 注册</router-link>
+      </template>
     </div>
     <div v-else class="rom-card-grid">
       <article
@@ -98,34 +103,38 @@
         @keydown.space.prevent="play(rom)"
         :aria-label="`${rom.title}，${platformLabel(rom.platform)} 平台，开始游戏`"
       >
-        <RomCover :rom="rom" class="rom-card-cover" />
+        <div class="rom-card-cover-wrap">
+          <RomCover :rom="rom" class="rom-card-cover" />
+          <button
+            v-if="isAuthed"
+            class="fav-btn"
+            :class="{ on: rom.isFavorite }"
+            :title="rom.isFavorite ? '取消收藏' : '收藏'"
+            @click.stop="toggleFavorite(rom)"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" :fill="rom.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 17.3 5.82 21l1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z"/></svg>
+          </button>
+        </div>
         <div class="rom-card-content">
           <h2 class="rom-card-title">{{ rom.title }}</h2>
-          <p class="rom-card-desc">
-            {{ platformLabel(rom.platform) }} 平台游戏{{ rom.owner ? `，由 @${rom.owner.username} 分享。` : '。' }}
-          </p>
+          <div class="card-badges">
+            <span
+              class="status-badge"
+              :style="{ '--platform-color': platformColor(rom.platform) }"
+              :title="platformLabel(rom.platform)"
+            >
+              {{ platformLabel(rom.platform) }}
+            </span>
+            <span class="version-badge" :title="`${(rom.versionCount || 0) + 1} 个版本`">
+              {{ (rom.versionCount || 0) + 1 }} 版
+            </span>
+            <span v-if="rom.owner" class="owner-note">由 @{{ rom.owner.username }} 分享</span>
+          </div>
         </div>
-        <div class="card-badges">
-          <span class="version-badge" :title="`${(rom.versionCount || 0) + 1} 个版本`">
-            {{ (rom.versionCount || 0) + 1 }} 版
-          </span>
-          <span
-            class="status-badge"
-            :style="{ '--platform-color': platformColor(rom.platform) }"
-            :title="platformLabel(rom.platform)"
-          >
-            {{ platformLabel(rom.platform) }}
-          </span>
-        </div>
-        <button
-          v-if="isAuthed"
-          class="fav-btn"
-          :class="{ on: rom.isFavorite }"
-          :title="rom.isFavorite ? '取消收藏' : '收藏'"
-          @click.stop="toggleFavorite(rom)"
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" :fill="rom.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 17.3 5.82 21l1.64-7.03L2 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.46 4.73L18.18 21z"/></svg>
-        </button>
+        <span class="heat-badge" :title="`被游玩 ${rom.playCount} 次`">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>
+          {{ rom.playCount }}
+        </span>
       </article>
     </div>
     <ClayPagination
@@ -155,6 +164,7 @@ import { useSettings } from '../composables/useSettings.js'
 import VersionPickerDialog from '../components/VersionPickerDialog.vue'
 import RomCover from '../components/RomCover.vue'
 import ClayPagination from '../components/ClayPagination.vue'
+import ClaySelect from '../components/ClaySelect.vue'
 
 const router = useRouter()
 const { showAlert } = useAppDialog()
@@ -166,7 +176,10 @@ const roms = ref([])
 const favoriteRoms = ref([])
 const loading = ref(true)
 const query = ref('')
-const activeTab = ref('all')
+// 分类栏分两截：左边是「看哪一类」（最新 / 最热 / 收藏），右边下拉框是主机分类
+// 筛选（默认全部）。两者叠加生效，例如「收藏 + 任天堂」= 我收藏的任天堂游戏。
+const activeTab = ref('latest')
+const activeGroup = ref('all')
 const page = ref(1)
 const pageSize = 10
 
@@ -196,27 +209,60 @@ watch(isAuthed, async (authed) => {
   if (authed) await loadFavorites()
   else {
     favoriteRoms.value = []
-    if (activeTab.value === 'favorites') activeTab.value = 'all'
+    if (activeTab.value === 'favorites') activeTab.value = 'latest'
   }
 })
 
-const total = computed(() => roms.value.length)
-const favoriteCount = computed(() => favoriteRoms.value.length)
+// 主机分类下拉框：默认「全部」，每一项后面跟这个分类在当前游戏库里的数量。
+const groupOptions = computed(() => [
+  { value: 'all', label: `全部 ${roms.value.length}` },
+  ...Object.entries(tabGroups).map(([key, group]) => ({
+    value: key,
+    label: `${group.label} ${groupCount(roms.value, key)}`,
+  })),
+])
 
-function tabCount(key) {
+// 某个分类下一共有多少盘（key 为 all 时不筛）。列表里的数量都走这个函数，
+// 跟着下拉框选中的分类走：最新 / 最热两个标签显示游戏库的数量，收藏标签显示
+// 我收藏的数量，都是当前分类下的。
+function groupCount(list, key) {
+  if (!key || key === 'all') return list.length
   const allowed = new Set(tabGroups[key]?.platforms || [])
-  return roms.value.filter((r) => allowed.has(r.platform)).length
+  return list.filter((r) => allowed.has(r.platform)).length
 }
+
+const favoriteGroupCount = computed(() => groupCount(favoriteRoms.value, activeGroup.value))
+
+// 空列表的文案要分得清是「搜不到」「这个分类没有」还是「本来就还没东西」。
+const activeGroupIsAll = computed(() => activeGroup.value === 'all')
+const activeGroupLabel = computed(() => (activeGroupIsAll.value ? '' : tabGroups[activeGroup.value]?.label || ''))
+const emptyTitle = computed(() => {
+  if (query.value) return '没有匹配结果'
+  if (!activeGroupIsAll.value) {
+    return activeTab.value === 'favorites' ? `收藏里没有${activeGroupLabel.value}的游戏` : `${activeGroupLabel.value}还没有游戏`
+  }
+  return activeTab.value === 'favorites' ? '还没有收藏' : '游戏库为空'
+})
+const emptyHint = computed(() => {
+  if (query.value) return '换个关键词试试'
+  if (!activeGroupIsAll.value) return '换个主机分类看看'
+  if (activeTab.value === 'favorites') return '点卡片封面右上角的星星就能收藏'
+  return isAuthed.value ? '上传你的第一个 ROM' : '登录后可以上传自己的 ROM'
+})
 
 const filtered = computed(() => {
   let list = activeTab.value === 'favorites' ? favoriteRoms.value : roms.value
-  if (activeTab.value !== 'all' && activeTab.value !== 'favorites') {
-    const allowed = new Set(tabGroups[activeTab.value]?.platforms || [])
+  if (activeGroup.value !== 'all') {
+    const allowed = new Set(tabGroups[activeGroup.value]?.platforms || [])
     list = list.filter((r) => allowed.has(r.platform))
   }
   const q = query.value.trim().toLowerCase()
   if (q) list = list.filter((r) => r.title.toLowerCase().includes(q))
-  return [...list].sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
+  const out = [...list]
+  // 「最新」直接用接口给的顺序：游戏库按上传时间倒序，收藏按收藏时间倒序。
+  // 「最热」按游玩次数倒序；次数相同就保持上面的时间顺序（Array#sort 是稳定排序）。
+  if (activeTab.value === 'hot') out.sort((a, b) => Number(b.playCount || 0) - Number(a.playCount || 0))
+  return out
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
 const pagedRoms = computed(() => {
@@ -224,7 +270,11 @@ const pagedRoms = computed(() => {
   return filtered.value.slice(start, start + pageSize)
 })
 
-watch([query, activeTab], () => { page.value = 1 })
+watch([query, activeTab, activeGroup], () => { page.value = 1 })
+// 换到没有收藏的分类时别把人留在空列表上（与取消最后一盘收藏时的处理一致）。
+watch(activeGroup, () => {
+  if (activeTab.value === 'favorites' && favoriteGroupCount.value === 0) activeTab.value = 'latest'
+})
 watch(pageCount, (count) => {
   if (page.value > count) page.value = count
 })
@@ -242,7 +292,7 @@ async function toggleFavorite(rom) {
     if (prev) {
       await api.romUnfavorite(rom.id)
       favoriteRoms.value = favoriteRoms.value.filter((r) => r.id !== rom.id)
-      if (activeTab.value === 'favorites' && favoriteRoms.value.length === 0) activeTab.value = 'all'
+      if (activeTab.value === 'favorites' && favoriteRoms.value.length === 0) activeTab.value = 'latest'
     } else {
       await api.romFavorite(rom.id)
       favoriteRoms.value = [{ ...rom, isFavorite: true }, ...favoriteRoms.value.filter((r) => r.id !== rom.id)]
@@ -500,6 +550,19 @@ function onVersionPicked(v) {
   overflow-y: hidden;
   padding: 2px 6px 12px 2px;
 }
+/* 主机分类下拉框排在分类栏最末端，外观与旁边的胶囊标签一致 */
+.group-select {
+  --select-height: 34px;
+  --select-min-height: 34px;
+  --select-font-size: 13px;
+  --select-padding: 0 34px 0 14px;
+  --select-arrow-right: 13px;
+  --select-bg: var(--clay-inset-surface);
+  --select-color: var(--text-secondary);
+  --select-shadow: var(--clay-in-sm);
+  margin-left: auto;
+  flex: 0 0 auto;
+}
 .tab {
   display: inline-flex;
   align-items: center;
@@ -583,76 +646,106 @@ function onVersionPicked(v) {
   flex-shrink: 0;
 }
 /* 游戏卡片左侧展示封面：有图用图，没有图用默认卡带 SVG */
+.rom-card-cover-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
 .rom-card-cover {
   --cover-size: 64px;
   --cover-radius: var(--r-sm);
-}.rom-card-content {
+}
+/* 卡片内容：标题一行，下面一行标签（平台 / 版本 / 热度）加作者署名。
+   标签与署名都在流里排，不再往卡片右上角浮一块，标题也不用为它留出空白。 */
+.rom-card-content {
+  flex: 1;
   min-width: 0;
-  padding-right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 .rom-card-title {
-  margin: 0 0 5px;
+  margin: 0;
   color: var(--text-primary);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1.25;
   letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* 只让标题行避开右上角标，描述仍可用满宽度 */
-  padding-right: 116px;
 }
-.rom-card-desc {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
+/* 一行标签：各自独立的胶囊，中间留 6px，比原来连成一整块的长条轻一些 */
 .card-badges {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  align-items: stretch;
-  height: 26px;
-  border: 0;
-  border-radius: var(--r-pill);
-  overflow: hidden;
-  box-shadow: var(--clay-xs);
-  line-height: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .version-badge,
 .status-badge {
-  padding: 0 9px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 12px;
+  gap: 4px;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--r-pill);
+  font-size: 11px;
   font-weight: 900;
+  line-height: 1;
   white-space: nowrap;
+  box-shadow: var(--clay-xs);
 }
 .version-badge {
   background: var(--clay-surface-flat);
   color: var(--text-primary);
-  border-right: 0;
 }
 .status-badge {
   /* 平台色只做浅底，文字改用与深梅子混合后的墨色，浅底上 ≥ 4.5:1 */
   background: color-mix(in srgb, var(--platform-color) 16%, #fff);
   color: color-mix(in srgb, var(--platform-color) 40%, var(--clay-ink));
 }
+/* 热度（游玩次数）单独摆在卡片末端：方块里火焰在上、次数在下，做成一小块
+   竖直的计量块。方块用凹陷质感（像嵌进卡片的计数器），和旁边凸起的标签区分开；
+   颜色仍是固定的梅子墨色，平台色那一大片红蓝绿橙紫金跟它都不撞。 */
+.heat-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 42px;
+  padding: 8px 8px 7px;
+  border-radius: var(--r-md);
+  background: var(--clay-inset-surface);
+  color: var(--clay-ink);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--clay-in-sm);
+}
+.heat-badge svg { flex-shrink: 0; opacity: 0.9; }
+.owner-note {
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
+/* 收藏按钮贴在封面的右上角：不占卡片右下的位置，也不会被平台标签挡住 */
 .fav-btn {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
+  top: -3px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -718,6 +811,11 @@ function onVersionPicked(v) {
     min-width: 0;
     width: auto;
   }
+  /* 分类只剩三个标签，窄屏放不下时让主机分类下拉框换到第二行，不横向滚动 */
+  .blog-tabs { flex-wrap: wrap; overflow: visible; }
+  .group-select { margin-left: auto; }
+  /* 手机端标签不再带数量：三个标签本身已经占满一行，数字留给下拉框里的选项 */
+  .blog-tabs .tab .n { display: none; }
   .hero-actions .action-tab {
     flex: 0 0 auto;
     height: 42px;
@@ -731,9 +829,14 @@ function onVersionPicked(v) {
   }
   .rom-avatar,
   .skel-avatar { width: 50px; height: 50px; }
-  .rom-card-content { padding-right: 10px; }
-  .rom-card-title { font-size: 15px; margin-bottom: 4px; padding-right: 104px; }
-  .rom-card-desc { font-size: 11px; line-height: 1.35; }
+  .rom-card-content { gap: 6px; }
+  .rom-card-title { font-size: 15px; }
+  .card-badges { gap: 5px; }
+  .version-badge,
+  .status-badge { height: 20px; padding: 0 8px; }
+  .heat-badge { min-width: 38px; gap: 2px; padding: 6px 7px; font-size: 12px; }
+  .heat-badge svg { width: 13px; height: 13px; }
+  .owner-note { font-size: 11px; }
 }
 @media (max-width: 480px) {
   .blog-hero { padding: 20px; border-radius: var(--r-lg); }

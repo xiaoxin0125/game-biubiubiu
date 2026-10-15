@@ -12,6 +12,7 @@
         <router-link to="/" class="nav-item" exact-active-class="active">首页</router-link>
         <router-link v-if="showNetplay" to="/rooms" class="nav-item" active-class="active">联机</router-link>
         <router-link v-if="isAuthed" to="/my" class="nav-item" active-class="active">投稿</router-link>
+        <router-link v-if="isAuthed" to="/me" class="nav-item" active-class="active">我的</router-link>
         <router-link v-if="isAdmin" to="/admin" class="nav-item" active-class="active">管理</router-link>
       </nav>
 

@@ -35,6 +35,14 @@ test('重核心例外与同步敏感核心保持原样', () => {
   assert.equal(snes.rewind_enable, true)
 })
 
+test('Opera 禁用会溢出默认缓冲区的回退，保留手动快照能力', () => {
+  const opera = defaultRetroarchConfigForCore('opera')
+  assert.equal(opera.rewind_enable, false)
+  assert.equal(opera.rewind_granularity, 0)
+  assert.equal(opera.run_ahead_enabled, false)
+  assert.equal(defaultRetroarchConfigForCore('snes9x').rewind_enable, true)
+})
+
 test('调用方不能把原生手柄通道重新打开', () => {
   const caller = {
     input_autodetect_enable: true,

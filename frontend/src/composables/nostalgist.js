@@ -5,6 +5,7 @@
 import { Nostalgist } from 'nostalgist'
 import { installNativeGamepadGuard } from './input/physicalGamepads.js'
 import { loadCoreAsset } from './player/useCoreAssets.js'
+import { createCoreBootGuard } from './player/coreBootGuard.js'
 
 // Sensible defaults cribbed from retroassembly's emulator-portal. Rewind stays
 // enabled, while run-ahead is disabled for heavy or audio-sensitive cores.
@@ -56,9 +57,19 @@ const RUN_AHEAD_DISABLED_CORES = new Set([
   'fceumm',
   'quicknes',
   'mgba2',
+  // 光盘机器与 J2ME 虚拟机都吃不住「多跑一帧再回滚」：前者一秒要喂几十兆的
+  // 光盘数据，后者在字节码解释器上跑两遍会直接掉帧。
+  'mednafen_pce_fast',
+  'mednafen_ngp',
+  'opera',
+  'neocd',
+  'squirreljme',
 ])
-const SYNC_SENSITIVE_CORES = new Set([
+const REWIND_DISABLED_CORES = new Set([
   'mgba2',
+  // Opera snapshots overflow the default 20 MB rewind buffer during CHD play,
+  // producing an error every few frames. Keep manual snapshots, skip rewind.
+  'opera',
 ])
 
 /**
@@ -82,7 +93,7 @@ export function defaultRetroarchConfigForCore(core) {
       }
     : { ...DEFAULT_RETROARCH_CONFIG }
 
-  if (SYNC_SENSITIVE_CORES.has(core)) {
+  if (REWIND_DISABLED_CORES.has(core)) {
     config.rewind_enable = false
     config.rewind_granularity = 0
   }
@@ -127,6 +138,7 @@ export async function prepareEmulator({
   retroarchCoreConfig = {},
   shader,
   progress = null,
+  onRuntimeError = null,
 }) {
   // Normalize legacy arguments. When `rom` isn't passed, fall back to
   // romUrl/romFileName; otherwise pass `rom` through (Nostalgist accepts
@@ -134,6 +146,14 @@ export async function prepareEmulator({
   const resolvedRom = rom !== undefined
     ? rom
     : (romFileName ? { fileName: romFileName, fileContent: romUrl } : romUrl)
+
+  const coreName = typeof core === 'string' ? core : core?.name
+  // Old saved settings may still name js2me or squirreljme. Every J2ME id runs
+  // the self-hosted J2meJS runtime instead of a libretro core.
+  if (coreName === 'j2mejs' || coreName === 'js2me' || coreName === 'squirreljme') {
+    const { prepareJ2me } = await import('./player/j2meRuntime.js')
+    return prepareJ2me({ rom: resolvedRom, retroarchConfig, progress, onRuntimeError })
+  }
 
   const localCore = typeof core === 'string'
     ? {
@@ -143,15 +163,14 @@ export async function prepareEmulator({
       }
     : core
 
-  // Per-core defaults (run-ahead, rewind) are keyed by name, also when the
-  // caller hands over a prepared core object.
-  const coreName = typeof core === 'string' ? core : core?.name
+  // Per-core defaults are keyed by name, including prepared core objects.
 
   // The core reads pads straight from the browser; hide them so RetroArch's
   // autoconfig path cannot replay every press (see physicalGamepads.js).
   installNativeGamepadGuard()
 
   const options = {
+    ...createCoreBootGuard(coreName),
     core: localCore,
     rom: resolvedRom,
     respondToGlobalEvents: true,

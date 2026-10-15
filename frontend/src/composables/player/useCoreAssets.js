@@ -15,6 +15,7 @@
 
 import { blobDigestHex, fetchBlob, getCachedBlob, putCachedBlob } from '../useBlobCache.js'
 import { coreDisplayName } from '../../constants/cores.js'
+import { registerJ2meCoreTasks } from './j2meCore.js'
 
 const MANIFEST_URL = '/api/cores/manifest'
 // 清单很小且同源，缓存 30 秒即可：发布新版本后刷新一次页面就能拿到。
@@ -120,10 +121,19 @@ export function coreAssetCacheKey({ manifest, name }) {
  *
  * 选定核心在元数据到达前可能先是平台默认值、之后才变成 ROM 指定的核心，
  * 所以这里会把"上一个核心还没开始下载的占位任务"清掉，免得面板上挂着一个
- * 永远不会加载的核心。
+ * 永远不会加载的核心。J2ME 没有 libretro 核心，它的任务来自运行时清单
+ * （j2meCore.js）。
  */
 export async function registerCoreTasksFor(progress, core) {
   if (!progress || !core) return null
+  if (core === 'j2mejs' || core === 'js2me' || core === 'squirreljme') {
+    // The Java runtime is served with the frontend, not as a libretro JS/WASM
+    // pair. It still gets “core” tasks — its scripts and class library are a
+    // few megabytes — but they come from the runtime's own manifest, and the
+    // placeholder pair from a platform default is removed instead of left
+    // unfinished (see j2meCore.js).
+    return registerJ2meCoreTasks(progress)
+  }
   const manifest = await loadCoreManifest()
   const wanted = new Set(['js', 'wasm'].map((ext) => coreTaskId(core, ext)))
   for (const task of progress.tasks || []) {

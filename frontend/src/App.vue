@@ -69,6 +69,7 @@ const changelogOpen = ref(false)
   letter-spacing: 0.04em;
 }
 .app-footer .dot { color: var(--text-quaternary); }
+.app-footer .footer-license { color: var(--text-secondary); }
 .app-footer .footer-author {
   display: inline-flex;
   align-items: center;

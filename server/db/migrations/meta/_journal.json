@@ -50,6 +50,13 @@
       "when": 1791590400000,
       "tag": "0006_rom_cheats",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1791943200000,
+      "tag": "0007_rom_plays",
+      "breakpoints": true
     }
   ]
 }

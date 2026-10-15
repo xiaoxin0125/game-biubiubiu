@@ -57,7 +57,9 @@ saveRoutes.get('/mine', requireAuth, async (c) => {
   return c.json({ saves: rows.map(serialize) })
 })
 
-// Get the save for a specific ROM + slot (returns binary blob)
+// Get the save for a specific ROM + slot.
+// 没有存档时回 204 而不是 404：播放页每次开局都会问一次「这个槽位有存档吗」，
+// 404 会让浏览器在控制台打一条红色的加载失败，玩家会以为游戏出错了。
 saveRoutes.get('/:romId', requireAuth, async (c) => {
   const me = c.get('user')
   const romId = Number(c.req.param('romId'))
@@ -66,11 +68,11 @@ saveRoutes.get('/:romId', requireAuth, async (c) => {
   const row = (await db.select().from(saveStates)
     .where(liveSave(and(eq(saveStates.userId, me.id), eq(saveStates.romId, romId), eq(saveStates.slot, slot))))
     .limit(1))[0]
-  if (!row) return c.json({ error: '无存档' }, 404)
+  if (!row) return c.body(null, 204)
 
   let file
   try { file = openSaveFile(row.filePath) }
-  catch { return c.json({ error: '存档文件缺失' }, 404) }
+  catch { return c.body(null, 204) }
 
   c.header('Content-Type', 'application/octet-stream')
   c.header('Content-Length', String(file.stat.size))

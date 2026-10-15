@@ -44,13 +44,25 @@ function originAllowed(c, origin) {
   return allowed.has(origin)
 }
 
+// The player embeds the J2ME runtime page (`public/j2me/main.html`) in a
+// same-origin iframe: that one path has to stay frameable by this site, while
+// every other response keeps refusing to be framed at all. (Without this the
+// runtime page, when the app server serves the frontend build, is rejected by
+// the browser with "Refused to load" / sandbox access errors.)
+function framePolicy(pathname) {
+  return pathname.startsWith('/j2me/')
+    ? { xFrameOptions: 'SAMEORIGIN', frameAncestors: "frame-ancestors 'self'" }
+    : { xFrameOptions: 'DENY', frameAncestors: "frame-ancestors 'none'" }
+}
+
 export function securityHeaders() {
   return async (c, next) => {
     await next()
+    const policy = framePolicy(new URL(c.req.url).pathname)
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Referrer-Policy', 'same-origin')
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
-    c.header('X-Frame-Options', 'DENY')
+    c.header('X-Frame-Options', policy.xFrameOptions)
     if (isSecureRequest(c)) {
       c.header('Cross-Origin-Opener-Policy', 'same-origin')
     }
@@ -58,7 +70,7 @@ export function securityHeaders() {
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
-      "frame-ancestors 'none'",
+      policy.frameAncestors,
       "form-action 'self'",
       "script-src 'self' blob: 'unsafe-eval' 'wasm-unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",

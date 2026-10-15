@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, isNull, or, sum } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql, sum } from 'drizzle-orm'
 import { z } from 'zod'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, createReadStream, statSync, unlinkSync, existsSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { basename, join, extname, resolve } from 'node:path'
 import { db, insertAndFetch, updateAndFetch } from '../db/index.js'
-import { roms, users, favorites, rooms, STATUS } from '../db/schema.js'
+import { roms, users, favorites, romPlays, rooms, STATUS } from '../db/schema.js'
 import { requireAuth, currentUser } from '../middleware/auth.js'
 import { stream } from 'hono/streaming'
 import { getSetting } from './settings.js'
@@ -91,6 +91,8 @@ function serialize(rom, owner, opts = {}) {
     storage: rom.storage || 'local',
     versionCount: opts.versionCount ?? undefined,
     isFavorite: !!opts.isFavorite,
+    // 全局热度（游玩次数）：首页「最热」排序、卡片热度标签、我的信息页都用它。
+    playCount: Number(rom.playCount || 0),
     createdAt: rom.createdAt,
     updatedAt: rom.updatedAt,
   }
@@ -351,6 +353,72 @@ romRoutes.get('/favorites', requireAuth, async (c) => {
       versionCount: counts.get(rom.id),
     })),
   })
+})
+
+// 「我的信息」页的游玩记录：最近玩过的游戏（倒序）+ 个人游玩次数。平台的分布
+// 由前端用这份数据现算（每个平台累计的次数），不再单开一个统计接口。
+romRoutes.get('/plays/mine', requireAuth, async (c) => {
+  const user = c.get('user')
+  const rows = await db.select({
+    play: romPlays,
+    rom: roms,
+    owner: { id: users.id, username: users.username },
+  })
+    .from(romPlays)
+    .innerJoin(roms, eq(roms.id, romPlays.romId))
+    .innerJoin(users, eq(users.id, roms.userId))
+    .where(and(eq(romPlays.userId, user.id), eq(roms.status, STATUS.normal)))
+    .orderBy(desc(romPlays.lastPlayedAt))
+    .limit(200)
+  return c.json({
+    plays: rows
+      // 别人的私有 ROM 可能曾经公开过、后来收回：列表里只留自己有权限看的那部分。
+      .filter(({ rom }) => canAccessRom(user, rom))
+      .map(({ play, rom, owner }) => ({
+        rom: serialize(rom, owner, { isFavorite: false }),
+        // 个人的游玩次数与最近一次时间，与 rom.playCount（全站热度）分开给。
+        playCount: Number(play.playCount || 0),
+        lastPlayedAt: play.lastPlayedAt,
+      })),
+  })
+})
+
+// 记一次游玩。播放页在模拟器真正启动起来之后才调用，所以它同时是「这盘卡带
+// 跑起来了」的凭据，不会因为打开页面没启动成功就凭空 +1。
+// 游客也算热度（站点开启游客试玩时他们本来就在玩），只是没有个人记录 ——
+// 个人记录要认人，见 rom_plays 表。
+romRoutes.post('/:id/play', async (c) => {
+  const id = Number(c.req.param('id'))
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: '不存在' }, 404)
+  const rom = (await db.select().from(roms).where(liveRom(eq(roms.id, id))).limit(1))[0]
+  if (!rom) return c.json({ error: '不存在' }, 404)
+
+  // 与下载 ROM 的关卡保持一致：登录用户按自己的权限判断，游客只在管理员
+  // 打开「游客试玩」后、且只对公开 ROM 记账。
+  const user = await currentUser(c)
+  if (!user) {
+    const guestOk = (await getSetting('guestPlayEnabled', '0')) === '1'
+    if (!guestOk) return c.json({ error: '请先登录' }, 401)
+    if (!rom.isPublic) return c.json({ error: '该 ROM 非公开' }, 403)
+  } else if (!canAccessRom(user, rom)) {
+    return c.json({ error: 'forbidden' }, 403)
+  }
+
+  // 全局热度：直接在这一行上自增，首页排序读它，不用每次聚合统计表。
+  await db.update(roms)
+    .set({ playCount: sql`${roms.playCount} + 1` })
+    .where(eq(roms.id, id))
+
+  // 个人记录：同一个人玩同一盘卡带只累加次数、刷新时间，不新增行。
+  if (user) {
+    const now = new Date()
+    await db.insert(romPlays)
+      .values({ userId: user.id, romId: id, playCount: 1, lastPlayedAt: now })
+      .onDuplicateKeyUpdate({
+        set: { playCount: sql`${romPlays.playCount} + 1`, lastPlayedAt: now },
+      })
+  }
+  return c.json({ ok: true, playCount: Number(rom.playCount || 0) + 1 })
 })
 
 romRoutes.post('/:id/favorite', requireAuth, async (c) => {

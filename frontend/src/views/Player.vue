@@ -195,6 +195,7 @@ import { useRouter } from 'vue-router'
 import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
+import { usePlayRecord } from '../composables/player/usePlayRecord.js'
 import { useResourceLoadProgress } from '../composables/player/useResourceLoadProgress.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
 import { useCheats } from '../composables/player/useCheats.js'
@@ -284,6 +285,11 @@ const {
   reportError: setFatalError,
   progress: loadProgress,
 })
+
+// 模拟器每次启动成功（@booted）记一次游玩：首页热度与「我的信息」的最近游玩都
+// 读这份记录。同一页面加载内只记一次，「重载游戏」不会重复计数。
+const { recordPlay } = usePlayRecord({ romMeta })
+watch(booted, (value) => { if (value) recordPlay() })
 
 const {
   activeCore,

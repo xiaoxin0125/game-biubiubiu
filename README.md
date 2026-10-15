@@ -4,7 +4,7 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.5.2**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.2`，同时打 `v1.5`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.6.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.0`，同时打 `v1.6`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
@@ -159,7 +159,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.5.2"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.6.0"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -210,7 +210,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.5.2`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.6.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）。
 
 **6. 备份与恢复**
 
@@ -281,11 +281,20 @@ CORES_DIR=/www/wwwroot/game/data/cores
 | `megadrive` / `genesis` | `.md`、`.gen`、`.smd`、`.bin`、`.zip` | `genesis_plus_gx`、`picodrive` | 2P |
 | `sms` | `.sms`、`.zip` | `genesis_plus_gx`、`picodrive`、`gearsystem` | 1P |
 | `gamegear` | `.gg`、`.zip` | `genesis_plus_gx`、`gearsystem` | 1P |
+| `sega32x` | `.32x`、`.bin`、`.gen`、`.md`、`.zip` | `picodrive` | 2P |
 | `psx` | `.chd`、`.cue`、`.bin`、`.iso`、`.pbp`、`.m3u` | `pcsx_rearmed` | 2P，3/4P 联机启用 multitap 配置 |
+| `pcengine` | `.pce`、`.zip` | `mednafen_pce_fast` | 2P |
+| `pcecd` | `.chd`、`.cue`、`.ccd`、`.toc`、`.m3u` | `mednafen_pce_fast` | 2P |
+| `neogeocd` | `.chd`、`.cue` | `neocd` | 2P |
+| `ngp` | `.ngp`、`.ngc`、`.ngpc`、`.npc`、`.zip` | `mednafen_ngp` | 1P（核心只认一个手柄口） |
+| `3do` | `.chd`、`.cue`、`.iso`、`.bin` | `opera` | 2P |
+| `j2me` | `.jar` | 本机托管的 `j2mejs` | 1P |
 
-表里 `nes` / `famicom`、`sfc` / `snes`、`megadrive` / `genesis` 是三对区域别名：同一台硬件、同一套扩展名、同一批核心、同样的默认人数与按键，只有界面上给玩家看的叫法不同（红白机 / NES、超任 / SNES、日版 MD / 美版 Genesis）。注意平台 id 是 ROM 记录上的字段，同时也是分组键：上传页按扩展名自动识别时只会给出每个平台族里的第一个名字（`.nes`、`.unif`、`.unf` → `nes`，`.smc`、`.sfc` → `sfc`，`.md`、`.gen`、`.smd`、`.bin` → `megadrive`，而任何 `.zip` 都会先匹配到 `arcade`），三对别名都要手动选；父子版本要求平台一致，所以同一款游戏不要一半标 `nes`、一半标 `famicom`，那样两者无法互为版本。
+表里 `nes` / `famicom`、`sfc` / `snes`、`megadrive` / `genesis` 是三对区域别名：同一台硬件、同一套扩展名、同一批核心、同样的默认人数与按键，只有界面上给玩家看的叫法不同（红白机 / NES、超任 / SNES、日版 MD / 美版 Genesis）。注意平台 id 是 ROM 记录上的字段，同时也是分组键：上传页按扩展名自动识别只认「一个扩展名基本只可能属于一台机器」的情况（`.nes`、`.unif`、`.unf` → `nes`，`.smc`、`.sfc` → `sfc`，`.md`、`.gen`、`.smd` → `megadrive`，`.pce` → `pcengine`，`.32x` → `sega32x`，`.ngp` / `.ngc` / `.ngpc` / `.npc` → `ngp`，`.jar` → `j2me`，任何 `.zip` → `arcade`），光盘镜像（`.cue` / `.chd` / `.iso`）与 `.bin` 多台机器共用，不再自动识别，要手动选；三对别名同样要手动选。父子版本要求平台一致，所以同一款游戏不要一半标 `nes`、一半标 `famicom`，那样两者无法互为版本。
 
-FDS 需要 `disksys.rom`；PSX 常用 BIOS 为 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`。
+BIOS 按平台放在 `data/bios/<平台>/` 下：FDS 需要 `disksys.rom`；PSX 常用 BIOS 为 `scph5500.bin`、`scph5501.bin`、`scph5502.bin`；PCE-CD 需要 `syscard3.pce`（去掉 512 字节 copier 头后的本体，MD5 `38179df8f4ac870017db21ebcbf53114`）；Neo Geo CD 需要 `neocd_f.rom` 与 `ng-lo.rom`（核心按 `system/neocd/` 找，挂载时的子目录由 `shared/registry/platform-bios.js` 的挂载表补上）；3DO 用日版 FZ-1 的 `panafz1j.bin` 与日版字库 `panafz1j-kanji.bin`（核心选项里已点名这两份）；J2ME 改用前端本机托管的 J2meJS，不需要 BIOS；当前上传格式只接受 `.jar`，JAD/JAM 描述文件需要先取得对应 JAR 后再上传；`.sqc` 不受支持。J2meJS 的 MIDP/厂商扩展兼容性有限，不保证所有 Java 游戏都能运行；不支持即时存档/读档，游戏内 RMS 存档仅在当前运行会话有效。后台「BIOS 文件」页会列出每个平台的必填项与缺失文件。
+
+Opera 的浏览器核心需要让 libretro-common 的头文件与 RetroArch 实现一致；构建版本、CHD 支持和真实浏览器回归步骤见 [`deploy/opera-build.md`](deploy/opera-build.md)。Java 运行时的许可证、站点补丁、手机端（WebKit）启动修复与运行时资源版本号见 [`frontend/public/j2me/INTEGRATION.md`](frontend/public/j2me/INTEGRATION.md)；它的沙箱 iframe 必须留在屏幕内并靠 `opacity` 隐藏，一旦被挪出屏幕，Chrome 会把它的定时器压到每秒一次，游戏会明显卡顿。
 
 FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多出「换面」「换盘」两颗（键盘默认对应 `U` 与 `P`，也能在按键设置里改）。nestopia 下「换面」直接翻到另一面，「换盘」在双盘游戏里换到另一张盘；fceumm 下要先「换盘」弹出、再「换面」选面、再「换盘」插回。这两颗按布局走：PC 宽屏在画面右侧那组图文按钮里，窄屏退回顶部工具条时也一起排进工具条；手机端不跟右上角那组挤在同一排，而是排在画面左上角全屏按钮的正下方，尺寸与全屏 /「按键透明度」按钮一致（42px），竖屏窄到 320px 也不会顶出屏幕。
 

@@ -48,6 +48,9 @@ export const api = {
   romRestore: (id) => request(`/api/roms/${id}/restore`, { method: 'POST' }),
   romFavorite:   (id) => request(`/api/roms/${id}/favorite`, { method: 'POST' }),
   romUnfavorite: (id) => request(`/api/roms/${id}/favorite`, { method: 'DELETE' }),
+  // 记一次游玩：播放页在模拟器启动成功后调用，用来累积热度与「我的信息」的记录。
+  romPlay:       (id) => request(`/api/roms/${id}/play`, { method: 'POST' }),
+  romPlaysMine:  () => request('/api/roms/plays/mine'),
   romVersions:   (id) => request(`/api/roms/${id}/versions`),
   // Include the original filename as the last URL segment so emulators that
   // infer romset identity from the archive name (FBNeo, MAME) can find matches.
@@ -58,7 +61,8 @@ export const api = {
   // saves
   saveLoad: async (romId, slot = 0) => {
     const res = await fetch(`/api/saves/${romId}?slot=${slot}`, { credentials: 'include' })
-    if (res.status === 404) return null
+    // 204 = 这个槽位没有存档（后端不再用 404，免得控制台多一条红色报错）。
+    if (res.status === 204 || res.status === 404) return null
     if (!res.ok) {
       const d = await res.json().catch(() => null)
       throw new Error(d?.error || `加载存档失败 (${res.status})`)

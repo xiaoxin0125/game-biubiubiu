@@ -2,9 +2,10 @@ import { PLATFORM_ROM_REGISTRY } from '../../../shared/registry/platform-roms.js
 import { PLATFORM_DEFAULT_MAX_PLAYERS } from '../../../shared/registry/platform-players.js'
 
 // Platform registry. Trimmed to the platforms actually played in the CN market
-// (arcade / Nintendo family / Sega family / PS1). Obscure hardware like
-// Virtual Boy, 32X, SG-1000, Neo Geo Pocket, PC Engine, Atari, Channel F,
-// Odyssey², Videopac, WonderSwan, Game & Watch has been removed.
+// (arcade / Nintendo family / Sega family / Sony / NEC / SNK / 3DO / J2ME).
+// 后面这几台的卡带与光盘机（PC Engine 与 PC Engine CD、Neo Geo Pocket 与
+// Neo Geo CD、3DO、Super 32X、J2ME）是 v1.6.0 加回来的：核心来自 libretro 的
+// v1.22.2 构建，BIOS 需要的文件见 shared/registry/platform-bios.js。
 //
 // Each entry: displayName (cn), shortLabel (tab badge), manufacturer,
 // releaseDate, libretroName, fileExtensions, cores (priority order — first is
@@ -38,6 +39,20 @@ const BTN_MD    = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
 const BTN_PSX   = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'start', 'select']
 const BTN_ARCADE = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select']
 const BTN_SIMPLE = [...DPAD, 'a', 'b', 'start']
+// PC Engine / PCE-CD：同一个核心（Beetle PCE Fast）。b/a 是主机自带的两颗 I / II，
+// x/y/l/r 是六键手柄（Avenue Pad 6）上的 III / IV / V / VI，l2 是它的 2/6 键切换键。
+// 核心默认按两键手柄启动（六键在少数游戏里会被认错），玩家按「模式」键随时切到六键。
+const BTN_PCE   = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'start', 'select']
+// Neo Geo CD：四颗面键 A/B/C/D + Start / Select（NeoCD 核心还额外接了 B+C、A+B 这类
+// 组合键，那些放在 L / L2 / R2 上，触屏手柄摆不下，就没给用户开放）。
+const BTN_NEOGEO = [...DPAD, 'a', 'b', 'x', 'y', 'start', 'select']
+// Neo Geo Pocket / Color：A / B 加 Option（机身菜单键）。
+const BTN_NGP   = [...DPAD, 'a', 'b', 'start']
+// 3DO：面键 A / B / C 三颗 + L / R 肩键，X（停止）与 P（播放/暂停）借用系统的
+// select / start 两行。
+const BTN_3DO   = [...DPAD, 'a', 'b', 'y', 'l', 'r', 'start', 'select']
+// J2ME：面键与肩键沿用手机键盘的数字键标签，十字键发手机的导航键代码。
+const BTN_J2ME  = [...DPAD, 'a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'start', 'select']
 const withTurbo = (buttons) => [...buttons]
 const NES_PC_TURBO_BUTTONS = Object.freeze({ x: 'a', y: 'b' })
 const NES_PLATFORM_IDS = new Set(['nes', 'famicom', 'fds'])
@@ -200,6 +215,17 @@ export const platforms = {
     fileExtensions: ['.gg', '.zip'],
     cores: ['genesis_plus_gx', 'gearsystem'],
   },
+  sega32x: {
+    displayName: 'Super 32X',
+    shortLabel: '32X',
+    manufacturer: 'Sega',
+    releaseDate: '1994-11-21',
+    libretroName: 'Sega - 32X',
+    color: '#ffd60a',
+    fileExtensions: ['.32x', '.bin', '.gen', '.md', '.zip'],
+    // genesis_plus_gx 不支持 32X，只能走 picodrive。
+    cores: ['picodrive'],
+  },
 
   // Sony
   psx: {
@@ -212,14 +238,95 @@ export const platforms = {
     fileExtensions: ['.chd', '.cue', '.bin', '.iso', '.pbp', '.m3u'],
     cores: ['pcsx_rearmed'],
   },
+
+  // NEC
+  pcengine: {
+    displayName: 'PC Engine',
+    shortLabel: 'PCE',
+    manufacturer: 'NEC',
+    releaseDate: '1987-10-30',
+    libretroName: 'NEC - PC Engine',
+    color: '#ff6b35',
+    fileExtensions: ['.pce', '.zip'],
+    cores: ['mednafen_pce_fast'],
+    buttons: withTurbo(BTN_PCE),
+  },
+  pcecd: {
+    displayName: 'PC Engine CD',
+    shortLabel: 'PCE-CD',
+    manufacturer: 'NEC',
+    releaseDate: '1988-12-04',
+    libretroName: 'NEC - PC Engine CD',
+    color: '#ff8c42',
+    fileExtensions: ['.chd', '.cue', '.ccd', '.toc', '.m3u'],
+    cores: ['mednafen_pce_fast'],
+    requiresBios: true,
+    buttons: withTurbo(BTN_PCE),
+  },
+
+  // SNK
+  neogeocd: {
+    displayName: 'Neo Geo CD',
+    shortLabel: 'NEOCD',
+    manufacturer: 'SNK',
+    releaseDate: '1994-09-09',
+    libretroName: 'SNK - Neo Geo CD',
+    color: '#d4af37',
+    fileExtensions: ['.chd', '.cue'],
+    cores: ['neocd'],
+    requiresBios: true,
+    buttons: withTurbo(BTN_NEOGEO),
+  },
+  ngp: {
+    displayName: 'Neo Geo Pocket / Color',
+    shortLabel: 'NGP',
+    manufacturer: 'SNK',
+    releaseDate: '1998-10-28',
+    libretroName: 'SNK - Neo Geo Pocket / Color',
+    color: '#5ac8fa',
+    fileExtensions: ['.ngp', '.ngc', '.ngpc', '.npc', '.zip'],
+    cores: ['mednafen_ngp'],
+  },
+
+  // 3DO
+  '3do': {
+    displayName: '3DO Interactive Multiplayer',
+    shortLabel: '3DO',
+    manufacturer: 'The 3DO Company',
+    releaseDate: '1993-10-04',
+    libretroName: 'The 3DO Company - 3DO',
+    color: '#bf5af2',
+    fileExtensions: ['.chd', '.cue', '.iso', '.bin'],
+    cores: ['opera'],
+    requiresBios: true,
+    buttons: withTurbo(BTN_3DO),
+  },
+
+  // 手机游戏
+  j2me: {
+    displayName: 'Java ME (J2ME 手机游戏)',
+    shortLabel: 'J2ME',
+    manufacturer: '各手机厂商',
+    releaseDate: '2000-05-01',
+    libretroName: 'Java ME (J2meJS)',
+    color: '#64d2ff',
+    fileExtensions: ['.jar'],
+    cores: ['js2me'],
+    requiresBios: false,
+    buttons: withTurbo(BTN_J2ME),
+  },
 }
 
 // Tab grouping by manufacturer (for Gallery tabs)
 export const tabGroups = {
   arcade:   { label: '街机',   platforms: ['arcade'] },
   nintendo: { label: '任天堂', platforms: ['nes', 'famicom', 'fds', 'sfc', 'snes', 'gb', 'gbc', 'gba'] },
-  sega:     { label: '世嘉',   platforms: ['megadrive', 'genesis', 'sms', 'gamegear'] },
+  sega:     { label: '世嘉',   platforms: ['megadrive', 'genesis', 'sega32x', 'sms', 'gamegear'] },
   sony:     { label: '索尼',   platforms: ['psx'] },
+  nec:      { label: 'NEC',    platforms: ['pcengine', 'pcecd'] },
+  snk:      { label: 'SNK',    platforms: ['neogeocd', 'ngp'] },
+  '3do':    { label: '3DO',    platforms: ['3do'] },
+  j2me:     { label: '手机游戏', platforms: ['j2me'] },
 }
 
 // Button profile per platform — attached after definition to keep the registry
@@ -239,6 +346,13 @@ const BUTTON_PROFILES = {
   sms:        withTurbo(BTN_SIMPLE),
   gamegear:   withTurbo(BTN_SIMPLE),
   psx:        withTurbo(BTN_PSX),
+  pcengine:   withTurbo(BTN_PCE),
+  pcecd:      withTurbo(BTN_PCE),
+  neogeocd:   withTurbo(BTN_NEOGEO),
+  ngp:        withTurbo(BTN_NGP),
+  '3do':      withTurbo(BTN_3DO),
+  sega32x:    withTurbo(BTN_MD),
+  j2me:       withTurbo(BTN_J2ME),
 }
 
 export const platformDefaultMaxPlayers = PLATFORM_DEFAULT_MAX_PLAYERS
@@ -278,6 +392,8 @@ const BUTTON_LABELS = {
   // the game's B and so on.
   megadrive: { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
   genesis:   { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
+  // 32X 用的就是 MD 的六键手柄，映射与上面两行逐项相同。
+  sega32x:   { a: 'C', b: 'B', x: 'Y', y: 'A', l: 'X', r: 'Z' },
 
   // Sega Master System / Game Gear — retropad_b is Button 1 (primary)
   sms:       { a: '2', b: '1' },
@@ -295,6 +411,30 @@ const BUTTON_LABELS = {
   // R = 换盘（弹出 / 插回，多盘游戏用来换到另一张盘）。标签直接写成动作名，
   // 按键设置里才不会出现「L / R 是干什么的」这种疑问。
   fds:       { x: '连发A', y: '连发B', l: '换面', r: '换盘' },
+
+  // PC Engine / PCE-CD — Beetle PCE Fast 的 retropad 映射（见核心的
+  // retro_input_descriptor 表）：b→II, a→I, y→III, x→IV, l→V, r→VI,
+  // l2→Mode Switch（六键手柄的 2 键 / 6 键切换）, select→Select, start→Run。
+  // 主机自带的两颗是 I / II，III–VI 只有插上六键手柄才有；核心默认按两键启动
+  // （六键在少数游戏里会被认错），所以把「模式」也摆出来，玩家自己切。
+  pcengine:  { a: 'I', b: 'II', y: 'III', x: 'IV', l: 'V', r: 'VI', l2: '模式', select: 'SELECT', start: 'RUN' },
+  pcecd:     { a: 'I', b: 'II', y: 'III', x: 'IV', l: 'V', r: 'VI', l2: '模式', select: 'SELECT', start: 'RUN' },
+
+  // Neo Geo CD — 与街机平台同一套「retropad 与游戏按键反着来」的对应
+  // （NeoCD 核心的表里 b→A、a→B、y→C、x→D）。
+  neogeocd:  { a: 'B', b: 'A', x: 'D', y: 'C' },
+
+  // Neo Geo Pocket / Color — b→A，a→B，start→Option（机身菜单键）。
+  ngp:       { a: 'B', b: 'A', start: 'Option' },
+
+  // 3DO — Opera：y→A，b→B，a→C（手柄上从左到右就是 A B C），l / r→肩键，
+  // select→X（停止），start→P（播放/暂停）。
+  '3do':     { a: 'C', b: 'B', y: 'A', l: 'L', r: 'R', select: 'X', start: 'P' },
+
+  // J2ME — J2meJS 适配器把 retropad 标识映射到手机键盘；保留原来的按键标签：
+  //   x→1（游戏A），a→3（游戏B），y→7（游戏C），b→9（游戏D），
+  //   l2→5（开火 / 确定），l→＊，r→＃，select / start→左软键 / 右软键。
+  j2me:       { a: '3', b: '9', x: '1', y: '7', l: '＊', r: '＃', l2: '5 确定', r2: '0', select: '软键1', start: '软键2' },
 }
 for (const [id, p] of Object.entries(platforms)) {
   p.buttonLabels = BUTTON_LABELS[id] || null

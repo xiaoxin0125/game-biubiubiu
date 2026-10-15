@@ -232,6 +232,7 @@ import { useInputMapping } from '../composables/useInputMapping.js'
 import { useAuth } from '../composables/useAuth.js'
 import { usePlayerRom } from '../composables/player/usePlayerRom.js'
 import { useResourceLoadProgress } from '../composables/player/useResourceLoadProgress.js'
+import { usePlayRecord } from '../composables/player/usePlayRecord.js'
 import { useSaveState } from '../composables/player/useSaveState.js'
 import { useCheats } from '../composables/player/useCheats.js'
 import { useGuestInputForwarding } from '../composables/player/useGuestInputForwarding.js'
@@ -430,6 +431,11 @@ const showLoadOverlay = computed(() =>
 watch([activeCore, isHostMode], ([core, host]) => {
   if (core && host === true) loadProgress.registerCoreTasks(core)
 })
+
+// 联机房里只有房主会在本地启动核心（客人看的是房间画面流），所以 @booted 只在
+// 房主这一侧触发：这次游玩记在房主头上，客人不进这份统计。
+const { recordPlay } = usePlayRecord({ romMeta })
+watch(booted, (value) => { if (value) recordPlay() })
 
 const { onSaveState, onLoadState } = useSaveState({
   romMeta,

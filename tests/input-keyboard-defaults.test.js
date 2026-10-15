@@ -104,7 +104,7 @@ const OLD_PLAYER_2_DEFAULT = {
   l3: 'kp_period', r3: 'numpad5', start: 'kp_enter', select: 'numpad0',
 }
 
-const PLATFORMS = ['nes', 'snes', 'gba', 'megadrive', 'genesis', 'arcade', 'psx']
+const PLATFORMS = ['nes', 'snes', 'gba', 'megadrive', 'genesis', 'arcade', 'psx', 'pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
 
 const PLAYER_BUTTON = '(up|down|left|right|a|b|x|y|l|r|l2|r2|l3|r3|start|select)'
 

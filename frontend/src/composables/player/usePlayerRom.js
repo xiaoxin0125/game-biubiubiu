@@ -31,6 +31,8 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
     if (!p) return '正在获取游戏信息…'
     if (p === 'arcade') return '街机核心首次加载较慢（10-30 秒），请耐心等待'
     if (p === 'psx') return '核心较大，首次加载约需 10 秒'
+    // 光盘机（PCE-CD / Neo Geo CD / 3DO）的镜像动辄几十上百兆，还要配 BIOS。
+    if (p === 'pcecd' || p === 'neogeocd' || p === '3do') return '光盘镜像与 BIOS 下载中，首次加载较慢'
     return '核心与 ROM 下载中…'
   })
 

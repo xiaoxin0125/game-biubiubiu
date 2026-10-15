@@ -50,13 +50,13 @@
         class="sys-btn"
         :class="{ pressed: pressed.select }"
         data-btn-key="select"
-      >SELECT</button>
+      >{{ labelOf('select', 'SELECT') }}</button>
       <button
         v-if="has('start')"
         class="sys-btn sys-btn-start"
         :class="{ pressed: pressed.start }"
         data-btn-key="start"
-      >START</button>
+      >{{ labelOf('start', 'START') }}</button>
       <!-- 连发开关：持久化的 turbo toggle。开启后 A/B/X/Y/L/R 按住即 16Hz 自动射击 -->
       <button
         class="sys-btn turbo-toggle"
@@ -172,8 +172,9 @@ function labelOf(key, fallback) {
 
 // Face-button layout presets. Each layout lists retropad keys in render order
 // with its color. Physical positioning is CSS-driven via `.face-<layout>`.
-// The Chinese-market platforms we kept are: arcade / nes+famicom+fds / sfc /
-// snes / gb / gbc / gba / megadrive / genesis / sms / gamegear / psx.
+// The Chinese-market platforms are: arcade / nes+famicom+fds / sfc / snes /
+// gb / gbc / gba / megadrive+genesis+sega32x / sms / gamegear / psx /
+// pcengine+pcecd / neogeocd / ngp / 3do / j2me.
 // Colors roughly match the real hardware pads: FC-era A = 黄/橙, B = 红
 // (classic 小霸王 2-button look); SNES Japan version has multi-colored
 // buttons; PlayStation uses its iconic symbol colors.
@@ -197,27 +198,44 @@ const FACE_LAYOUTS = {
   // Master System / Game Gear — 2 buttons: 1 蓝 2 红
   sms:    { keys: ['b', 'a'],             colors: { b: '#82AEF5', a: '#C4526F' } },
   // Arcade face buttons use A/B/C/D; retropad L/R are exposed below as E/F
-  // for 6-button cabinets.
+  // for 6-button cabinets. Neo Geo CD 用的是同一套四键排列（A B 上排、C D 下排）。
   arcade: { keys: ['b', 'a', 'y', 'x'],   colors: { b: '#C4526F', a: '#EFC55B', y: '#5FC48F', x: '#82AEF5' } },
+  // PC Engine 六键手柄（Avenue Pad 6）：上排 III IV V，下排 I II VI。
+  // 主机自带的两颗 I / II 在下排左侧，III–VI 只有插上六键手柄才有（核心默认两键，
+  // 玩家按肩键上的「模式」切换）。
+  pce:    { keys: ['y', 'x', 'l', 'a', 'b', 'r'],
+            colors: { y: '#C4526F', x: '#F0A05F', l: '#82AEF5',
+                      a: '#5FC48F', b: '#EFC55B', r: '#AF52DE' } },
+  // 3DO：一只手柄上就 A / B / C 三颗，横排从左到右。retropad y→A, b→B, a→C。
+  '3do':  { keys: ['y', 'b', 'a'],        colors: { y: '#C4526F', b: '#EFC55B', a: '#5FC48F' } },
+  // J2ME：手机键盘的四个角 —— 1（左上）、3（右上）、7（左下）、9（右下）。
+  // 中间那颗「5 确定」在肩键那一行（retropad l2）。
+  j2me:   { keys: ['x', 'a', 'y', 'b'],
+            colors: { x: '#82AEF5', a: '#82AEF5', y: '#C4526F', b: '#C4526F' } },
 }
 
 function pickLayout(platform) {
-  if (platform === 'arcade') return 'arcade'
+  if (platform === 'arcade' || platform === 'neogeocd') return 'arcade'
   if (platform === 'psx') return 'ps'
   if (platform === 'sfc' || platform === 'snes') return 'snes'
-  if (platform === 'megadrive' || platform === 'genesis') return 'md'
+  if (platform === 'megadrive' || platform === 'genesis' || platform === 'sega32x') return 'md'
   if (platform === 'sms' || platform === 'gamegear') return 'sms'
   if (platform === 'gba') return 'gba'
-  return 'fc'  // nes, famicom, fds, gb, gbc, and everything else
+  if (platform === 'pcengine' || platform === 'pcecd') return 'pce'
+  if (platform === '3do') return '3do'
+  if (platform === 'j2me') return 'j2me'
+  return 'fc'  // nes, famicom, fds, gb, gbc, ngp, and everything else
 }
 
 const layoutType = computed(() => pickLayout(props.platform))
 
 // Shoulder row is also used by arcade to expose retropad L/R as E/F;
-// several 6-button cabinets need those inputs on mobile.
+// several 6-button cabinets need those inputs on mobile. PC Engine 的 V / VI 与
+// 「模式」、3DO 的 L / R、J2ME 的「5 确定」也都挂在这一行。
 const showShoulders = computed(() => {
   const t = layoutType.value
   return t === 'snes' || t === 'ps' || t === 'gba' || t === 'arcade'
+    || t === 'pce' || t === '3do' || t === 'j2me'
 })
 
 const shoulderBtns = computed(() => {
@@ -778,6 +796,52 @@ function onDpadEnd(e) {
 .face-sms .fbtn-b { grid-area: smsOne; }
 .face-sms .fbtn-a { grid-area: smsTwo; }
 
+/* PC Engine Avenue Pad 6 — 6 buttons in two rows of three:
+   上排 III IV V（retropad y x l），下排 I II VI（retropad a b r）。 */
+.face-pce {
+  width: 186px;
+  height: 124px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "pce3 pce4 pce5"
+    "pce1 pce2 pce6";
+  gap: 6px;
+}
+.face-pce .face-btn { width: 48px; height: 48px; font-size: 15px; }
+.face-pce .fbtn-y { grid-area: pce3; }   /* III */
+.face-pce .fbtn-x { grid-area: pce4; }   /* IV */
+.face-pce .fbtn-l { grid-area: pce5; }   /* V */
+.face-pce .fbtn-a { grid-area: pce1; }   /* I */
+.face-pce .fbtn-b { grid-area: pce2; }   /* II */
+.face-pce .fbtn-r { grid-area: pce6; }   /* VI */
+
+/* 3DO — 手柄上就三颗面键，横排从左到右 A B C（retropad y b a） */
+.face-3do {
+  width: 180px;
+  height: 70px;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-areas: "doC doB doA";
+}
+.face-3do .fbtn-y { grid-area: doC; }    /* 标签 'A' */
+.face-3do .fbtn-b { grid-area: doB; }    /* 标签 'B' */
+.face-3do .fbtn-a { grid-area: doA; }    /* 标签 'C' */
+
+/* J2ME — 手机键盘的四个角：1 3 / 7 9（retropad x a / y b） */
+.face-j2me {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  grid-template-areas:
+    "j1 j3"
+    "j7 j9";
+  gap: 10px;
+}
+.face-j2me .face-btn { width: 60px; height: 60px; font-size: 18px; }
+.face-j2me .fbtn-x { grid-area: j1; }    /* 标签 '1' */
+.face-j2me .fbtn-a { grid-area: j3; }    /* 标签 '3' */
+.face-j2me .fbtn-y { grid-area: j7; }    /* 标签 '7' */
+.face-j2me .fbtn-b { grid-area: j9; }    /* 标签 '9' */
+
 /* ===== Shoulders ===== */
 .shoulders { display: flex; gap: 10px; margin-right: 4px; }
 .shoulders.stacked {
@@ -840,10 +904,14 @@ function onDpadEnd(e) {
   .stick, .face { width: 132px; height: 132px; }
   .face-md { width: 168px; height: 112px; }
   .face-sms { width: 128px; height: 64px; }
+  .face-pce { width: 168px; height: 112px; }
+  .face-3do { width: 162px; height: 64px; }
   .stick-knob { width: 58px; height: 58px; margin: -29px 0 0 -29px; }
   .face-btn { width: 46px; height: 46px; font-size: 14px; }
   .face-fc .face-btn, .face-gba .face-btn { width: 54px; height: 54px; font-size: 16px; }
+  .face-j2me .face-btn { width: 54px; height: 54px; font-size: 16px; }
   .face-md .face-btn { width: 42px; height: 42px; font-size: 13px; }
+  .face-pce .face-btn { width: 42px; height: 42px; font-size: 13px; }
 }
 
 /* Landscape: push stick / face buttons toward corners */
@@ -859,9 +927,13 @@ function onDpadEnd(e) {
   .stick, .face { width: 128px; height: 128px; }
   .face-md { width: 162px; height: 106px; }
   .face-sms { width: 122px; height: 60px; }
+  .face-pce { width: 162px; height: 106px; }
+  .face-3do { width: 156px; height: 60px; }
   .stick-knob { width: 56px; height: 56px; margin: -28px 0 0 -28px; }
   .face-btn { width: 44px; height: 44px; }
   .face-fc .face-btn, .face-gba .face-btn { width: 52px; height: 52px; font-size: 15px; }
+  .face-j2me .face-btn { width: 52px; height: 52px; font-size: 15px; }
   .face-md .face-btn { width: 40px; height: 40px; font-size: 13px; }
+  .face-pce .face-btn { width: 40px; height: 40px; font-size: 13px; }
 }
 </style>
