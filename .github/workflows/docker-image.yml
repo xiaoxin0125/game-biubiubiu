@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 镜像版本以源码版本为准：package.json 的 version 同时决定镜像标签和构建参数。
       - name: Read version from package.json
