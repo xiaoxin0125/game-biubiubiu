@@ -3,7 +3,8 @@
     <aside v-if="open" class="room-panel" @click.stop>
       <header class="rp-head">
         <div class="rp-title">
-          <span class="rp-code">{{ code }}</span>
+          <!-- 标题用房间名（点一下复制房间码），房间码本身不再单独摆一块 -->
+          <RoomNameCopy :code="code" class="rp-name">{{ name || code }}</RoomNameCopy>
           <span class="rp-state" :class="connected ? 'ok' : 'pending'">
             {{ connected ? (isHost ? '主机' : '已连接') : '连接中…' }}
           </span>
@@ -49,10 +50,13 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import RoomNameCopy from '../RoomNameCopy.vue'
 
 const props = defineProps({
   open: Boolean,
   code: String,
+  // 房间名：面板标题显示它，点名称复制房间码
+  name: { type: String, default: '' },
   connected: Boolean,
   isHost: Boolean,
   allowPlay: { type: Boolean, default: true },
@@ -122,12 +126,11 @@ watch(() => props.chat.length, async () => {
   background: var(--clay-surface-alt);
 }
 .rp-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.rp-code {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 14px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
+/* 房间名当标题：比原来的房间码更该被看见，点一下复制房间码 */
+.rp-name {
+  font-size: 15px;
   color: var(--text-primary);
+  --name-copy-hint: 0.5;
 }
 .rp-state,
 .rp-mode {

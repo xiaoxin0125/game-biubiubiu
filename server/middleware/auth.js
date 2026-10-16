@@ -44,6 +44,30 @@ function hashSessionToken(token) {
   return createHash('sha256').update(String(token)).digest('hex')
 }
 
+// 历史会话的令牌是明文入库的（改动前的格式）：32 字节 base64url 恰为 43 个字符。
+// sha256 无盐、服务端自己就能算，所以启动时可以把这些行原地改写成哈希 ——
+// 浏览器 Cookie 里持有的原文照样能匹配上，没有任何人需要重新登录，而库里不再
+// 留可直接重放的凭据（2026-10-16 重审 N-3）。
+const LEGACY_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
+
+export async function upgradeLegacySessionTokens() {
+  const rows = await db.select({ id: sessions.id, token: sessions.token }).from(sessions)
+  let upgraded = 0
+  for (const row of rows) {
+    const token = String(row.token || '')
+    if (!LEGACY_TOKEN_PATTERN.test(token)) continue
+    try {
+      await db.update(sessions).set({ token: hashSessionToken(token) }).where(eq(sessions.id, row.id))
+      upgraded += 1
+    } catch (err) {
+      // 唯一索引冲突（同一令牌同时存在明文行与哈希行）时跳过：那一行已经是哈希，
+      // 少改一条不影响任何人的登录状态。
+      console.warn('[api] failed to upgrade legacy session token', err?.message || err)
+    }
+  }
+  return upgraded
+}
+
 async function findSessionRow(tokenValue, now) {
   const rows = await db.select({ s: sessions, u: users })
     .from(sessions)

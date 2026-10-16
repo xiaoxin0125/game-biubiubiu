@@ -16,7 +16,7 @@
             </div>
             <div>
               <label class="label">房间名称</label>
-              <input v-model.trim="name" class="input" maxlength="60" required />
+              <input v-model.trim="name" class="input" maxlength="7" required />
             </div>
 
             <div>
@@ -75,7 +75,8 @@
                 <button type="button" class="btn btn-sm btn-ghost" @click="clearPw = false">取消</button>
               </div>
               <input v-model="password" class="input" type="password"
-                     :placeholder="room.hasPassword ? '输入新密码则替换，留空不改' : '留空表示无密码'"
+                     :minlength="ROOM_PASSWORD_MIN"
+                     :placeholder="room.hasPassword ? `输入新密码则替换（至少 ${ROOM_PASSWORD_MIN} 位），留空不改` : `留空表示无密码（至少 ${ROOM_PASSWORD_MIN} 位）`"
                      maxlength="64" />
             </div>
 
@@ -97,6 +98,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api/client.js'
+import { ROOM_PASSWORD_MIN, roomPasswordError } from '../constants/roomPassword.js'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -149,6 +151,12 @@ const romChanged = computed(() => selectedRomId.value !== props.room.romId)
 
 async function submit() {
   error.value = ''
+  // 只有"设置新口令"这条路要过长度校验：留空表示不改、清除密码表示移除，
+  // 已有的旧口令照常能用（见 constants/roomPassword.js）。
+  if (!clearPw.value) {
+    const pwError = roomPasswordError(password.value)
+    if (pwError) { error.value = pwError; return }
+  }
   busy.value = true
   const patch = {}
   if (name.value !== props.room.name) patch.name = name.value

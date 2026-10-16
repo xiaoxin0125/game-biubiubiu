@@ -14,6 +14,8 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
   const connectionStatus = ref('建立连接…')
   const roomAllowPlay = ref(true)
   const roomMaxPlayers = ref(4)
+  // 房间名：信令 welcome / peers-updated 里带着，房间内顶栏与房间面板要用
+  const roomName = ref('')
 
   let signal = null
   let clientId = ''
@@ -36,6 +38,7 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
   function applyRoomState(room) {
     if (!room) return
     if (typeof room.allowPlay === 'boolean') roomAllowPlay.value = room.allowPlay
+    if (typeof room.name === 'string' && room.name) roomName.value = room.name
     if (Number.isFinite(Number(room.effectiveMaxPlayers || room.maxPlayers))) {
       roomMaxPlayers.value = Number(room.effectiveMaxPlayers || room.maxPlayers)
     }
@@ -143,5 +146,5 @@ export function useRoomSession({ roomCode, router, inviteGuest, closePeer, clear
     signal = null
   }
 
-  return { signal: () => signal, signalConnected, signalMe, signalPeers, signalChat, showRoom, fatalRoomError, connectionStatus, roomAllowPlay, roomMaxPlayers, isHostMode, isGuestMode, currentRoomPeer, setConnectionStatus, sendChat, connect, close }
+  return { signal: () => signal, signalConnected, signalMe, signalPeers, signalChat, showRoom, fatalRoomError, connectionStatus, roomAllowPlay, roomMaxPlayers, roomName, isHostMode, isGuestMode, currentRoomPeer, setConnectionStatus, sendChat, connect, close }
 }

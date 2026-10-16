@@ -23,6 +23,17 @@
 //  17. bld/main-all.js          — the RMS listener registry stops warning
 //  18. main.html                — load rms.js (RMS ⇄ 云存档) after the runtime
 //  19. bld/main-all.js          — Chinese locale variants reach MIDlets as zh-CN / zh-HK
+//  20. bld/j2me.js              — the interpreter yields, so one busy Java thread cannot
+//                                 starve the event loop (without it another thread's
+//                                 async work never finishes: 功夫西游 white screen)
+//  21. bld/j2me.js              — a MIDlet that spells "UTF-8" as "UFT-8" still finds its
+//                                 reader class (without it the thread dies and 昆仑千年情
+//                                 never finishes loading)
+//  22. bld/main-all.js          — drawRGB ignores an empty (zero width/height) region
+//                                 instead of failing the paint and freezing the screen
+//                                 (功夫西游 - 乱舞唐僧 froze mid-story)
+//  23. bld/j2me.js              — a JavaScript error that is not a TypeError becomes a
+//                                 Java exception with its message, not a bogus null
 //
 // Usage: node frontend/scripts/apply-j2me-patches.mjs [运行时目录]
 //
@@ -744,6 +755,123 @@ function siteLocale() {
       next = next.replace(/value = navigator\.language;/g, 'value = siteLocale();')
       return next
     },
+  },
+  // 解释器自己不让出执行权，而 fork 又把编译方法的抢占检查关了
+  // （emitCheckPreemption = false），于是一个不阻塞的 Java 线程可以把 JS 事件循环
+  // 一直占住：另一个线程在异步 native 里等的那次 setTimeout / Promise 永远轮不上，
+  // 那个线程就再也醒不过来，页面冻结。「功夫西游 - 乱舞唐僧」正是这样白屏的 ——
+  // 绘制线程在 paint() 里调用 Java 侧的 System.gc()（该 native 用 setTimeout +
+  // Promise 挂起调用线程），它的主循环 meanwhile 在 busy-wait 等这次绘制写完标志。
+  {
+    label: 'bld/j2me.js: the interpreter yields to the scheduler while it runs',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (interpreter preemption)'),
+    anchor: `            opPC = pc, op = code[pc], pc = pc + 1 | 0;
+            lastPC = opPC;`,
+    replacement: `            opPC = pc, op = code[pc], pc = pc + 1 | 0;
+            lastPC = opPC;
+            // Site patch (interpreter preemption): 编译出来的方法里有 PS++/PE() 这对
+            // 检查（fork 又用 J2ME.emitCheckPreemption = false 关掉了），解释器里一个
+            // 都没有 —— 于是一个不阻塞的 Java 线程能让 JS 事件循环永远不回来。后果不
+            // 只是「卡」：别的线程在异步 native 里等的 setTimeout / Promise 也因此永
+            // 远不执行，那个线程再也不会被唤醒。「功夫西游 - 乱舞唐僧」的绘制线程在
+            // paint() 里调用 System.gc()（这个 native 用 setTimeout + Promise 挂起调用
+            // 线程），它的主循环同时在 busy-wait 等这次绘制置回标志，两边就这样互等，
+            // 页面白屏、整页无响应。这里用同一套计数器按周期让步：要不要让、什么时候
+            // 让由 Scheduler.shouldPreempt() 决定（80ms 执行窗口 + 5ms 检查间隔），没
+            // 到点就是一次自增加一次掩码判断。让步时把解释器帧的 fp/sp/pc 存回线程，
+            // Context.execute 按 U=Yielding 重新排队，恢复后从这条指令继续 —— 与
+            // classInitAndUnwindCheck 之后那句 \`if (U) return;\` 是同一条路径。掩码取
+            // 1023 而不是编译代码的 0xFF：解释器每条字节码都要过这个判断。
+            if ((++PS & 1023) === 0) {
+                PE();
+                if (U) {
+                    thread.set(fp, sp, opPC);
+                    return;
+                }
+            }`,
+  },
+  // 有些 MIDlet 把「UTF-8」拼成「UFT-8」（两个字母换了位置）。CLDC 的 Helper 按这个
+  // 名字去加载 com/sun/cldc/i18n/j2me/UFT_8_Reader，而三个类库里都只有拼写正确的
+  // UTF_8_Reader：Class.forName 抛 ClassNotFoundException，没人接住它的那个线程就此
+  // 结束——在控制台上就是一行警告加深红色的 NullPointerException。「昆仑千年情」
+  // （诺基亚 N73 版 ROM）正是这样加载不进去的：它启动早期要读一段按这个编码写的中文
+  // 文本。真机上厂商的内置类库往往连拼错的这一类也一起留着，所以游戏照写不误。这里在
+  // 类加载的最后一跳做别名回退：请求 UFT_* 而读不到时按同名的 UTF_* 再读一次，让这类
+  // 游戏以自己的拼写跑起来；Java 侧拿到的 Class 名字因此是 UTF_8_Reader，对这层用途
+  // （new InputStreamReader(is, "UFT-8")）没有影响。
+  {
+    label: 'bld/j2me.js: a MIDlet that spells UTF-8 as UFT-8 still finds its reader class',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (misspelled encoding class)'),
+    anchor: `            var bytes = JARStore.loadFile(fileName);
+            //console.log(bytes)
+            if (!bytes) {
+                console.warn("ClassNotFoundException "+fileName);`,
+    replacement: `            var bytes = JARStore.loadFile(fileName);
+            // Site patch (misspelled encoding class): 少数 MIDlet（「昆仑千年情」是
+            // 一个）把 "UTF-8" 写成了 "UFT-8"，Helper 于是去要
+            // com/sun/cldc/i18n/j2me/UFT_8_Reader —— 类库里只有拼写正确的
+            // UTF_8_Reader，加载失败抛出 ClassNotFoundException，最终把调用它的线程
+            // 一起带走。真机上拼错的那一类往往也存在，所以游戏不会自查。请求 UFT_*
+            // 读不到时按同名的 UTF_* 再读一次就够了：两份实现的差别只在类名上，而
+            // 调用方（new InputStreamReader(is, "UFT-8")）只关心读出来的字符。
+            if (!bytes && fileName.indexOf("com/sun/cldc/i18n/j2me/UFT_") === 0) {
+                bytes = JARStore.loadFile(fileName.replace("UFT_", "UTF_"));
+            }
+            //console.log(bytes)
+            if (!bytes) {
+                console.warn("ClassNotFoundException "+fileName);`,
+  },
+  // 剧情场景定住不动的根因：绘制精灵时游戏会传一个宽或高为 0 的区域给
+  // Graphics.drawRGB（真机上就是什么都不画），而这份实现把它直接交给浏览器的
+  // createImageData()，浏览器对非正尺寸抛 IndexSizeError；运行时的 translateException
+  // 认不出这个 DOMException（只认 TypeError），异常于是带着 _address === undefined
+  // 继续走，编译代码的 catch 把它当成 Java 异常重新抛出 —— 抛出来的是 null，紧接着的
+  // 空检查又抛出一个假的 NullPointerException。MIDP 规定 paint() 抛出的异常由实现忽略
+  // （canvas 保留上一帧），于是这一帧之后每次重绘都在同一处失败，画面永远停在最后一张
+  // 画成功的画面上：「功夫西游 - 乱舞唐僧」剧情卡死就是这个样子，输入其实还在进游戏。
+  {
+    label: 'main-all.js: drawRGB ignores an empty region instead of failing the paint',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (empty drawRGB)'),
+    anchor: `  Native["javax/microedition/lcdui/Graphics.drawRGB.([IIIIIIIZ)V"] = function(addr, rgbDataAddr, offset, scanlength, x, y, width, height, processAlpha) { 
+    var rgbData = J2ME.getArrayFromAddr(rgbDataAddr);`,
+    replacement: `  Native["javax/microedition/lcdui/Graphics.drawRGB.([IIIIIIIZ)V"] = function(addr, rgbDataAddr, offset, scanlength, x, y, width, height, processAlpha) { 
+    // Site patch (empty drawRGB): 宽或高为 0 / 负数 / NaN 的区域没有像素可画，真机上
+    // 就是什么都不画。这里原来照原样交给 createImageData(width, height)，浏览器对非正
+    // 尺寸抛 IndexSizeError（DOMException，不是 TypeError），translateException 认不出
+    // 它，异常就被编译代码当成「重新抛出的异常是 null」，最终变成一个假的
+    // NullPointerException 打断整帧绘制 —— 而 paint() 的异常按 MIDP 规定被忽略，画面
+    // 于是永远停在上一帧，游戏逻辑却还在跑（还能听到按键的反应）。空区域在这里直接
+    // 返回，语义与真机一致。
+    if (!(width > 0) || !(height > 0)) return;
+    var rgbData = J2ME.getArrayFromAddr(rgbDataAddr);`,
+  },
+  // 与上一条配套的兜底：不认识的 JavaScript 异常原来原样返回，而编译代码马上要读它的
+  // _address，读出来是 undefined —— 浏览器给出的真实原因（DOMException 的 name 与
+  // message）就此丢失，只剩下一个没头没尾的空指针。统一转成带原始消息的 Java 异常：
+  // MIDlet 的 catch 能接住，接不住时控制台也会打印出真正的原因。
+  {
+    label: 'bld/j2me.js: a JavaScript error becomes a Java exception, not a bogus null',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (untranslatable JS errors)'),
+    anchor: `        else if (e.name === "JavaRuntimeException") {
+            return $.newRuntimeException(e.message);
+        }
+        return e;`,
+    replacement: `        else if (e.name === "JavaRuntimeException") {
+            return $.newRuntimeException(e.message);
+        }
+        // Site patch (untranslatable JS errors): 编译代码在 catch 里立刻读
+        // TE(ex)._address，所以任何没有 _address 的错误（浏览器抛的 DOMException、
+        // 原生实现里 TypeError 之外的异常……）都会变成 undefined，再被 emitThrow 的空
+        // 检查当成「重新抛出的异常是 null」而变成假的空指针，原始信息全部丢失。转成带
+        // 原始 name/message 的 Java 异常，让 MIDlet 或控制台看到真正的原因。
+        if (e && (e._address === undefined || e._address === 0)) {
+            return $.newRuntimeException((e.name ? e.name + ": " : "") + (e.message ? e.message : String(e)));
+        }
+        return e;`,
   },
 ]
 

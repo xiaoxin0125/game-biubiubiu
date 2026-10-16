@@ -9,6 +9,8 @@
       :title="displayName"
       :platform="overlayPlatformInfo"
       :core-name="overlayCoreName"
+      :room-name="isRoomMode ? roomName : ''"
+      :room-code="roomCode"
       :can-save="canSaveState"
       :can-reload="canReload"
       :can-cheat="canCheat"
@@ -190,6 +192,7 @@
       v-if="isRoomMode"
       :open="showRoom"
       :code="roomCode"
+      :name="roomName"
       :connected="signalConnected"
       :is-host="isHostMode"
       :allow-play="roomAllowsPlay"
@@ -362,6 +365,7 @@ const {
   showRoom,
   connectionStatus,
   roomAllowPlay,
+  roomName,
   isHostMode,
   isGuestMode,
   currentRoomPeer,

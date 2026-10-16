@@ -21,6 +21,7 @@ export function ensureRoom(code, row) {
   if (!r) {
     r = {
       code,
+      name: row.name || '',
       hostUserId: row.hostUserId,
       allowPlay: row.allowPlay !== false,
       allowGuestControl: row.allowGuestControl === true,
@@ -33,6 +34,7 @@ export function ensureRoom(code, row) {
     setLiveRoom(code, r)
   } else {
     r.hostUserId = row.hostUserId
+    if (row.name) r.name = row.name
     r.allowPlay = row.allowPlay !== false
     r.allowGuestControl = row.allowGuestControl === true
     r.platform = row.platform || row.romPlatform || r.platform || null
@@ -149,10 +151,12 @@ export function broadcastRoomClosed(code, { reason = 'room-closed' } = {}) {
   deleteLiveRoom(code)
 }
 
-export function updateRoomPermissions(code, { allowPlay } = {}) {
+export function updateRoomPermissions(code, { allowPlay, name } = {}) {
   const room = getLiveRoom(code)
   if (!room) return
   if (typeof allowPlay === 'boolean') room.allowPlay = allowPlay
+  // 房主改名后，房间里的人立刻看到新名字（房间名同在这条广播里下发）
+  if (typeof name === 'string' && name) room.name = name
   recalculateControlSeats(room)
   broadcastPeersUpdated(room)
 }

@@ -98,6 +98,28 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   // 线程真的死掉时，控制台要说出是哪个 Java 异常，而不是打一个对象转储。
   assert.match(engine, /\/\/ Site patch \(readable thread death\):/)
   assert.match(engine, /console\.error\("Thread terminated by " \+ e\.classInfo\._name \+/)
+  // 解释器必须周期性让出执行权：fork 关掉了编译方法的抢占检查，解释器里原本一次检查
+  // 也没有，于是一个不阻塞的 Java 线程就能把 JS 事件循环占死 —— 别的线程在异步
+  // native（System.gc、图片解码）里等的 setTimeout / Promise 因此永远不执行，那个
+  // 线程再也不会被唤醒，整页无响应。「功夫西游 - 乱舞唐僧」就是这样白屏的。
+  assert.match(engine, /\/\/ Site patch \(interpreter preemption\):/)
+  assert.match(engine, /if \(\(\+\+PS & 1023\) === 0\) \{\n                PE\(\);\n                if \(U\) \{\n                    thread\.set\(fp, sp, opPC\);\n                    return;\n                \}\n            \}/)
+  // drawRGB：宽或高为 0 的区域在真机上什么都不画。原来它照原样进 createImageData()，
+  // 浏览器抛 IndexSizeError（DOMException，不是 TypeError），translateException 认不出，
+  // 编译代码的 catch 于是把它当成「重新抛出的异常是 null」，抛出一个假的空指针打断整帧
+  // 绘制；按 MIDP 规定 paint() 的异常被忽略，画面就永久停在上一帧（功夫西游剧情卡死）。
+  assert.match(bundle, /\/\/ Site patch \(empty drawRGB\):/)
+  assert.match(bundle, /if \(!\(width > 0\) \|\| !\(height > 0\)\) return;/)
+  // 兜底：不认识的 JavaScript 异常不能原样返回，编译代码马上要读的 _address 会是
+  // undefined，原始 name/message 全部丢失，只剩一句没头没尾的空指针。
+  assert.match(engine, /\/\/ Site patch \(untranslatable JS errors\):/)
+  assert.match(engine, /return \$\.newRuntimeException\(\(e\.name \? e\.name \+ ": " : ""\) \+ \(e\.message \? e\.message : String\(e\)\)\);/)
+  // 有些 MIDlet 把「UTF-8」拼成「UFT-8」，CLDC 的 Helper 于是去要
+  // com/sun/cldc/i18n/j2me/UFT_8_Reader —— 三个类库里都只有拼写正确的 UTF_8_Reader，
+  // Class.forName 抛 ClassNotFoundException，没人接住它的线程就此结束（「昆仑千年情」
+  // 启动到一半卡在载入画面）。类加载的最后一跳要按同名的 UTF_* 回退。
+  assert.match(engine, /\/\/ Site patch \(misspelled encoding class\):/)
+  assert.match(engine, /if \(!bytes && fileName\.indexOf\("com\/sun\/cldc\/i18n\/j2me\/UFT_"\) === 0\) \{\n                bytes = JARStore\.loadFile\(fileName\.replace\("UFT_", "UTF_"\)\);\n            \}/)
 
   // 这些 MIDP 内部调用在这个运行时里本来就是空操作（标题栏的信任图标、套件锁、显示
   // 状态、CHAPI 记账），逐次警告只会把真正的问题淹掉。
@@ -179,6 +201,9 @@ test('构建产物给 J2meJS 运行时打好内容版本号', () => {
     // 类库不在 main.html 里（运行时自己按 enginemode 取），但启动前要下，所以
     // 也必须进启动清单。
     writeFileSync(path.join(j2me, 'java/classesold.jar'), 'PK\u0003\u0004fake class library\n')
+    // 许可证与出处说明是纯文档，进目录、但不进版本指纹（改它不该让访客重下运行时）。
+    writeFileSync(path.join(j2me, 'LICENSE'), 'GNU GENERAL PUBLIC LICENSE\n')
+    writeFileSync(path.join(j2me, 'LICENSE-README.md'), '# License\n')
     // 绝对地址与协议相对地址不该被改写。
     const html = readFileSync(path.join(j2me, 'main.html'), 'utf8')
       .replace('</head>', '<script src="https://cdn.example.com/other.js"></script>\n</head>')
@@ -206,6 +231,10 @@ test('构建产物给 J2meJS 运行时打好内容版本号', () => {
     assert.doesNotMatch(stamped, /other\.js\?v=/)
 
     // 同样的内容重复打版本号结果不变，改一个字节就必须换版本号。
+    execFileSync(process.execPath, [stamp, fixture], { encoding: 'utf8' })
+    assert.equal(JSON.parse(readFileSync(path.join(j2me, 'version.json'), 'utf8')).version, version)
+    // 纯文档改动不换版本号：否则改一句许可证说明就要所有访客重下 4.4 MB 运行时。
+    writeFileSync(path.join(j2me, 'LICENSE-README.md'), '# License\n\n改了一行说明\n')
     execFileSync(process.execPath, [stamp, fixture], { encoding: 'utf8' })
     assert.equal(JSON.parse(readFileSync(path.join(j2me, 'version.json'), 'utf8')).version, version)
     writeFileSync(path.join(j2me, 'bld/main-all.js'), '// runtime bundle changed\n')

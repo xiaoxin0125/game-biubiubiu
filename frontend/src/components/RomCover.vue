@@ -1,8 +1,13 @@
 <template>
   <span
     class="rom-cover"
-    :class="{ 'has-image': showImage }"
+    :class="{ 'has-image': showImage, 'is-zoomable': canZoom }"
     :style="{ '--pc': platformColor }"
+    :role="canZoom ? 'button' : undefined"
+    :tabindex="canZoom ? 0 : undefined"
+    :aria-label="canZoom ? `查看 ${altText}` : undefined"
+    @click="onActivate($event)"
+    @keydown="onKeydown($event)"
   >
     <img
       v-if="showImage"
@@ -34,7 +39,10 @@ const props = defineProps({
   src: { type: String, default: '' },
   platform: { type: String, default: '' },
   alt: { type: String, default: '' },
+  // 打开大图模式：有封面图时这里可以点（点一下发 zoom 事件，不回传给外层的卡片点击）
+  zoomable: { type: Boolean, default: false },
 })
+const emit = defineEmits(['zoom'])
 
 const failed = ref(false)
 
@@ -43,6 +51,23 @@ const platformId = computed(() => props.platform || props.rom?.platform || '')
 const platformColor = computed(() => getPlatform(platformId.value).color || 'var(--accent)')
 const altText = computed(() => props.alt || (props.rom?.title ? `${props.rom.title} 封面` : 'ROM 封面'))
 const showImage = computed(() => !!coverSrc.value && !failed.value)
+// 没图（或图片加载失败）时不接管点击：这时点封面还是外层卡片的本职动作（开局游玩）
+const canZoom = computed(() => props.zoomable && showImage.value)
+
+function onActivate(event) {
+  if (!canZoom.value) return
+  // 拦住冒泡，否则会同时触发外层卡片的「点击开始游戏」
+  event.stopPropagation()
+  emit('zoom')
+}
+
+function onKeydown(event) {
+  if (!canZoom.value) return
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('zoom')
+}
 
 // 换封面（编辑后 URL 变化）时重置加载失败状态
 watch(coverSrc, () => { failed.value = false })
@@ -66,7 +91,13 @@ watch(coverSrc, () => { failed.value = false })
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* 卡片里按方形裁切填满；查看大图的弹窗改 contain，整张图都看得见 */
+  object-fit: var(--cover-fit, cover);
+}
+.rom-cover.is-zoomable { cursor: zoom-in; }
+.rom-cover.is-zoomable:focus-visible {
+  outline: none;
+  box-shadow: var(--clay-focus);
 }
 
 /* 默认封面：粘土底 + 卡带图形，颜色跟随平台色 */

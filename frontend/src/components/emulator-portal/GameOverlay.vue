@@ -12,6 +12,13 @@
       <span class="playing-led" title="游戏运行中">
         <span class="led-dot"></span>PLAYING
       </span>
+      <!-- 联机房间里把房间名摆在运行指示后面：点名字复制房间码。
+           手机端顶栏放不下，靠媒体查询把这一块收起来（房间面板标题里仍看得到）。 -->
+      <RoomNameCopy
+        v-if="roomName"
+        :code="roomCode"
+        class="bar-room"
+      >{{ roomName }}</RoomNameCopy>
     </div>
 
     <slot name="extras" />
@@ -43,11 +50,15 @@
 
 <script setup>
 import GameActionButtons from './GameActionButtons.vue'
+import RoomNameCopy from '../RoomNameCopy.vue'
 
 defineProps({
   title: String,
   platform: { type: Object, required: true },
   coreName: String,
+  // 联机房间里显示的房间名与房间码：名字摆在 PLAYING 后面，点一下复制房间码
+  roomName: { type: String, default: '' },
+  roomCode: { type: String, default: '' },
   canSave: { type: Boolean, default: true },
   canReload: { type: Boolean, default: false },
   canCheat: { type: Boolean, default: false },
@@ -168,6 +179,26 @@ const canFullscreen = hasFs && !isIOS
   0%, 100% { transform: scaleX(1) scaleY(1); opacity: 1; }
   50%      { transform: scaleX(0.8) scaleY(1.2); opacity: 0.6; }
 }
+/* 房间名：联机房间里它比游戏名更该被一眼看到，做成糖果粉胶囊 + 点一下复制房间码 */
+.bar-room {
+  flex: 0 1 auto;
+  max-width: 42%;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  background: var(--clay-pink-soft);
+  color: #7A3D5C;
+  font-size: 12px;
+  box-shadow: var(--clay-xs);
+  --name-copy-hint: 0.6;
+  transition: transform var(--t) var(--clay-ease), box-shadow var(--t) var(--clay-ease);
+}
+.bar-room:hover {
+  color: #6C2039;
+  transform: var(--clay-lift);
+  box-shadow: var(--clay-lift-shadow);
+}
+.bar-room:active { transform: translateY(2px) var(--clay-squash); box-shadow: var(--clay-press-sm); }
+
 @media (max-width: 640px) {
   .playing-led { display: none; }
 }
@@ -216,6 +247,11 @@ const canFullscreen = hasFs && !isIOS
   .bar-title { font-size: 12px; }
   .bar-badge { padding: 1px 6px; font-size: 10px; }
   .bar-core, .playing-led { display: none; }
+  /* 手机端顶栏地方有限：房间名收起来，平台标签与游戏名（ROM 名）照常显示。
+     房间名在房间面板标题里仍看得到，点它照样复制房间码。
+     房间名是 RoomNameCopy 的根元素，它自己带着 display: inline-flex，
+     同优先级下按样式表顺序分胜负，所以这里用 :deep 提一级才盖得住。 */
+  .bar-center :deep(.bar-room) { display: none; }
   .player-bar {
     gap: 5px;
     padding:
@@ -236,6 +272,8 @@ const canFullscreen = hasFs && !isIOS
   }
   .bar-btn { min-height: 28px; min-width: 28px; padding: 2px 6px; }
   .bar-title { font-size: 11px; }
+  /* 横屏手机同样收掉房间名（顶栏更清爽），其余标签照旧 */
   .bar-badge, .bar-core, .playing-led { display: none; }
+  .bar-center :deep(.bar-room) { display: none; }
 }
 </style>

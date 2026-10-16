@@ -65,14 +65,14 @@
           <ClaySelect
             v-model="activeVisibility"
             class="filter-select"
-            aria-label="筛选公开状态"
+            aria-label="筛选状态"
             :options="activeVisibilitySelectOptions"
           />
         </div>
 
         <div v-if="!filteredRoms.length" class="panel-card empty-card">
           <h3>没有匹配的 ROM</h3>
-          <p>换个平台、公开状态或关键词再试试</p>
+          <p>换个平台、状态或关键词再试试</p>
         </div>
         <div v-else class="rom-card-table">
           <article v-for="rom in pagedRoms" :key="rom.id" class="rom-entry">
@@ -207,10 +207,14 @@ const activePlatformSelectOptions = computed(() => [
   { value: 'all', label: '全部平台' },
   ...activePlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
 ])
+// 一个下拉框管两件事：公开状态（公开 / 私密）和文件存放位置（远端 / 本地，看
+// storage 字段，条目上那个「远端」小标签用的就是它）。
 const activeVisibilitySelectOptions = [
   { value: 'all', label: '全部状态' },
   { value: 'public', label: '公开' },
   { value: 'private', label: '私密' },
+  { value: 'remote', label: '远端' },
+  { value: 'local', label: '本地' },
 ]
 
 const filteredRoms = computed(() => {
@@ -220,6 +224,8 @@ const filteredRoms = computed(() => {
     .filter((rom) => {
       if (activeVisibility.value === 'public') return !!rom.isPublic
       if (activeVisibility.value === 'private') return !rom.isPublic
+      if (activeVisibility.value === 'remote') return rom.storage === 'remote'
+      if (activeVisibility.value === 'local') return rom.storage !== 'remote'
       return true
     })
     .filter((rom) => {

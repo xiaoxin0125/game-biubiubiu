@@ -3739,6 +3739,26 @@ var J2ME;
         while (true) {
             opPC = pc, op = code[pc], pc = pc + 1 | 0;
             lastPC = opPC;
+            // Site patch (interpreter preemption): 编译出来的方法里有 PS++/PE() 这对
+            // 检查（fork 又用 J2ME.emitCheckPreemption = false 关掉了），解释器里一个
+            // 都没有 —— 于是一个不阻塞的 Java 线程能让 JS 事件循环永远不回来。后果不
+            // 只是「卡」：别的线程在异步 native 里等的 setTimeout / Promise 也因此永
+            // 远不执行，那个线程再也不会被唤醒。「功夫西游 - 乱舞唐僧」的绘制线程在
+            // paint() 里调用 System.gc()（这个 native 用 setTimeout + Promise 挂起调用
+            // 线程），它的主循环同时在 busy-wait 等这次绘制置回标志，两边就这样互等，
+            // 页面白屏、整页无响应。这里用同一套计数器按周期让步：要不要让、什么时候
+            // 让由 Scheduler.shouldPreempt() 决定（80ms 执行窗口 + 5ms 检查间隔），没
+            // 到点就是一次自增加一次掩码判断。让步时把解释器帧的 fp/sp/pc 存回线程，
+            // Context.execute 按 U=Yielding 重新排队，恢复后从这条指令继续 —— 与
+            // classInitAndUnwindCheck 之后那句 `if (U) return;` 是同一条路径。掩码取
+            // 1023 而不是编译代码的 0xFF：解释器每条字节码都要过这个判断。
+            if ((++PS & 1023) === 0) {
+                PE();
+                if (U) {
+                    thread.set(fp, sp, opPC);
+                    return;
+                }
+            }
             if (!release) {
                 assert(code === mi.codeAttribute.code, "Bad Code.");
                 assert(ci === mi.classInfo, "Bad Class Info.");
@@ -6937,6 +6957,14 @@ var J2ME;
         else if (e.name === "JavaRuntimeException") {
             return $.newRuntimeException(e.message);
         }
+        // Site patch (untranslatable JS errors): 编译代码在 catch 里立刻读
+        // TE(ex)._address，所以任何没有 _address 的错误（浏览器抛的 DOMException、
+        // 原生实现里 TypeError 之外的异常……）都会变成 undefined，再被 emitThrow 的空
+        // 检查当成「重新抛出的异常是 null」而变成假的空指针，原始信息全部丢失。转成带
+        // 原始 name/message 的 Java 异常，让 MIDlet 或控制台看到真正的原因。
+        if (e && (e._address === undefined || e._address === 0)) {
+            return $.newRuntimeException((e.name ? e.name + ": " : "") + (e.message ? e.message : String(e)));
+        }
         return e;
     }
     J2ME.translateException = translateException;
@@ -9522,6 +9550,16 @@ var J2ME;
             //console.log("Loading Class File: "+fileName);
             J2ME.loadWriter && J2ME.loadWriter.enter("> Loading Class File: " + fileName);
             var bytes = JARStore.loadFile(fileName);
+            // Site patch (misspelled encoding class): 少数 MIDlet（「昆仑千年情」是
+            // 一个）把 "UTF-8" 写成了 "UFT-8"，Helper 于是去要
+            // com/sun/cldc/i18n/j2me/UFT_8_Reader —— 类库里只有拼写正确的
+            // UTF_8_Reader，加载失败抛出 ClassNotFoundException，最终把调用它的线程
+            // 一起带走。真机上拼错的那一类往往也存在，所以游戏不会自查。请求 UFT_*
+            // 读不到时按同名的 UTF_* 再读一次就够了：两份实现的差别只在类名上，而
+            // 调用方（new InputStreamReader(is, "UFT-8")）只关心读出来的字符。
+            if (!bytes && fileName.indexOf("com/sun/cldc/i18n/j2me/UFT_") === 0) {
+                bytes = JARStore.loadFile(fileName.replace("UFT_", "UTF_"));
+            }
             //console.log(bytes)
             if (!bytes) {
                 console.warn("ClassNotFoundException "+fileName);

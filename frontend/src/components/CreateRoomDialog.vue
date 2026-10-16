@@ -13,7 +13,7 @@
           <form @submit.prevent="submit" class="form">
             <div>
               <label class="label">房间名称</label>
-              <input v-model.trim="name" class="input" placeholder="例如: 拳皇 97 开黑" maxlength="60" required />
+              <input v-model.trim="name" class="input" placeholder="例如: 拳皇 97" maxlength="7" required />
             </div>
 
             <div>
@@ -60,7 +60,9 @@
 
             <div>
               <label class="label">房间密码（可选）</label>
-              <input v-model="password" class="input" type="password" placeholder="留空表示不需要密码" maxlength="64" />
+              <input v-model="password" class="input" type="password"
+                     :minlength="ROOM_PASSWORD_MIN"
+                     :placeholder="`留空表示不需要密码，至少 ${ROOM_PASSWORD_MIN} 位`" maxlength="64" />
             </div>
 
             <div v-if="error" class="err">{{ error }}</div>
@@ -81,6 +83,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api/client.js'
+import { ROOM_PASSWORD_MIN, roomPasswordError } from '../constants/roomPassword.js'
 
 const emit = defineEmits(['close', 'created'])
 
@@ -121,6 +124,9 @@ const filteredRoms = computed(() => {
 async function submit() {
   error.value = ''
   if (!selectedRom.value) { error.value = '请选择一个 ROM'; return }
+  // 新设的口令在客户端先拦一道（服务端也校验，见 constants/roomPassword.js）
+  const pwError = roomPasswordError(password.value)
+  if (pwError) { error.value = pwError; return }
   busy.value = true
   try {
     const room = await api.roomCreate({

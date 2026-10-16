@@ -45,21 +45,21 @@
         :class="{ active: activeTab === 'name' }"
         @click="activeTab = 'name'"
       >
-        默认 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+        默认 <span class="n">{{ tabCounts.name }}</span>
       </button>
       <button
         class="tab"
         :class="{ active: activeTab === 'latest' }"
         @click="activeTab = 'latest'"
       >
-        最新 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+        最新 <span class="n">{{ tabCounts.latest }}</span>
       </button>
       <button
         class="tab"
         :class="{ active: activeTab === 'hot' }"
         @click="activeTab = 'hot'"
       >
-        最热 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+        最热 <span class="n">{{ tabCounts.hot }}</span>
       </button>
       <button
         class="tab"
@@ -67,7 +67,7 @@
         title="换个顺序看看，再点一次重新洗牌"
         @click="pickTab('random')"
       >
-        随机 <span class="n">{{ groupCount(roms, activeGroup) }}</span>
+        随机 <span class="n">{{ tabCounts.random }}</span>
       </button>
       <button
         v-if="isAuthed"
@@ -119,7 +119,7 @@
         :aria-label="`${rom.title}，${platformLabel(rom.platform)} 平台，开始游戏`"
       >
         <div class="rom-card-cover-wrap">
-          <RomCover :rom="rom" class="rom-card-cover" />
+          <RomCover :rom="rom" class="rom-card-cover" zoomable @zoom="coverRom = rom" />
           <button
             v-if="isAuthed"
             class="fav-btn"
@@ -165,6 +165,12 @@
       @close="pickerRom = null"
       @pick="onVersionPicked"
     />
+
+    <CoverPreviewDialog
+      v-if="coverRom"
+      :rom="coverRom"
+      @close="coverRom = null"
+    />
   </div>
 </template>
 
@@ -177,6 +183,7 @@ import { useAppDialog } from '../composables/useAppDialog.js'
 import { getPlatform, platformFacets, resolvePlatformId } from '../constants/platforms.js'
 import { useSettings } from '../composables/useSettings.js'
 import VersionPickerDialog from '../components/VersionPickerDialog.vue'
+import CoverPreviewDialog from '../components/CoverPreviewDialog.vue'
 import RomCover from '../components/RomCover.vue'
 import ClayPagination from '../components/ClayPagination.vue'
 import ClaySelect from '../components/ClaySelect.vue'
@@ -191,9 +198,10 @@ const roms = ref([])
 const favoriteRoms = ref([])
 const loading = ref(true)
 const query = ref('')
-// 分类栏分两截：左边是「怎么看」（默认 / 最新 / 最热 / 随机 / 收藏），右边下拉框
-// 是游戏机分类筛选（默认全部）。两者叠加生效，例如「收藏 + 任天堂红白机」= 我收藏的
-// FC 游戏。打开页面用的就是这个默认：按名字排，不另外标注排序规则。
+// 分类栏分两截：左边是「怎么看」（默认 / 最新 / 最热 / 随机 / 收藏，各自只摆一批：
+// 默认整库、最新前 20、最热前 10、随机 10），右边下拉框是游戏机分类筛选（默认全部）。
+// 两者叠加生效，例如「收藏 + 任天堂红白机」= 我收藏的 FC 游戏，叠加时先取标签那一批
+// 再筛分类。打开页面用的就是这个默认：按名字排，不另外标注排序规则。
 const activeTab = ref('name')
 // 「随机」的顺序由种子决定：点一下换一个新种子（重新洗一次），翻页、搜索、换分类时
 // 种子不变，所以已经翻过的顺序不会自己乱跳。
@@ -201,6 +209,12 @@ const shuffleSeed = ref(0)
 const activeGroup = ref('all')
 const page = ref(1)
 const pageSize = 10
+// 各标签一次摆多少盘：默认把整库摆开，最新只取时间序前 20，最热、随机各取 10。
+// 先按这个上限截出一批，再在这一批里筛主机分类 / 搜索 —— 标签上的数字、分类下拉框
+// 里的数量、分页都按这一批算，所以切标签时它们会一起变。
+const TAB_LIMIT = { latest: 20, hot: 10, random: 10 }
+// 标签的中文名：空列表的文案要说清「只摆了前 N 盘」，得把名字和上限写在一起
+const TAB_NAME = { latest: '最新', hot: '最热', random: '随机' }
 
 function pickTab(tab) {
   if (tab === 'random' && activeTab.value === 'random') shuffleSeed.value += 1
@@ -260,14 +274,29 @@ watch(isAuthed, async (authed) => {
 
 const activeGroupIsAll = computed(() => activeGroup.value === 'all')
 
+// 某个标签负责的那一批 ROM（还没按主机分类和搜索筛）。最新直接用接口给的顺序取前
+// 20（游戏库按上传时间倒序、收藏按收藏时间倒序）；最热按游玩次数倒序取前 10；随机
+// 按种子洗牌后取前 10；默认和收藏不截断，整份都摆开。
+function listForTab(tab) {
+  const list = tab === 'favorites' ? favoriteRoms.value : roms.value
+  const limit = TAB_LIMIT[tab]
+  if (!limit) return [...list]
+  if (tab === 'hot') return [...list].sort((a, b) => Number(b.playCount || 0) - Number(a.playCount || 0)).slice(0, limit)
+  if (tab === 'random') return shuffled(list, shuffleSeed.value).slice(0, limit)
+  return list.slice(0, limit)
+}
+
+// 当前标签的这一批：列表、分类下拉框里的数量、分页都用它
+const tabList = computed(() => listForTab(activeTab.value))
+
 // 主机分类下拉框：一台游戏机一项（标签就是平台表里的「中文 (英文)」），后面跟这台
-// 机器在当前游戏库里的数量。区域别名（FC / NES、SFC / SNES、MD / Genesis）已经并成
+// 机器在当前这批 ROM 里的数量。区域别名（FC / NES、SFC / SNES、MD / Genesis）已经并成
 // 一台机器，所以同一个名字不会出现两项，也不会出现「有这一项、下面一盘游戏都没有」
 // 的空分类 —— 列表只给出真有游戏的机器。当前选中的那台即使暂时没有游戏也留在选项里，
 // 触发器上不会忽然空掉（见 platformFacets 的 include）。
 const groupOptions = computed(() => [
-  { value: 'all', label: `全部 ${roms.value.length}` },
-  ...platformFacets(roms.value, { include: activeGroupIsAll.value ? [] : [activeGroup.value] })
+  { value: 'all', label: `全部 ${tabList.value.length}` },
+  ...platformFacets(tabList.value, { include: activeGroupIsAll.value ? [] : [activeGroup.value] })
     .map((machine) => ({ value: machine.id, label: `${machine.label} ${machine.count}` })),
 ])
 
@@ -278,13 +307,22 @@ function inGroup(rom, key) {
 }
 
 // 某个分类下一共有多少盘（key 为 all 时不筛）。列表里的数量都走这个函数，
-// 跟着下拉框选中的分类走：最新 / 最热两个标签显示游戏库的数量，收藏标签显示
-// 我收藏的数量，都是当前分类下的。
+// 跟着下拉框选中的分类走：四个排序标签分别算自己那批的数量，收藏标签算我收藏的数量，
+// 都是当前分类下的。
 function groupCount(list, key) {
   if (!key || key === 'all') return list.length
   return list.filter((rom) => inGroup(rom, key)).length
 }
 
+// 四个排序标签上的数字各算各的：该标签自己那一批里选中分类下的盘数 —— 默认是整库、
+// 最新最多 20、最热与随机最多 10，点哪个标签之前就知道会看到多少盘，不会选中一个
+// 标签就把四个数字全改成它的数量。收藏标签另算，永远是我收藏的数量。
+const tabCounts = computed(() => ({
+  name: groupCount(listForTab('name'), activeGroup.value),
+  latest: groupCount(listForTab('latest'), activeGroup.value),
+  hot: groupCount(listForTab('hot'), activeGroup.value),
+  random: groupCount(listForTab('random'), activeGroup.value),
+}))
 const favoriteGroupCount = computed(() => groupCount(favoriteRoms.value, activeGroup.value))
 
 // 空列表的文案要分得清是「搜不到」「这个分类没有」还是「本来就还没东西」。
@@ -292,7 +330,12 @@ const activeGroupLabel = computed(() => (activeGroupIsAll.value ? '' : getPlatfo
 const emptyTitle = computed(() => {
   if (query.value) return '没有匹配结果'
   if (!activeGroupIsAll.value) {
-    return activeTab.value === 'favorites' ? `收藏里没有 ${activeGroupLabel.value} 的游戏` : `${activeGroupLabel.value} 还没有游戏`
+    if (activeTab.value === 'favorites') return `收藏里没有 ${activeGroupLabel.value} 的游戏`
+    // 标签只摆前 N 盘时，这台机器的游戏可能只是没挤进这一批，别写成「还没有游戏」
+    if (TAB_LIMIT[activeTab.value] && groupCount(roms.value, activeGroup.value) > 0) {
+      return `${activeGroupLabel.value} 的游戏没进${TAB_NAME[activeTab.value]} ${TAB_LIMIT[activeTab.value]}`
+    }
+    return `${activeGroupLabel.value} 还没有游戏`
   }
   return activeTab.value === 'favorites' ? '还没有收藏' : '游戏库为空'
 })
@@ -304,18 +347,15 @@ const emptyHint = computed(() => {
 })
 
 const filtered = computed(() => {
-  let list = activeTab.value === 'favorites' ? favoriteRoms.value : roms.value
+  let list = tabList.value
   if (!activeGroupIsAll.value) list = list.filter((r) => inGroup(r, activeGroup.value))
   const q = query.value.trim().toLowerCase()
   if (q) list = list.filter((r) => r.title.toLowerCase().includes(q))
   const out = [...list]
   // 「默认」按游戏名排（中文按拼音、数字按自然序，和「我的 ROM」列表同一套规则）。
-  // 「最新」直接用接口给的顺序：游戏库按上传时间倒序，收藏按收藏时间倒序。
-  // 「最热」按游玩次数倒序；次数相同就保持上面的时间顺序（Array#sort 是稳定排序）。
-  // 「随机」按种子洗一遍牌，再点一次标签换种子、换一批。
+  // 其余标签的顺序在 tabList 里就定好了：最新是接口的时间倒序，最热是游玩次数倒序
+  // （次数相同保持时间顺序，Array#sort 是稳定排序），随机是种子洗出来的顺序，不再动。
   if (activeTab.value === 'name') out.sort((a, b) => a.title.localeCompare(b.title, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' }))
-  if (activeTab.value === 'hot') out.sort((a, b) => Number(b.playCount || 0) - Number(a.playCount || 0))
-  if (activeTab.value === 'random') return shuffled(out, shuffleSeed.value)
   return out
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)))
@@ -364,6 +404,8 @@ function platformLabel(p) { return getPlatform(p).shortLabel }
 function platformColor(p) { return getPlatform(p).color }
 
 const pickerRom = ref(null)
+// 点卡片封面看大图：只对有封面的游戏生效（RomCover 只在真的显示图片时才发 zoom）
+const coverRom = ref(null)
 
 function play(rom) {
   if (!isAuthed.value && !(guestPlayEnabled.value && rom.isPublic)) {

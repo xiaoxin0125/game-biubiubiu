@@ -8,6 +8,8 @@
 |---|---|
 | `games-online.service` | systemd 服务单元，运行 Node.js 后端（只监听 `127.0.0.1:3000`） |
 | `nginx/extension-app.conf` | 宝塔站点的 `/api` 反向代理与前端路由回退配置 |
+| `nginx/security-headers.conf` | 静态资源与文档的安全响应头片段（`frame-ancestors 'none'`），由 `extension-app.conf` include |
+| `nginx/security-headers-self-frame.conf` | 同上，仅把「谁能嵌我」放宽成同源（J2ME 运行时页面要被播放页放进 iframe） |
 | `STUN.md` | 在独立服务器（或主站本机）上部署 STUN 服务的完整步骤 |
 
 前端由 Nginx 直接托管构建产物 `frontend/dist`，后端只处理 `/api`（含联机 WebSocket `/api/rooms/:code/ws`）。
@@ -84,6 +86,10 @@ curl -s http://127.0.0.1:8790/health -H "X-Token: $(sudo cat /www/wwwroot/rom-up
 
 ```bash
 sudo cp /www/wwwroot/xbw.ppxin.com/deploy/games-online.service /etc/systemd/system/games-online.service
+sudo mkdir -p /www/server/panel/vhost/nginx/extension/xbw.ppxin.com/includes
+sudo cp /www/wwwroot/xbw.ppxin.com/deploy/nginx/security-headers.conf \
+        /www/wwwroot/xbw.ppxin.com/deploy/nginx/security-headers-self-frame.conf \
+        /www/server/panel/vhost/nginx/extension/xbw.ppxin.com/includes/
 sudo cp /www/wwwroot/xbw.ppxin.com/deploy/nginx/extension-app.conf /www/server/panel/vhost/nginx/extension/xbw.ppxin.com/app.conf
 
 sudo systemctl daemon-reload
@@ -92,6 +98,8 @@ sudo /www/server/nginx/sbin/nginx -t && sudo /www/server/nginx/sbin/nginx -s rel
 ```
 
 宝塔生成的站点配置已经 include 了 `/www/server/panel/vhost/nginx/extension/<域名>/*.conf`，因此不要在面板里再添加 `location /`，以免出现重复的 location 报错。
+
+两个安全头片段必须放在 `includes/` 子目录里：通配的 `*.conf` 不会递归到子目录，它们只由 `extension-app.conf` 按需 include（每个 location 引一遍 —— nginx 的 `add_header` 不继承）。升级时这两个文件要跟着 `extension-app.conf` 一起同步，漏放会让上面那句 `nginx -t` 直接失败。
 
 ## 日常发布
 

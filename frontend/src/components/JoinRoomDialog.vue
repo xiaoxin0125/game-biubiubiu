@@ -24,10 +24,14 @@
               <input v-model="code" class="input" placeholder="6 位房间码" maxlength="6" style="text-transform: uppercase;" required />
             </div>
 
-            <div v-if="needsPassword || forcePassword">
+            <div v-if="showPasswordField">
               <label class="label">房间密码</label>
-              <input v-model="password" class="input" type="password" placeholder="输入房间密码" autofocus required />
+              <input v-model="password" class="input" type="password" placeholder="输入房间密码" :required="!ownerExempt" autofocus />
             </div>
+            <!-- 房主 / 管理员：服务端对这两种身份本来就免密，如实说明一句，别让人以为漏了输入框 -->
+            <p v-else-if="ownerExempt && room?.hasPassword" class="pw-note">
+              {{ isRoomOwner ? '你是这个房间的房主，不用输密码' : '管理员进入房间不用输密码' }}
+            </p>
 
             <div v-if="error" class="err">{{ error }}</div>
 
@@ -45,9 +49,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
+import { useAuth } from '../composables/useAuth.js'
 
 const props = defineProps({
   room: { type: Object, default: null },
@@ -55,12 +60,25 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'joined'])
 const router = useRouter()
+const { user, isAdmin } = useAuth()
 
 const code = ref(props.room?.code || '')
 const password = ref('')
 const needsPassword = ref(props.room?.hasPassword || false)
 const error = ref('')
 const busy = ref(false)
+
+// 房主进自己的房间不用密码：服务端在 /join 与信令准入里都放过房主，前端再要一次
+// 密码只会把人拦在自己房间门口。管理员同理（服务端也放行）。
+// 判断来源有两种：大厅卡片带的是服务端算好的 isMine（列表不再下发 hostUserId），
+// join / 创建 / 编辑返回的单个房间仍带 hostUserId（2026-10-16 重审 N-4）。
+const isRoomOwner = computed(() => {
+  if (!props.room) return false
+  if (props.room.isMine === true) return true
+  return !!user.value && props.room.hostUserId === user.value.id
+})
+const ownerExempt = computed(() => isRoomOwner.value || (!!props.room && isAdmin.value))
+const showPasswordField = computed(() => (needsPassword.value || props.forcePassword) && !ownerExempt.value)
 
 async function submit() {
   error.value = ''
@@ -148,6 +166,18 @@ async function submit() {
 }
 .room-name { font-size: 15px; font-weight: 900; color: var(--text-primary); margin-bottom: 4px; }
 .room-meta { display: flex; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+
+/* 房主 / 管理员免密时的那句说明：跟房间信息卡一个调子，安静地贴在原密码框的位置 */
+.pw-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--clay-inset-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  box-shadow: var(--clay-in-sm);
+}
 
 .err {
   padding: 10px 12px;

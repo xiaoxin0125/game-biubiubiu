@@ -1,38 +1,36 @@
-# J2ME runtime integration (J2meJS)
+# J2ME 运行时集成（J2meJS）
 
-## What runs here
+## 这里跑的是什么
 
-`.jar` ROMs are played by **J2meJS** (upstream
-[`Rosabis/J2meJS`](https://github.com/Rosabis/J2meJS), pinned to commit `75947c1`
-of `main`, a fork of Mozilla's j2me.js), copied into `frontend/public/j2me/` and
-served from our own origin. There is no libretro core and no BIOS: the runtime
-loads its own Java class library from `frontend/public/j2me/java/`.
+`.jar` 格式的 ROM 由 **J2meJS** 运行（上游
+[`Rosabis/J2meJS`](https://github.com/Rosabis/J2meJS)，锁定在 `main` 分支的
+commit `75947c1`，是 Mozilla j2me.js 的一个 fork），复制到
+`frontend/public/j2me/` 后由本站自身提供服务。这里既没有 libretro 核心也没有
+BIOS：运行时从 `frontend/public/j2me/java/` 加载它自带的 Java 类库。
 
-Refreshing the vendored copy means re-applying `apply-j2me-patches.mjs` (see
-below); upstream is the place the corresponding source lives for GPL-2.0.
+刷新这份内置副本意味着要重新跑一遍 `apply-j2me-patches.mjs`（见下）；对应源码
+按 GPL-2.0 的要求保留在上游。
 
-License: **GPL-2.0** (`frontend/public/j2me/LICENSE`, upstream README kept as
-`LICENSE-README.md`). The emoji graphics under `style/emoji/` are CC-BY-4.0 and
-are covered by that license only. The footer and README name the runtime and its
-license.
+许可证：**GPL-2.0**（`frontend/public/j2me/LICENSE`，上游 README 保留为
+`LICENSE-README.md`）。`style/emoji/` 下的表情图形是 CC-BY-4.0，只受该许可证
+覆盖。页脚与 README 都标注了运行时的名称与许可证。
 
-## Why not SquirrelJME's libretro core
+## 为什么不用 SquirrelJME 的 libretro 核心
 
-Probed 2026-10-14: the libretro core loads and starts, but its content loading is
-unimplemented upstream. In `nanocoat/frontend/libretro/boot.c` every load path
-ends in `sjme_nvm_defaultBootSuiteInDirectory()`, whose file lookup
-`sjme_nvm_defaultBootSuiteAttempt()` is a disabled `sjme_todo("Impl?")` stub, and
-`sjme_nvm_parseCommandLine()` stubs `-jar` the same way. `retro_load_game()`
-therefore returns false for every input: a real MIDlet JAR and the core's own
-class-library archive both fail with `[Content] Failed to load content` even with
-`squirreljme-0.3.0-fast.jar` present in the system directory under the exact name
-its `.info` requires. The prebuilt core and class library were removed from
-`data/cores` and `data/bios/j2me` and the core release was rebuilt without them.
+2026-10-14 实测：这个 libretro 核心能加载、能启动，但它的内容加载在上游尚未实现。
+在 `nanocoat/frontend/libretro/boot.c` 里，每一条加载路径最后都落到
+`sjme_nvm_defaultBootSuiteInDirectory()`，而其中的文件查找
+`sjme_nvm_defaultBootSuiteAttempt()` 是一个被停用的 `sjme_todo("Impl?")` 桩函数，
+`sjme_nvm_parseCommandLine()` 对 `-jar` 也是同样处理。因此 `retro_load_game()`
+对任何输入都返回 false：真实 MIDlet 的 JAR 与核心自带的类库归档都会以
+`[Content] Failed to load content` 失败，即便把 `squirreljme-0.3.0-fast.jar`
+按它 `.info` 要求的准确文件名放进系统目录也一样。预编译的核心与类库已从
+`data/cores` 与 `data/bios/j2me` 移除，核心发布包也重新构建过、不再包含它们。
 
-## Site patches to the vendored runtime
+## 对内置运行时的站点补丁
 
-`apply-j2me-patches.mjs` (next to this file, under `frontend/scripts/`) re-applies
-every patch and is idempotent, so run it after refreshing the vendored copy:
+`apply-j2me-patches.mjs`（与本文件同目录，位于 `frontend/scripts/`）会重新应用
+每一个补丁，且可重复执行，所以刷新内置副本之后跑一次即可：
 
 ```bash
 node frontend/scripts/apply-j2me-patches.mjs
@@ -42,514 +40,594 @@ node frontend/scripts/apply-j2me-patches.mjs
 `frontend/dist` 当成静态资源对外提供，而这个脚本与本文档属于开发期资料，
 不该被访客下载（2026-10 安全审计 H-3）。
 
-Files the upstream copy carries but this integration never loads were dropped when
-vendoring: the standalone pages and their game list (`index.html`, `index2.html`,
-`indexbatch.html`, `gamelist.js`, `gc.html`, `gc.js`, `benchmark.js`, `timer.js`,
-`jar/`, `certs/`, the `kaios/` build) and `img/` — 37 covers for that game list,
-which nothing here references. `main.html` and the scripts it pulls in are the
-whole runtime; a refreshed copy therefore needs the same pruning, or the extras
-are served (and shipped) for nothing.
+打包时还丢掉了上游副本里、本集成从不加载的文件：独立页面及其游戏列表
+（`index.html`、`index2.html`、`indexbatch.html`、`gamelist.js`、`gc.html`、
+`gc.js`、`benchmark.js`、`timer.js`、`jar/`、`certs/`、`kaios/` 构建产物）以及
+`img/` —— 那个游戏列表用的 37 张封面，这里没有任何地方引用。`main.html` 与它
+拉取的脚本就是运行时的全部；所以刷新副本时需要做同样的裁剪，否则那些多余文件
+会被白白对外提供（也会被打进发布包）。
 
-1. `bld/main-all.js` — its boot list splits `config.jars` on `":"`, which breaks
-   `blob:` URLs. The patched line prefers `window.__j2meJars` when set.
-2. `bld/main-all.js` — `window.onload` must never be stopped by the
-   compiled-method cache (see the mobile section below): the `clear()` result is
-   given a two-second race and a `catch`, and the VM starts either way.
-3. `bld/main-all.js` — the class library is requested under the page's `?v=`
-   version, so a browser that cached the previous runtime cannot pair it with a
-   new page.
-4. `bld/main-all.js` — key codes carry their MIDP game actions: `getGameAction`
-   gains 2/4/6/8 → UP/LEFT/RIGHT/DOWN, 5 → FIRE and 1/3/7/9 → GAME_A..GAME_D
-   (the navigation codes were already in the table), and `getKeyCode` answers
-   with the codes this player actually sends (see "Adapter" for both).
-5. `bld/main-all.js` — `keyNames` learns the navigation and soft keys, which
-   otherwise fall through to `String.fromCharCode(-1)` in `getKeyName()`.
-6. `bld/j2me.js` — the optional compiled-method cache is disabled. JIT methods
-   are regenerated for every session instead of being restored from a desktop
-   browser's IndexedDB, where methods from an older runtime can stall boot.
-7. `libs/compiled-method-cache.js` — `restore()`/`clear()` read the `database`
-   handle only after `openDatabase` resolves (upstream handed `new Promise(...)`
-   straight to `.then()`, whose executor runs at call time).
-8. `main.html` — loads `preload.js` (which turns the `?jar=` parameter into
-   `window.__j2meJars`) right after the config scripts, and `bridge.js` after the
-   runtime scripts.
-9. `bld/j2me.js` — a virtual or interface call on a null receiver throws a Java
-   `NullPointerException` from the interpreter, instead of reading `vTable` off a
-   null `classInfo` (see "Console output" below).
-10. `bld/j2me.js` — a Java exception passing through the interpreter is logged on
-    the debug channel; only an exception that unwinds past every frame without
-    finding a handler is reported as an error.
-11. `bld/j2me.js` — the fork's `createException` line (one per exception created)
-    is gone.
-12. `bld/main-all.js` — the fork's value dumps are gone: every key code, the
-    `config` and manifest objects, and an always-undefined `config.gamepadSize`.
-13. `bld/main-all.js` — the MIDP internals that are no-ops on this runtime stop
-    warning on every call.
-14. `main.html` — loads `lcdui.js` right after the runtime scripts (see "MIDP high
-    level UI" below).
-15. `bld/j2me.js` — an exception that has unwound every frame leaves the interpreter
-    instead of being swallowed and re-run (see "The exception wall" below).
-16. `bld/j2me.js` — a Java exception that kills a thread names its class and message.
-17. `bld/main-all.js` — the RMS listener registry (AMS bookkeeping for other MIDlets,
-    and a no-op here) stops warning on every record store open and close.
-18. `main.html` — loads `rms.js` right after the runtime (see "Java saves (RMS)" below).
+1. `bld/main-all.js` —— 它的启动列表用 `":"` 切分 `config.jars`，这会把 `blob:`
+   URL 切坏。打过补丁的那一行在 `window.__j2meJars` 有值时优先用它。
+2. `bld/main-all.js` —— `window.onload` 绝不能被编译方法缓存拦住（见下面移动端
+   一节）：`clear()` 的结果被套上两秒的竞态与一个 `catch`，无论哪种情况
+   VM 都会启动。
+3. `bld/main-all.js` —— 类库按页面的 `?v=` 版本号请求，这样缓存了上一版运行时的
+   浏览器不会把它和新页面配成一对。
+4. `bld/main-all.js` —— 按键码带上对应的 MIDP 游戏动作：`getGameAction` 补上
+   2/4/6/8 → UP/LEFT/RIGHT/DOWN、5 → FIRE 与 1/3/7/9 → GAME_A..GAME_D（导航键码
+   本来就在表里），`getKeyCode` 则按本播放器实际发送的键码作答（两者见「适配层」）。
+5. `bld/main-all.js` —— `keyNames` 学会导航键与软键的名字，否则它们在
+   `getKeyName()` 里会掉进 `String.fromCharCode(-1)`。
+6. `bld/j2me.js` —— 可选的编译方法缓存被关掉。JIT 方法每局重新生成，而不是从
+   桌面浏览器的 IndexedDB 里恢复 —— 那里存着旧版运行时生成的方法，会让启动卡住。
+7. `libs/compiled-method-cache.js` —— `restore()`/`clear()` 改为在
+   `openDatabase` resolve 之后才读 `database` 句柄（上游把 `new Promise(...)`
+   直接交给了 `.then()`，而它的执行器在调用时就跑了）。
+8. `main.html` —— 在配置脚本之后立刻加载 `preload.js`（把 `?jar=` 参数变成
+   `window.__j2meJars`），在运行时脚本之后加载 `bridge.js`。
+9. `bld/j2me.js` —— 对 null 接收者的虚调用或接口调用会由解释器抛出 Java 的
+   `NullPointerException`，而不是从 null 的 `classInfo` 上读 `vTable`
+   （见下面「控制台输出」）。
+10. `bld/j2me.js` —— 穿过解释器的 Java 异常记到 debug 通道；只有一路展开、
+    穿过所有帧都没找到处理器的异常才报成 error。
+11. `bld/j2me.js` —— fork 里那行 `createException`（每创建一个异常打一行）被去掉。
+12. `bld/main-all.js` —— fork 的各种值转储被去掉：每个按键码、`config` 与
+    manifest 对象，以及永远为 undefined 的 `config.gamepadSize`。
+13. `bld/main-all.js` —— 在这个运行时里本来就是空操作的 MIDP 内部实现，不再
+    每次调用都告警。
+14. `main.html` —— 在运行时脚本之后立刻加载 `lcdui.js`（见下面「MIDP 高级界面」）。
+15. `bld/j2me.js` —— 已经展开完所有帧的异常直接离开解释器，而不是被吞掉后重跑
+    （见下面「异常墙」）。
+16. `bld/j2me.js` —— 让某个线程死掉的 Java 异常，报出它的类名与消息。
+17. `bld/main-all.js` —— RMS 监听器注册表（为其它 MIDlet 做的 AMS 记账，在这里
+    是空操作）不再每次开关记录存储都告警。
+18. `main.html` —— 在运行时脚本之后加载 `rms.js`（见下面「Java 存档（RMS）上云」）。
+19. `bld/main-all.js` —— `microedition.locale` 把浏览器的各种中文写法
+    （zh-Hans-CN、zh-SG、zh-Hant-TW …）折算成 MIDlet 携带的设备语言名
+    （`zh-CN` / `zh-HK`）；播放页可以用自己的 `language` 参数覆盖它。
+20. `bld/j2me.js` —— 解释器在运行期间按周期让出执行权，于是一个忙碌的 Java
+    线程无法饿死 JavaScript 事件循环（见下面「一个忙碌的 Java 线程饿死事件循环」）。
+21. `bld/j2me.js` —— 把 `UTF-8` 拼成 `UFT-8` 的 MIDlet 依然能找到它的
+    reader 类：这个请求会回退到拼写正确的 `UTF_*` 类（见下面「拼错的编码类名」）。
+22. `bld/main-all.js` —— `Graphics.drawRGB` 遇到空区域（宽或高为零）直接返回，
+    而不是交给 `createImageData` —— 后者抛出的 `IndexSizeError` 曾让整次 paint
+    中断、画面冻结（见下面「空区域的 drawRGB 冻结画面」）。
+23. `bld/j2me.js` —— 既不是 `TypeError`、也不是 fork 的 `JavaRuntimeException`
+    的 JavaScript 错误，会变成携带其名字与消息的 Java 异常，而不是以一个没有
+    `_address` 的对象身份进入编译代码。
 
-## Console output
+## 控制台输出
 
-A game used to be unusable for diagnosis: `.jar` play printed a red
-`TypeError: Cannot read properties of null (reading 'vTable')`, a
-`createException` line and an object dump after every Java exception, a bare key
-code per key press, whole objects per load, and eight `not implemented` warnings
-from MIDP internals that are no-ops here. 仙剑奇侠传 printed 74 messages for two
-boots, 2 of them errors and 18 warnings.
+以前这个游戏基本无法用来诊断：`.jar` 播放会打出红色的
+`TypeError: Cannot read properties of null (reading 'vTable')`，每个 Java 异常
+之后跟着一行 `createException` 和一次对象转储，每次按键打一个光秃秃的键码，
+每次加载打整个对象，还有八条来自「在这里本是空操作」的 MIDP 内部实现的
+`not implemented` 告警。仙剑奇侠传两次启动打了 74 条消息，其中 2 条 error、
+18 条 warning。
 
-Patches 9 to 13 cut that to the runtime's own informational output: 44 messages,
-**no errors and no warnings**, with the same game still booting in ~0.7–1.1 s and
-still answering input. The two exceptions the game raises and catches itself stay
-visible on the debug channel (the devtools console hides `debug` unless verbose
-logging is on), so nothing was thrown away for support purposes.
+补丁 9 到 13 把它收敛成运行时自己的信息输出：44 条消息、**没有 error、没有
+warning**，同一个游戏仍然在约 0.7–1.1 秒内启动、仍然响应输入。游戏自己抛出并
+捕获的那两个异常仍留在 debug 通道上（devtools 控制台不开 verbose 日志时不显示
+`debug`），所以排障时并没有丢信息。
 
-Reproduce with the external-ROM probe — it records `Runtime.consoleAPICalled` and
-`Runtime.exceptionThrown` into `runtime-log.json`:
+用外置 ROM 探针可以复现 —— 它把 `Runtime.consoleAPICalled` 与
+`Runtime.exceptionThrown` 记进 `runtime-log.json`：
 
 ```bash
 J2ME_TEST_CHROME=/path/to/chrome node tests/j2me-real-game.mjs /path/game.jar /tmp/evidence
 ```
 
-`bridge.js` forwards uncaught runtime errors to the player and exposes
-`window.__j2mePlayer` (key press/release, the VM canvas, boot state, pause). The
-pause implementation holds back `setTimeout` / `setInterval` /
-`requestAnimationFrame` while paused, which freezes the VM where it was because
-the runtime drives its scheduler, sleeps and screen blits through those timers.
+`bridge.js` 把未捕获的运行时错误转发给播放器，并暴露 `window.__j2mePlayer`
+（按键按下/松开、VM canvas、启动状态、暂停）。暂停的实现是在暂停期间压住
+`setTimeout` / `setInterval` / `requestAnimationFrame`，从而把 VM 冻结在原地 ——
+运行时的调度、sleep 与画面 blit 都靠这几个定时器驱动。
 
-The page must be named `main.html`: the runtime decides between its "index" and
-"player" modes by looking for that name in the URL.
+页面必须叫 `main.html`：运行时靠 URL 里的这个名字决定自己工作在 "index" 还是
+"player" 模式。
 
-## MIDP high level UI (`lcdui.js`)
+## MIDP 高级界面（lcdui.js）
 
-MIDlets that open with a `Form`, `List`, `TextBox` or `Alert` used to show
-nothing: the vendored runtime implements the high level LCDUI natives as empty
-shells (`addUnimplementedNative`, plus a DOM-based `ChoiceGroupLFImpl` that
-reads fields off the wrong object), and the elements it does build live in the
-runtime's own page, which the player never shows — it mirrors only `#canvas`.
-A game that started on such a screen therefore failed the player's "did it
-paint yet" check and died at boot with a timeout.
+以 `Form`、`List`、`TextBox` 或 `Alert` 开局的 MIDlet 以前什么都不显示：内置
+运行时把高级 LCDUI 的原生实现做成了空壳（`addUnimplementedNative`，外加一个从
+错误对象上读字段的、基于 DOM 的 `ChoiceGroupLFImpl`），而它确实构建出来的元素
+活在运行时自己的页面里，播放器从不显示那个页面 —— 它只镜像 `#canvas`。于是从
+这类界面启动的游戏过不了播放器的「画过没有」检查，在启动阶段以超时告终。
 
-`lcdui.js` loads after `bld/main-all.js` and replaces those natives, drawing the
-screens into the runtime's canvas at 4 px padding with the runtime's own font
-objects. It also covers two things the build leaves to "the native side":
+`lcdui.js` 在 `bld/main-all.js` 之后加载并替换那些原生实现，用运行时自带的字体
+对象把这些界面以 4 px 内边距画进运行时的 canvas。它还补上了构建产物留给「原生
+侧」的两件事：
 
-- **soft keys**: `NativeMenu.updateCommands` gets the displayable's `Command`s,
-  draws them as a left/right soft key bar and dispatches a press with
-  `MIDP.sendCommandEvent(id)` (command dispatch itself is Java:
-  `Display.handleCommandEvent` → `uCallCommandEvent`). `-6`/`-7` — the codes
-  `select`/`start` already send — are routed to it from a `MIDP.sendKeyPress`
-  wrapper.
-- **`List` navigation**: this fork has no `ListLFImpl` — a `List` is a one-item
-  `Form` holding a `ChoiceGroup`, and nobody on the Java side moves the selection
-  (`DisplayableLFImpl.uCallKeyPressed` is empty, `ChoiceGroupLFImpl` has no key
-  handling). Up/down from the d-pad move the highlight here, and the fire key
-  selects: the `List`'s own `selectCommand` when the app set one, otherwise the
-  first non-back command. Java reads the selection back through
-  `getSelectedIndex0` when the MIDlet asks for it.
+- **软键**：`NativeMenu.updateCommands` 拿到 displayable 的 `Command`，把它们画
+  成左右软键栏，并在按下时用 `MIDP.sendCommandEvent(id)` 派发（命令派发本身在
+  Java 侧：`Display.handleCommandEvent` → `uCallCommandEvent`）。`-6`/`-7` ——
+  也就是 `select`/`start` 已经发送的键码 —— 由一个 `MIDP.sendKeyPress` 包装
+  转发给它。
+- **`List` 导航**：这个 fork 没有 `ListLFImpl` —— `List` 只是一个含
+  `ChoiceGroup` 的单条目 `Form`，而 Java 侧没人移动选中项
+  （`DisplayableLFImpl.uCallKeyPressed` 是空的，`ChoiceGroupLFImpl` 也没有按键
+  处理）。方向键的上下在这里移动高亮，开火键负责选中：应用设了就用 `List` 自己的
+  `selectCommand`，否则用第一个非返回类命令。MIDlet 来问选中项时，Java 通过
+  `getSelectedIndex0` 读回去。
 
-Sizes are answered from this file too, and they decide the whole layout: MIDP's
-`LayoutManager` only stretches an item when its layout carries `LAYOUT_EXPAND`,
-so `List` rows, `TextField`s and `Gauge`s report the available width themselves.
-Two traps worth remembering: the size natives take the item's **native id** as
-their first argument (`getPreferredWidth0(int nativeId, int availableWidth)`),
-and a font's `height`/`baseline` hang off the Java `Font` object rather than the
-2D context `NativeMap` returns — without those two, every item collapses to a
-100×20 box in the top-left corner.
+尺寸也从这里作答，而尺寸决定整个布局：MIDP 的 `LayoutManager` 只在该条目的布局
+带 `LAYOUT_EXPAND` 时拉伸它，所以 `List` 的行、`TextField` 与 `Gauge` 都要自己
+报出可用宽度。有两个坑值得记住：尺寸类原生实现的**第一个**参数是条目的
+**native id**（`getPreferredWidth0(int nativeId, int availableWidth)`）；而字体
+的 `height`/`baseline` 挂在 Java 的 `Font` 对象上，不在 `NativeMap` 返回的 2D
+上下文里 —— 少了这两样，每个条目都会塌成左上角一个 100×20 的方块。
 
-Text entry is the other half of the same problem. The runtime's
-`TextEditorProvider` only ever served the Nokia `TextEditor` API, its elements sit
-in the hidden page, and the high-level `TextField` natives are stubs
-(`createNativeResource0` just warns; `getString0` answered with a global that only
-a `prompt()` could set). The player now opens a real `<input>` over the canvas:
-5 / 确定 starts editing, 5 or the left soft key commits, the right soft key
-cancels, and tapping the field does the same. The value goes back through
-`__lcdui.setText` / `commitText`, which writes the Java `DynamicCharacterArray`;
-Java asks for it with `getString0` whenever the MIDlet reads the field, so nothing
-else needs synchronising. The `ItemStateListener` notification cannot be sent from
-the player's key handler — a Java call made there has no VM context (`ctx` is
-null) — so it is queued and delivered from the next native Java calls back into
-(`getString0`, `setCurrentItem0`).
+文本输入是同一个问题的另一半。运行时的 `TextEditorProvider` 只服务过 Nokia 的
+`TextEditor` API，它的元素待在隐藏页面里，高级 `TextField` 的原生实现则是桩
+（`createNativeResource0` 只告警；`getString0` 拿一个只有 `prompt()` 能设置的
+全局量作答）。现在播放器会在 canvas 之上打开一个真正的 `<input>`：5 / 确定 开始
+编辑，5 或左软键提交，右软键取消，点这个输入框效果相同。值经
+`__lcdui.setText` / `commitText` 回写，写进 Java 的 `DynamicCharacterArray`；
+MIDlet 每次读这个字段，Java 都用 `getString0` 去取，所以不需要同步别的东西。
+`ItemStateListener` 的通知没法从播放器的按键处理里发 —— 在那里发起的 Java 调用
+没有 VM 上下文（`ctx` 为 null）—— 于是它先入队，等下一次 Java 回调进来时
+（`getString0`、`setCurrentItem0`）再投递。
 
-## Mobile: the WebKit boot failure (fixed 2026-10-14)
+## 移动端：WebKit 启动失败（2026-10-14 修复）
 
-J2ME loaded on desktop Chromium but never on phones. iOS Safari and iOS Edge
-(WebKit) run the same WebKit engine and failed *after* `java/classesold.jar` was
-delivered, with nothing else requested and no picture:
+J2ME 在桌面 Chromium 上能加载，在手机上却始终不行。iOS Safari 与 iOS Edge
+（WebKit）跑的是同一个 WebKit 引擎，它们在 `java/classesold.jar` 送达**之后**
+失败，不再请求任何东西，也没有画面：
 
 ```
 Unhandled Promise Rejection: TypeError: undefined is not an object
   (evaluating 'database.transaction')
 ```
 
-`compiled-method-cache.js` handed a `new Promise(executor)` to
-`openDatabase.then(...)`, so the executor ran immediately — before the
-IndexedDB open had produced the `database` handle. On V8 the database happens
-to be open by the time `window.onload` calls `clear()`, so nothing threw; on
-WebKit it was still opening, the executor threw, and the rejected promise was
-reported through `bridge.js` as a fatal error, which made the player tear the
-frame down. Patch 4 fixes the call; patch 2 makes the cache non-fatal and
-non-blocking as well, because it is only an optimisation.
+`compiled-method-cache.js` 把一个 `new Promise(executor)` 交给了
+`openDatabase.then(...)`，于是执行器立即运行 —— 早于 IndexedDB 打开并产出
+`database` 句柄。在 V8 上，`window.onload` 调 `clear()` 时数据库碰巧已经打开，
+所以什么都没抛；在 WebKit 上它还在打开，执行器抛出，被拒绝的 promise 经
+`bridge.js` 报成致命错误，播放器随即把 frame 拆掉。补丁 4 修掉了那个调用；
+补丁 2 让缓存既非致命也不阻塞，因为它本来就只是个优化。
 
-Two related changes went in with it:
+同时进去的还有两处相关改动：
 
-- The adapter no longer treats every reported error as fatal while booting: the
-  first error is held for five seconds (`J2ME_BOOT_ERROR_GRACE_MS`) instead of
-  failing instantly. A session that paints continues (the error stays visible in
-  `getStatus().error`), and one that does not fails with the runtime's own
-  message rather than a bare "startup timed out".
-- The app server now allows the runtime page to be framed by this site
-  (`X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'` for `/j2me/` only).
-  Its blanket `DENY` / `frame-ancestors 'none'` made every J2ME boot fail when
-  the Node app serves the frontend build (Docker deployment) with "Refused to
-  load" / sandbox access violations.
+- 适配层在启动期间不再把每个上报的错误都当致命：第一个错误先压五秒
+  （`J2ME_BOOT_ERROR_GRACE_MS`），而不是立刻失败。已经画过画面的会话继续跑
+  （错误仍留在 `getStatus().error` 里），没画过的会话则以运行时自己的消息失败，
+  而不是一句干巴巴的 "startup timed out"。
+- 应用服务端现在允许本站把运行时页面嵌进 frame（只对 `/j2me/` 使用
+  `X-Frame-Options: SAMEORIGIN` 与 `frame-ancestors 'self'`）。它此前一律发的
+  `DENY` / `frame-ancestors 'none'`，导致由 Node 应用提供前端构建产物（Docker
+  部署）时每次 J2ME 启动都会以 "Refused to load" / 沙箱访问违规告终。
 
-## Desktop freeze: parent-frame animation scheduling (fixed 2026-10-14)
+## 桌面端卡死：父页面动画调度（2026-10-14 修复）
 
-A controlled comparison with `/www/wwwroot/default/J2meJS-main/java` identified
-an integration trigger, rather than a ROM or class-library problem. The same
-450,183-byte `正义化身－忍者神龟传` JAR passes its loading screen in the original
-page and in a minimal iframe using our patched runtime. Adding even an empty,
-continuous `requestAnimationFrame` loop in the parent makes it hang inside the
-asm.js allocator. Removing that parent RAF loop, or replacing the adapter's
-canvas mirror with a 16 ms `setTimeout` loop, allows it to load and keep painting.
+与 `/www/wwwroot/default/J2meJS-main/java` 做受控对比后，定位到的是集成层的
+触发条件，而不是 ROM 或类库的问题。同一个 450,183 字节的
+`正义化身－忍者神龟传` JAR，在原始页面里和一个用我们打过补丁的运行时的最小
+iframe 里都能通过加载画面。而在父页面里加一个哪怕空的、连续的
+`requestAnimationFrame` 循环，就会让它在 asm.js 分配器里卡住。去掉父页面那个
+RAF 循环，或者把适配层的 canvas 镜像换成 16 ms 的 `setTimeout` 循环，它就能加载
+并持续绘制。
 
-The adapter now uses the timer mirror and cancels it on pause, failure and exit.
-A Chromium run of the actual game remained responsive for 45 seconds, passed the
-previous loading freeze, and kept changing frames with the VM heap stable at
-557,056 bytes. This identifies and removes the integration trigger; it does not
-claim that the exact invalid VM memory write has been located. Mobile browser
-emulation can reproduce the old failure too, so the fix is applied consistently
-instead of depending on user-agent detection.
+适配层现在用定时器镜像，并在暂停、失败与退出时取消它。在 Chromium 里跑真实
+游戏 45 秒保持响应，越过了原先的加载卡死，画面持续变化，VM 堆稳定在 557,056
+字节。这定位并移除了集成侧的触发条件；它并不声称已经找到 VM 那处非法内存写入的
+确切位置。移动端浏览器的模拟同样能复现旧故障，所以这个修复是一致应用的，而不靠
+user-agent 判断。
 
-The earlier allocator investigation below is retained as background; its
-`OutOfMemoryError` guard alone did **not** fix this game. Moving the runtime to a
-separate origin is optional isolation work, not required for this fix.
+下面更早的分配器调查作为背景保留；它那个 `OutOfMemoryError` 防线单独并**没有**
+修好这个游戏。把运行时挪到独立源是可选的隔离工作，不是本修复的前提。
 
-### The exception wall behind the 98% stall (fixed 2026-10-15)
+### 98% 卡住背后的异常墙（2026-10-15 修复）
 
-The freeze came back in a player's console as a wall of
-`Uncaught Java exception: java/lang/NullPointerException`, with the picture stuck on the
-game's own loading screen. The console was the clue: the exception is real, and it is
-thrown by the game's own bytecode. `p.aq()V` resets the actor table (`n.j = -1` over each
-element of `K`) and one element of `K` is still null when it runs, so the interpreter's
-`PUTFIELD` check (patch 6) raises a Java `NullPointerException` -- correct MIDP behaviour,
-and nothing in `p.aq` or its callers catches it.
+卡死又回来了，在玩家的控制台里表现为一墙
+`Uncaught Java exception: java/lang/NullPointerException`，画面停在游戏自己的
+加载界面上。控制台就是线索：这个异常是真的，而且由游戏自己的字节码抛出。
+`p.aq()V` 重置 actor 表（对 `K` 的每个元素写 `n.j = -1`），执行时 `K` 里还有
+元素是 null，于是解释器的 `PUTFIELD` 检查（补丁 6）抛出 Java 的
+`NullPointerException` —— 这是正确的 MIDP 行为，`p.aq` 及其调用者里没有任何
+地方捕获它。
 
-`Thread.exceptionUnwind` then walked every frame, reached the `ExitInterpreter` marker and
-re-threw, which is how the runtime hands an exception back across a compiled caller
-(`fastInterpreterFrameAdapter` pushes that marker; `Thread.start0` pushes the thread's
-own). The re-throw landed in the interpreter's own `catch (err)` -- the fork had written
-it to swallow whatever came out of its handler and `continue` the loop. The loop then
-re-ran the faulting instruction against a frame stack the unwind had just removed, `sp`
-growing two words per pass: one 40-second run of one game threw the same exception **594
-times**, each one a red console line, the class library's `Display` reported a caught
-`NullPointerException` per repaint, and the picture stopped changing at the frame the game
-had reached. The handler that should have received the exception never got to run because
-the unwind never finished.
+接着 `Thread.exceptionUnwind` 走完所有帧、到达 `ExitInterpreter` 标记并重新抛出
+—— 运行时正是这样把异常交还给上游的编译代码的（`fastInterpreterFrameAdapter`
+压入那个标记；`Thread.start0` 压入线程自己的）。这次重抛落进了解释器自己的
+`catch (err)` —— fork 把它写成「吞掉 handler 里出来的一切、然后 `continue`
+循环」。循环于是在展开刚刚移除的帧栈上重跑那条出错指令，每跑一遍 `sp` 长两个字：
+某个游戏一次 40 秒的运行里抛了同一个异常 **594 次**，每一次都是一行红色控制台
+输出，类库的 `Display` 每次重绘都报一个被捕获的 `NullPointerException`，画面
+停在游戏已经到达的那一帧不再变化。本该收到异常的那个处理器始终没机会运行，
+因为那次展开从未结束。
 
-Reproduce it with a bare `requestAnimationFrame` loop in the parent page -- the same
-trigger as the freeze above, and still the trigger after that fix. Two controls through
-the same harness and the same keys (no parent loop, and a parent `setInterval(0)` loop)
-play the game for 60 s without a single exception.
+用一个裸的父页面 `requestAnimationFrame` 循环即可复现 —— 与上面那个卡死同一个
+触发条件，而且在那个修复之后仍然是触发条件。同一套测试装置与同样的按键做两组
+对照（父页面没有循环、父页面用 `setInterval(0)` 循环）都能把游戏玩 60 秒而
+不抛一个异常。
 
-Patch 15 lets that exception leave the interpreter, patch 16 names the class and message
-when one kills a thread, and patch 10 now only calls an exception uncaught at the thread's
-*own* bottom marker: a nested marker means the compiled frames above -- which the
-interpreter's search cannot see -- still have handlers, and reporting those turned an
-exception the game handles into one more red line. Same run after the three: no errors, no
-warnings from the runtime, and the game plays through its loading screen and its levels.
+补丁 15 让这种异常离开解释器，补丁 16 在异常杀死线程时报出类名与消息，补丁 10
+则只在异常展开到线程**自己**的底部标记时才称它未捕获：嵌套标记意味着上面那些
+编译帧 —— 解释器的搜索看不到它们 —— 还有处理器，把它们报出来就把一个游戏本来
+能处理的异常变成了又一行红色。三个补丁之后同样的运行：没有 error，运行时也没有
+warning，游戏一路玩过它的加载界面和各关卡。
 
-### Earlier allocator evidence
+### 一个忙碌的 Java 线程饿死事件循环（2026-10-16 修复）
 
-`正义化身－忍者神龟传` (and, by the shape of it, any MIDlet that drives the fork's
-runtime into the same corner) freezes the whole page on PC: the game's own
-“载入中…” screen stops mid-way and the tab stops responding — the renderer's main
-thread never yields again, so not even the player's UI can react.
+「功夫西游 - 乱舞唐僧」（`com.sinaflying.engine.GameMIDlet`，817 KB，
+2026-10-16 收录）画完启动画面就把页面冻住了：canvas 一直白屏，
+`Runtime.evaluate` 与 `Page.captureScreenshot` 都再也不返回 —— 渲染进程的主
+线程没了，控制台最后一条输出是运行时自己的 CHAPI 行（`Store setCleanup…`）。
+播放器的存档路径与它无关：它发生在一次完全没有存档的首次启动上，这也正是把这次
+调查引向 VM 本身的原因。
 
-Measured through the production player entry (`tests/j2me-real-game.mjs`, plus a
-CDP driver that samples the page every second):
+牵涉两个 Java 线程，它们通过 JavaScript 事件循环互相死锁：
 
-- At the freeze the game had painted its own loading screen and the VM heap was
-  ~471 KB of the 128 MB asm.js heap, so this is **not** memory pressure.
-- `Runtime.evaluate` times out from then on and `Profiler.stop` never returns,
-  but `Debugger.pause` still does: the renderer is spinning inside JS, not
-  waiting on I/O.
-- The paused chain is `jf → Rc → Pc → Nc → Yb → ce → Ab → Bb` in
-  `bld/native.js` — the Emscripten asm.js GC — entered from `newArray()` in
-  `bld/j2me.js` via `J2ME.gcMallocAtomic` (`jf` is the exported
-  `_gcMallocAtomic`, per the module's export table).
-- `ASM._getUsedHeapSize()` stays at exactly the same value across four minutes
-  and the Java frame state (`fp`, `sp`, `opPC`) is byte-identical across pauses:
-  **one** `_gcMallocAtomic()` call never returns. `Bb` is the allocator's
-  free-space search; its loop walks a chain that never terminates, i.e. the free
-  lists it walks were corrupted earlier.
-- Only this game does it. `仙剑奇侠传` runs and repaints for 45+ s in the same
-  harness (its screen hash changes, no freeze).
+- MIDlet 自己的线程跑 `GameMIDlet.run`。它的循环是
+  `while (!c) { if (canvas != null && canvas.f()) { repaint(); … Thread.sleep(90 - elapsed); } }`，
+  而 `canvas.f()` 是 `return !this.t` —— `paint()` 开始时置位、返回时清除的那个
+  标志。`Thread.sleep` 位于 `f()` 分支**内部**，所以一次绘制进行期间，这个循环
+  就是纯粹的忙等。
+- LCDUI 事件线程正在那次绘制里面：`f.paint` → 游戏的场景（`game/d.b`）→ 它的
+  CMCC 图片辅助类（`cmcc/sinaflying/game/a`）→ `System.gc()`。在这个运行时里
+  `Runtime.gc` 是**异步**原生实现（`asyncImpl` + `setTimeout(… ASM._forceCollection())`）：
+  它把调用线程挂起，直到 JavaScript 事件循环跑到那个定时器。
 
-Where the corruption comes from: this fork **disables Java's error paths**.
-`Thread.prototype.throwException` only logs (`case 1/0/2/3` are commented out,
-“这里拦截了报错”), and `throwArrayIndexOutOfBoundsException`,
-`throwNullPointerException` and `throwArithmeticException` are neutered too, so
-the interpreter runs the very store/field write the check just rejected. The
-compiled path is the same: `emitBoundsCheck()` calls `TI()` — the neutered
-throw — and then writes anyway, privilege-listed methods skip the check
-entirely, and a compiled `putfield` on a null receiver goes through `TN()`
-(also neutered) and writes at `null + fieldOffset`. Addresses that low are the
-module's own static data, and that is exactly where the GC keeps its page table
-(`c[60320 + …]`) and free-list heads (`c[8 + …]`). One wild write there and the
-allocator's search spins forever — taking the browser tab with it.
+解释器完全没有抢占检查，而 fork 还把基线编译器为循环生成的那个也关掉了
+（`J2ME.emitCheckPreemption = false`），所以忙等线程从不给事件循环让出机会：
+被挂起线程的定时器永不到点，`t` 一直为真，两个线程就这样永远互等。页面的
+JavaScript 也再没回到浏览器 —— 白屏和卡死的标签页就是这么来的。
 
-What ships from this investigation: the runtime now keeps Java's safety checks active. `Thread.throwException()` and the compiled `TN` / `TI` / `TA` helpers raise the corresponding Java exceptions instead of logging and continuing; the array-store check does the same. This prevents a bad field or array access from writing over the GC's page tables or free lists. `newArray()` also raises a Java `OutOfMemoryError` when the allocator returns 0 instead of writing an array header at address 0. The game still boots and repaints with these guards, and the actual game sequence below has been exercised through the production player entry.
+找到它需要一条能在主线程卡死时存活的通道。CDP 的各种路径在解释器空转之后都会
+超时，但从 frame 内部发出的 `fetch(..., {keepalive: true})` 仍能离开渲染进程
+（由网络进程发送），于是探针向它自己的服务器发了两样东西：一个解释器心跳
+（每 1024 条字节码一次，附上 Java 栈）和一份按线程的 Java 栈转储
+（`runtime.allCtxs`，像 `Throwable.fillInStackTrace` 那样沿每个线程的帧链走）。
+这份转储一次就点出了死锁的两半：
 
-What was tried and does **not** fix the freeze (all verified on this ROM):
-the other two class libraries (`enginemode2-classes2.jar`,
-`enginemode3-classes.jar`), an all-STORED JAR (no JS inflate), a suspended
-`AudioContext`, 20× CPU throttling, omitting `midletClassName`, forcing a full
-collection every 32 scheduler turns, and bounding the allocator's `while(1)` and
-`do-while` loops (50 k iterations, `break` on bail-out) — the spin simply moves
-to a loop outside the bounded set, and the caller's “collect and retry” path
-keeps the page blocked. Disabling the JIT (`invokeThreshold` /
-`backwardBranchThreshold` set to 1e9, so everything stays in the interpreter,
-which does skip the wild accesses) keeps the page responsive but leaves the game
-stuck on its loading screen, so it is not a fix either.
+```
+ctx 4 paused   org/mozilla/internal/Sys.unwind  <- java/lang/System.gc  <- cmcc/sinaflying/game/a.a(String,int)
+ctx 7 spinning com/sinaflying/engine/GameMIDlet.run   (pcs 7/11/15/21/103, f() returning 0, no Thread.sleep)
+```
 
-Recommended follow-up, in order of value:
+补丁 20 给解释器补上了编译器为循环生成的那种周期性让出（掩码背后的 `PS++` /
+`PE()`，保存 `fp`/`sp`/`pc` 并返回 `Context.execute`，由它把线程按 `Yielding`
+重新排队）。要不要让、什么时候让仍由 `Scheduler.shouldPreempt()` 决定：
+80 ms 的执行窗口加 5 ms 的检查间隔，所以在没有别的东西可跑时，循环根本不会被打断。
 
-1. **Give the runtime its own origin** (its own port/host, not just its own
-   path). Same-origin frames share one renderer main thread, which is why a hung
-   VM freezes the player UI; a separate origin gets its own process, so the
-   player could detect the dead frame and offer a reload instead of hanging.
-   That needs the JAR handoff moved from the `blob:` URL to `postMessage` (blob
-   URLs are origin-scoped) and the canvas mirror switched to transferred
-   `ImageBitmap`s (a cross-origin canvas cannot be read back).
-2. Report the allocator/exception findings upstream (`Rosabis/J2meJS`): the
-   neutered `throwException` paths plus a free list that can be walked forever
-   are both upstream issues, and the repro above is self-contained.
+补丁之后同一个 ROM 约 1.1 秒启动到启动画面，页面保持响应（`Runtime.evaluate`
+能作答、截图能出图），左软键把启动画面收进游戏的加载条与标题界面（带「新的游戏」
+菜单），软键 / 方向键 / 开火键持续改变帧。循环也回到每帧一次
+`Thread.sleep(90)`（15 秒会话里实测 158 次 sleep）。首次启动与恢复播放器云 RMS
+快照的第二次启动都正常绘制，仙剑奇侠传也照样启动、照样重绘 —— 解释器这道检查
+是每条字节码一次计数自增加一次掩码分支，代价与它旁边那些 `!release` 断言同一
+量级。
 
-## Runtime asset versioning
+有两件事**不是**这个修复：把 `Runtime.gc` 改成同步（asm.js 的收集器必须在
+JavaScript 栈为空时运行 —— 这正是那个原生实现挂起调用线程的原因，改成内联执行
+反而会损坏 VM），以及把它当成存档 bug。它也不是 `System.gc` 专有：绘制路径上
+任何异步原生实现都会以同样的方式死锁，而这个游戏在 `System.gc` 之后就直接走进了
+`ImageDataFactory.createImmutableImageData`（经浏览器做图片解码），症状一模一样。
 
-nginx serves `.js`/`.css` out of `dist` with a 12-hour `max-age`. A phone that
-cached the previous runtime therefore keeps executing those scripts against a
-freshly deployed page — the state that hid the fix above from the phone that
-reported it. `frontend/scripts/stamp-j2me-runtime.mjs` (run by `npm run build`)
-hashes the runtime copy in `dist/j2me`, writes `dist/j2me/version.json`, and
-stamps every local `src`/`href` in `main.html` with `?v=<version>`. The adapter
-reads that file with `cache: 'no-store'` and opens
-`/j2me/main.html?v=<version>`, and the patched `main-all.js` fetches the class
-library under the same version. Changing any runtime file therefore changes
-every URL at once; a missing `version.json` (dev server) simply means unstamped
-URLs.
+### 拼错的编码类名（2026-10-16 修复）
 
-## The J2ME “core” in the player's loading panel
+「昆仑千年情」（`GameMIDlet`，Nokia N73 版本，ROM id 172）始终过不了加载界面。
+控制台打出了 manifest、`load main class : GameMIDlet`、CHAPI 行 —— 然后是一行
+红色的 `Uncaught java exception: java/lang/NullPointerException`，接着
+`Thread terminated by java/lang/NullPointerException`，canvas 停在启动画面。
 
-J2ME has no libretro core to download, but booting a game still pulls ~4.4 MB of
-runtime: the scripts and stylesheets `main.html` references, plus the Java class
-library (`java/classesold.jar`). The frame fetches those itself, so before the
-last change the player only showed the ROM task and then sat on “初始化模拟器…”
-while the rest arrived invisibly.
+死掉的线程是后半段故事；它上面那条 warning 才是前半段：
 
-`version.json` also carries a `boot` list — `main.html`, every local
-`src`/`href` it references, and the `java/*.jar` class libraries, each with its
-size (`size: null` for a referenced file that is not on disk). The player reads
-it twice:
+```
+ClassNotFoundException com/sun/cldc/i18n/j2me/UFT_8_Reader.class
+'com/sun/cldc/i18n/j2me/UFT_8_Reader.class' not found.
+```
 
-- `frontend/src/composables/player/useCoreAssets.js` registers the tasks as soon
-  as the core is known (that is what the panel lists as the two “core” rows,
-  with byte totals, before anything is downloaded), and
-- `frontend/src/composables/player/j2meCore.js` (`warmJ2meRuntime`) fetches
-  those files under the same `?v=<version>` URLs before `prepareJ2me` opens the
-  frame, reporting real byte progress. The frame's own requests then hit the
-  browser cache (`cache: 'force-cache'`, js/css have a 12h `max-age`, the class
-  library revalidates at worst) instead of downloading the same megabytes twice.
+游戏自己的 `l.class` 里带着字符串 `UFT-8` —— `UTF-8` 调换了两个字母 —— 并把它
+传给 `new InputStreamReader(is, "UFT-8")`。CLDC 的
+`Helper.internalNameForEncoding` 由编码名推出实现类
+（`com/sun/cldc/i18n/j2me/<NAME>_Reader`），于是运行时被要求加载一个三份内置
+类库都没有的类：它们只提供 `UTF_8_Reader`。这个 `ClassNotFoundException` 穿过
+`Helper.getStreamReaderPrim` 回到 MIDlet，没有地方捕获它，线程死在一个
+`NullPointerException` 上。同一个 JAR 在 `a.class` 里把 `UTF-8` 拼写正确，加载
+`UTF_8_Reader` 毫无问题，这也是为什么故障只在启动进行到一半时才出现。
 
-Only the class library for the chosen `enginemode` is fetched; the other two are
-listed in `boot` but never requested or counted. A download failure is reported
-as a failed task but never aborts the boot — the runtime has its own fetch and
-its own 30 s startup timeout — and if the warm-up stalls (20 s without a single
-new byte) it stops waiting, marks its tasks as skipped and lets the frame carry
-on. Without a `version.json` (dev server, unstamped deployment) no “core” task
-is registered at all and the panel falls back to ROM-only, exactly as before.
+这个 ROM 在真机上没有问题：若干厂商类库同样提供那个拼错的类，所以游戏在那里
+根本遇不到失败。
+
+补丁 21 在类加载的最后一步加上别名：请求 `com/sun/cldc/i18n/j2me/UFT_*` 而找不到
+文件时，用 `UTF_*` 再试一次。Java 侧最终持有的是 `UTF_8_Reader` —— 对调用方不可见，
+因为它只关心从 reader 里读回的字符。打了补丁之后，同一个 ROM 约 1.2 秒启动到
+标题画面（首次）、约 0.8 秒（第二次，缓存已热），MIDI 主题曲响起，帧之间持续
+重绘；控制台干净，只剩游戏自己那行
+`error occurs at : java/lang/NullPointerException` 调试输出 —— 有无补丁它都在
+（MIDlet 在启动期间捕获了自己抛的一个异常）。
+
+### 空区域的 drawRGB 冻结画面（2026-10-16 修复）
+
+同一个游戏，在终于能启动之后，剧情进行几分钟又冻住了：画面停在某个场景，按键
+看不出反应，而页面本身完全健康（`Runtime.evaluate` 能作答，游戏循环仍保持每帧
+一次 `Thread.sleep(90)`）。控制台以一行游戏永远看不到的输出结束：
+
+```
+TRACE: <at java.lang.NullPointerException>, Exception caught in Display class
+```
+
+那行 TRACE 来自 `Display.handleThrowable`，由 `CanvasLFImpl.uCallPaint` 环绕
+`canvas.paint(g)` 的 `catch (Throwable)` 调用 —— 也就是说 **MIDlet 的 `paint()`
+抛了异常**，而 MIDP 规定从 `paint()` 抛出的异常被忽略（canvas 保留上一帧内容）。
+于是游戏继续在没人重绘的屏幕后面运行：冻住的是画面，不是线程。
+
+这个异常本身是一个更底层问题的站点补丁副产物：给 `Context.createException`、
+`translateException` 以及编译器生成的空值检查加上观测后，可以看到那个 NPE 是
+**被制造出来的**。真正的错误是一个浏览器的 `DOMException`：
+
+```
+SITE-TE-NOADDR {"name":"IndexSizeError","ctor":"DOMException",
+  "str":"IndexSizeError: Failed to execute 'createImageData' on 'CanvasRenderingContext2D':
+         The source width is zero or not a number.",
+  "stack":["  at Native.javax/microedition/lcdui/Graphics.drawRGB.([IIIIIIIZ)V (main-all.js:9388)",
+           "  at com/sinaflying/engine/e.a(Graphics,IIIIII,II)V (compiled)"]}
+```
+
+游戏的精灵 blitter 调用
+`Graphics.drawRGB(rgbData, offset, scanlength, x, y, width, height, true)`，
+而在那个场景它交来的是**宽或高为零的区域**（一个可见面积塌缩的精灵）。真机什么
+都不画；这个运行时的原生实现把数字直接喂给 `createImageData(width, height)`，
+后者对非正尺寸抛出 `IndexSizeError`。`translateException` 只映射 `TypeError` 与
+fork 的 `JavaRuntimeException`，于是这个 `DOMException` 原样穿过 —— 而编译代码
+随后在自己的 catch 里做 `TE(ex)._address`，对 `DOMException` 来说那是
+`undefined`。它的重抛路径（`emitThrow` → `!A && TN()`）因此抛出的是一个**全新**
+的 Java `NullPointerException`，而被 `Display` 吞掉的正是它。真正的原因从未到达
+控制台。
+
+由此产生两个补丁：
+
+- **补丁 22** —— `drawRGB` 在 `width <= 0` 或 `height <= 0`（含 `NaN`）时立即
+  返回，这正是手机对空区域的处理。
+- **补丁 23** —— `translateException` 把任何没有 `_address` 的 JavaScript 错误
+  变成携带其 `name` 与 `message` 的 Java `RuntimeException`，这样下一个抛出意外
+  东西的原生实现会报出**为什么**，而不是制造一个 null。
+
+用 `tests/j2me-real-game.mjs` 测试装置里的探针（或站点自带的 `__spinProbe`
+观测点）验证：用软键 / 确定 推进剧情（第一个界面等的是**左软键**），确认画面
+持续变化且 `Exception caught in Display` 永不出现。补丁 22 之前，那次运行按了
+约 20 次键到达剧情后画面就不再变化，日志里留下一个 `NullPointerException`；
+之后，同样的运行越过了那个场景继续推进。
+
+### 更早的分配器证据
+
+`正义化身－忍者神龟传`（从形态上看，任何把 fork 的运行时逼进同一个角落的 MIDlet
+也一样）在 PC 上会冻住整个页面：游戏自己的「载入中…」画面走到一半停住，标签页
+不再响应 —— 渲染进程的主线程再也不让出，连播放器的 UI 都无法反应。
+
+经由生产播放器入口实测（`tests/j2me-real-game.mjs`，外加一个每秒采样页面的 CDP
+驱动）：
+
+- 卡死时游戏已画完自己的加载界面，VM 堆约占 128 MB asm.js 堆的 471 KB，所以这
+  **不是**内存压力。
+- 此后 `Runtime.evaluate` 超时，`Profiler.stop` 永不返回，但 `Debugger.pause`
+  仍能返回：渲染进程在 JS 里空转，不是在等 I/O。
+- 暂停下来的调用链是 `bld/native.js` 里的 `jf → Rc → Pc → Nc → Yb → ce → Ab → Bb`
+  —— Emscripten 的 asm.js GC —— 由 `bld/j2me.js` 的 `newArray()` 经
+  `J2ME.gcMallocAtomic` 进入（按模块的导出表，`jf` 就是导出的
+  `_gcMallocAtomic`）。
+- `ASM._getUsedHeapSize()` 四分钟内保持不变，Java 帧状态（`fp`、`sp`、`opPC`）
+  在多次暂停之间逐字节相同：**一次** `_gcMallocAtomic()` 调用永不返回。`Bb` 是
+  分配器的空闲空间搜索；它的循环在走一条永不终止的链，也就是说它遍历的空闲
+  链表早先已被破坏。
+- 只有这个游戏如此。`仙剑奇侠传` 在同一套装置里跑 45 秒以上、持续重绘
+  （屏幕哈希在变，没有卡死）。
+
+破坏从哪来：这个 fork **停用了 Java 的错误路径**。
+`Thread.prototype.throwException` 只打日志（`case 1/0/2/3` 被注释掉了，
+「这里拦截了报错」），`throwArrayIndexOutOfBoundsException`、
+`throwNullPointerException`、`throwArithmeticException` 也都被阉割，于是解释器
+会继续执行那条刚被检查拒绝的存储/字段写入。编译路径同样：`emitBoundsCheck()`
+调用 `TI()` —— 那个被阉割的抛出 —— 然后照样写入，特权名单里的方法完全跳过检查，
+而对 null 接收者的编译 `putfield` 会走 `TN()`（同样被阉割）并写到
+`null + fieldOffset`。那么低的地址是模块自己的静态数据，而那正是 GC 放页表
+（`c[60320 + …]`）与空闲链表头（`c[8 + …]`）的地方。那里来一次野写，分配器的
+搜索就会永远空转 —— 顺带把浏览器标签页一起带走。
+
+这次调查产出的是：运行时现在保留 Java 的安全检查。`Thread.throwException()`
+与编译产物里的 `TN` / `TI` / `TA` 辅助函数改为抛出对应的 Java 异常，而不是打条
+日志继续跑；数组存储检查同理。这防止了错误的字段或数组访问覆盖 GC 的页表或空闲
+链表。`newArray()` 在分配器返回 0 时也改为抛出 Java 的 `OutOfMemoryError`，
+而不是在地址 0 处写数组头。带着这些防护，游戏仍能启动、仍能重绘，下面那段真实
+游戏序列也已经过生产播放器入口验证。
+
+试过但**不能**解决卡死的做法（都在这个 ROM 上验证过）：另外两份类库
+（`enginemode2-classes2.jar`、`enginemode3-classes.jar`）、全 STORED 的 JAR
+（不走 JS inflate）、挂起的 `AudioContext`、20 倍 CPU 降频、省略
+`midletClassName`、每 32 个调度轮次强制一次完整收集，以及给分配器的 `while(1)`
+与 `do-while` 循环加上边界（5 万次迭代、bail-out 时 `break`）—— 空转只是转移到
+边界之外的循环里，调用方「收集并重试」的路径仍让页面卡住。关掉 JIT
+（`invokeThreshold` / `backwardBranchThreshold` 设为 1e9，让一切都留在确实会跳过
+野访问的解释器里）能让页面保持响应，但游戏停在加载界面上，所以也不算修复。
+
+建议的后续工作，按价值排序：
+
+1. **给运行时一个独立源**（自己的端口/主机，而不只是自己的路径）。同源 frame
+   共享同一个渲染进程主线程，这正是 VM 卡死会冻住播放器 UI 的原因；独立源会有
+   自己的进程，播放器就能发现 frame 已死并提供重新加载，而不是一起卡住。这需要
+   把 JAR 的交接从 `blob:` URL 改成 `postMessage`（blob URL 是按源隔离的），并把
+   canvas 镜像换成传输过来的 `ImageBitmap`（跨源 canvas 读不回来）。
+2. 把分配器/异常的发现上报给上游（`Rosabis/J2meJS`）：被阉割的
+   `throwException` 路径与一条可能被无限遍历的空闲链表都是上游问题，而上面的
+   复现是自包含的。
+
+## 运行时资源的版本化
+
+nginx 以 12 小时的 `max-age` 提供 `dist` 里的 `.js`/`.css`。于是缓存了上一版
+运行时的手机，会拿这些脚本去跑一个新部署的页面 —— 这正是上面那个修复对上报问题
+的手机不生效的状态。`frontend/scripts/stamp-j2me-runtime.mjs`（由 `npm run build`
+执行）对 `dist/j2me` 里的运行时副本做哈希，写出 `dist/j2me/version.json`，并给
+`main.html` 里每一处本地 `src`/`href` 打上 `?v=<version>`。适配层用
+`cache: 'no-store'` 读那个文件并打开 `/j2me/main.html?v=<version>`，打过补丁的
+`main-all.js` 也按同一个版本号取类库。因此改动任何运行时文件都会一次性改掉所有
+URL；`version.json` 缺失（开发服务器）只意味着 URL 不带版本戳。
+
+## 播放器加载面板里的 J2ME「核心」
+
+J2ME 没有 libretro 核心可下载，但启动一个游戏仍要拉约 4.4 MB 的运行时：
+`main.html` 引用的脚本与样式表，外加 Java 类库（`java/classesold.jar`）。这些
+由 frame 自己去取，所以在最后一次改动之前，播放器只显示 ROM 一项任务，然后一直
+停在「初始化模拟器…」，其余部分在看不见的地方到达。
+
+`version.json` 里还带一份 `boot` 列表 —— `main.html`、它引用的每一处本地
+`src`/`href`，以及 `java/*.jar` 类库，各自带体积（被引用但磁盘上不存在的文件
+记 `size: null`）。播放器读它两次：
+
+- `frontend/src/composables/player/useCoreAssets.js` 在核心确定时就登记这些任务
+  （面板在下载开始前就把它们列成两行「核心」，并带上字节总数），以及
+- `frontend/src/composables/player/j2meCore.js`（`warmJ2meRuntime`）在
+  `prepareJ2me` 打开 frame 之前，按同样的 `?v=<version>` URL 取这些文件，并汇报
+  真实字节进度。之后 frame 自己的请求就命中浏览器缓存（`cache: 'force-cache'`，
+  js/css 有 12 小时 `max-age`，类库最坏情况是回源校验），而不是把同样的几 MB
+  再下一次。
+
+只取所选 `enginemode` 对应的那份类库；另外两份列在 `boot` 里但从不请求、也不
+计入进度。下载失败会报成一项失败的任务，但从不中断启动 —— 运行时有自己的抓取
+和自己的 30 秒启动超时 —— 而如果预热停滞（20 秒没有一个新字节），它就停止等待，
+把自己的任务标成 skipped，让 frame 继续走。没有 `version.json` 时（开发服务器、
+未打版本戳的部署）不登记任何「核心」任务，面板退回只显示 ROM，与以前完全一致。
 
 
-## Adapter
+## 适配层
 
-`frontend/src/composables/player/j2meRuntime.js` (`prepareJ2me`):
+`frontend/src/composables/player/j2meRuntime.js`（`prepareJ2me`）：
 
-- Resolves the ROM to bytes, then reads the main class from
-  `META-INF/MANIFEST.MF` inside the JAR (the manifest is usually deflated, so the
-  ZIP central directory is walked and the entry is inflated with
-  `DecompressionStream`). The class file itself is verified too, so an
-  unlaunchable JAR fails with a clear message instead of timing out.
-- Hands the JAR to the runtime as a `blob:` URL through the frame's query string,
-  together with `midletClassName`, the class library (`enginemode` chosen by the
-  player in the start dialog, `enginemode1-classesold.jar` when nothing is stored),
-  the screen preset and the runtime version read from `/j2me/version.json`
-  (see "Runtime asset versioning").
-- With a cloud save wired (`cloudSave`, see "Java saves (RMS)"), the snapshot is
-  requested before the frame opens and handed over as a second `blob:` URL in the
-  `save` parameter; a logged-in player with no save yet gets `save=none`, which
-  tells the frame to clear whatever the previous game left behind. The URL is
-  revoked when the session ends.
-- Boots are reported, not assumed: an error the runtime reports while starting is
-  held for `J2ME_BOOT_ERROR_GRACE_MS` (5 s) instead of failing the session, so
-  the WebKit noise described below cannot kill a boot that is about to paint,
-  and a session that never paints fails with the runtime's own message.
-- **The frame is same-origin, not sandboxed.** The runtime keeps JAR and class
-  state in IndexedDB, which browsers do not expose to an opaque-origin sandbox,
-  so the JAR executes with this origin's privileges. A separate origin (its own
-  host/port serving only these files) would restore that isolation and is the
-  recommended follow-up; nothing else in the adapter depends on being
-  same-origin except reading the VM canvas.
-- The frame stays on-screen at the VM's screen size and is hidden with
-  `opacity: 0`. Chrome throttles timers in frames it considers invisible to about
-  one wake-up per second; that throttling is what made the previous runtime feel
-  stuck (measured: an 18 s boot and ~1 % interpreter utilisation, both fixed by
-  keeping the frame visible).
-- The player displays a canvas the adapter owns, mirrored from the runtime's
-  canvas by a short `setTimeout` loop, so the player UI, fullscreen and
-  screenshots keep working on one element. The parent page deliberately does
-  not use `requestAnimationFrame` for this mirror: Chromium's parent and
-  J2meJS's nested RAF loops can trigger the runtime's allocator corruption
-  during this game's loading screen. The timer path avoids that desktop-only
-  freeze while preserving the existing mobile behavior.
-- Keys go straight to `MIDP.sendKeyPress/sendKeyRelease` with the phone keypad
-  codes below. `player` other than 1 is ignored, and J2ME is a single-player
-  platform (see `PLATFORM_SINGLE_PLAYER`), so rooms give a seat to P1 only.
+- 把 ROM 解析成字节，然后从 JAR 内的 `META-INF/MANIFEST.MF` 读出主类（manifest
+  通常是 deflate 压缩的，所以要走 ZIP 中央目录，再用 `DecompressionStream` 解开
+  那个条目）。类文件本身也会校验，因此无法启动的 JAR 会以清晰的消息失败，而不是
+  超时。
+- 通过 frame 的查询串把 JAR 以 `blob:` URL 交给运行时，同时带上
+  `midletClassName`、类库（`enginemode`，由玩家在开局对话框里选择，未保存过时用
+  `enginemode1-classesold.jar`）、屏幕预设，以及从 `/j2me/version.json` 读到的
+  运行时版本（见「运行时资源的版本化」）。
+- 接上云存档时（`cloudSave`，见「Java 存档（RMS）上云」），快照在 frame 打开
+  之前请求，并作为第二个 `blob:` URL 放进 `save` 参数；已登录但还没有存档的玩家
+  拿到 `save=none`，它告诉 frame 清掉上一局留下的东西。URL 在会话结束时释放。
+- 启动是上报出来的，不是假设出来的：运行时在启动期间上报的错误先压住
+  `J2ME_BOOT_ERROR_GRACE_MS`（5 秒）而不直接判失败，这样下面说的 WebKit 噪声
+  就无法杀掉一个即将画出画面的启动；而始终没画出画面的会话以运行时自己的消息
+  失败。
+- **frame 是同源的，没有加沙箱。** 运行时把 JAR 与类的状态放在 IndexedDB 里，
+  浏览器不会把 IndexedDB 暴露给不透明源的沙箱，所以 JAR 以本站源的权限执行。
+  独立源（用自己的主机/端口只提供这些文件）能恢复那层隔离，是建议的后续工作；
+  除了读 VM 的 canvas，适配层没有别的地方依赖同源。
+- frame 保持在屏幕上、按 VM 的屏幕尺寸摆放，用 `opacity: 0` 隐藏。Chrome 会把
+  它认为不可见的 frame 的定时器压到每秒约一次唤醒；正是这种压制让上一版运行时
+  显得卡顿（实测：启动 18 秒、解释器利用率约 1%，都靠让 frame 保持可见修好）。
+- 播放器显示的是适配层自己拥有的 canvas，由一个短 `setTimeout` 循环从运行时的
+  canvas 镜像过来，这样播放器 UI、全屏与截图都还在同一个元素上工作。父页面刻意
+  不用 `requestAnimationFrame` 做这个镜像：Chromium 的父页面 RAF 与 J2meJS 的
+  嵌套 RAF 循环会在这个游戏的加载界面触发运行时的分配器损坏。定时器路径避开了
+  那个只在桌面出现的卡死，同时保留移动端既有行为。
+- 按键直接走 `MIDP.sendKeyPress/sendKeyRelease`，用下面的手机键盘码。非 1 的
+  `player` 会被忽略，而 J2ME 是单人平台（见 `PLATFORM_SINGLE_PLAYER`），所以
+  房间只给 P1 一个座位。
 
-| Application button | Phone key | Code |
+| 应用按钮 | 手机键 | 键码 |
 | --- | --- | --- |
-| up / down / left / right | 方向键 (navigation keys) | -1 / -2 / -3 / -4 |
+| 上 / 下 / 左 / 右 | 方向键（导航键） | -1 / -2 / -3 / -4 |
 | x / a / y / b | 1 / 3 / 7 / 9 | 49 / 51 / 55 / 57 |
-| l2 | 5 (confirm) | 53 |
+| l2 | 5（确定） | 53 |
 | r2 | 0 | 48 |
 | l / r | * / # | 42 / 35 |
-| select / start | left / right soft key | -6 / -7 |
+| select / start | 左 / 右软键 | -6 / -7 |
 
-The cross sends MIDP's navigation key codes (`Canvas.KEY_UP/DOWN/LEFT/RIGHT`),
-which is what a phone with a direction pad reports and what keypad-era MIDlets
-compare against in `keyPressed` (the sample below checks `-1`/`50` and `-2`/`56`
-in the same branches, so it answers to either convention). The face and shoulder
-buttons stay on the phone keypad, and their labels are what the PC keyboard
-settings show. On the touch pad the left-hand stick is swapped for the phone's
-own **cross**: four irregular pentagons (a rectangular arm plus the centre
-triangle) tile a seamless plus-shape whose width and height are equal, one per
-direction, with no centre button — the phone keypad's centre key (5 / MIDP FIRE,
-retropad `l2`) is already on the shoulder row as「5 确定」. PC keyboard defaults
-are the same as everywhere else (that row is key `7`); nothing J2ME-specific is
-bound.
+方向键发送的是 MIDP 的导航键码（`Canvas.KEY_UP/DOWN/LEFT/RIGHT`），这是带方向
+键的手机所上报的、也是键盘时代的 MIDlet 在 `keyPressed` 里用来比较的（下面的
+例子在同样的分支里同时检查 `-1`/`50` 与 `-2`/`56`，所以两种约定它都认）。面板
+键与肩键保持在手机键盘上，它们的标签就是 PC 键盘设置里显示的文字。触摸手柄上，
+左手摇杆换成手机自己的**十字键**：四个不规则五边形（一条矩形臂加中心三角）拼成
+一个宽高相等的无缝十字，一个方向一块，没有中心按钮 —— 手机键盘的中心键
+（5 / MIDP FIRE，retropad 的 `l2`）已经在肩键那一行，写作「5 确定」。PC 键盘
+默认值与别处一致（那一行的键是 `7`）；没有绑定任何 J2ME 专有的东西。
 
-Only MIDlets that never look at the raw key code can tell the conventions apart:
-those ask `getGameAction()` / `GameCanvas.getKeyStates()`, and this build's
-`KeyConverter` had dropped the keypad half of MIDP's game-action table, so the
-keypad codes (5, 1/3/7/9) produced no action at all. The site patch restores the
-table (2/4/6/8 → UP/LEFT/RIGHT/DOWN, 5 → FIRE, 1/3/7/9 → GAME_A..GAME_D — the
-navigation codes were already there) and points the reverse table (`getKeyCode`)
-at the codes this player actually sends, which is what MIDP defines it to answer.
+只有从不看原始键码的 MIDlet 能区分这些约定：它们问 `getGameAction()` /
+`GameCanvas.getKeyStates()`，而这个构建产物的 `KeyConverter` 丢掉了 MIDP
+游戏动作表里的键盘那一半，于是键盘键码（5、1/3/7/9）产生的动作是空的。站点
+补丁恢复了那张表（2/4/6/8 → UP/LEFT/RIGHT/DOWN、5 → FIRE、1/3/7/9 →
+GAME_A..GAME_D —— 导航键码本来就在），并把反向表（`getKeyCode`）指向本播放器
+实际发送的键码，这也正是 MIDP 对它定义的行为。
 
-## Java saves (RMS) in the cloud
+## Java 存档（RMS）上云
 
-MIDP's only persistence is RMS (`javax.microedition.rms.RecordStore`), and this
-runtime stores it as files under `/RecordStore/...` in its own IndexedDB-backed
-filesystem. Two properties of that filesystem shape the design: it is per
-**origin**, not per game — the records of the last J2ME game are still there when
-the next one starts, and a MIDlet reads them without asking anything — and it
-lives in the hidden frame, so only the frame can touch it.
+MIDP 唯一的持久化机制是 RMS（`javax.microedition.rms.RecordStore`），而这个
+运行时把它存成自己那套 IndexedDB 文件系统里 `/RecordStore/...` 下的文件。这套
+文件系统的两个性质决定了设计：它按**源**分，而不是按游戏 —— 下一个 J2ME 游戏
+启动时，上一个游戏的记录还在，MIDlet 读它们不需要问任何人；而且它住在隐藏的
+frame 里，所以只有那个 frame 能碰它。
 
-`rms.js` (loaded after the runtime, like `lcdui.js`) makes that tree stand in for
-"this ROM's save file for this user":
+`rms.js`（像 `lcdui.js` 一样在运行时之后加载）让那棵树充当「该 ROM 对应该用户的
+存档文件」：
 
-- **Restore before the MIDlet runs.** The adapter passes the cloud snapshot to
-  the frame as a `blob:` URL in the `save` parameter (`none` = logged in, no save
-  yet → clear the tree; the parameter absent = not logged in → leave the tree
-  alone). `rms.js` pushes a promise into the runtime's own `loadingPromises`
-  array, which `window.onload` awaits before it starts the VM, and only starts
-  the fetch after `initFS` has opened the filesystem. The MIDlet therefore sees
-  the cloud save on its very first `RecordStore.openRecordStore`. An 8 s timeout
-  and a 4 s parent-side timeout resolve the gate with what is available, so a
-  slow or broken network delays a boot but never blocks it.
-- **Snapshot format.** `{"v":1,"at":<ms>,"files":[{"p":"/RecordStore/…","m":<mtime>,"d":"<base64>"}]}`
-  — deliberately not the runtime's own `store.export`, which dumps the whole
-  filesystem and *clears the database* on import. Restoring removes records that
-  are not in the snapshot, so one game's records can never leak into another.
-- **Auto-save.** `rms.js` wraps the three natives that change records
-  (`RecordStoreFile.commitWrite`, `truncateFile`, `RecordStoreUtil.deleteFile`)
-  and posts `j2me-rms-dirty` to the player, debounced by 800 ms. The adapter
-  debounces once more (1.2 s), takes a snapshot from the frame, and uploads it to
-  `/api/saves/:romId?slot=0` — the same per-user save store the other platforms
-  use. A FNV-1a digest of the snapshot text keeps an unchanged tree from being
-  uploaded again. Pause, `exit()`, `pagehide` and a hidden tab flush the pending
-  change; the unload paths ask for `keepalive`, and `exit()` reads the snapshot
-  before it tears the frame down (bounded to 1.5 s).
-- **Who gets one.** `useJ2meCloudSave.js` wires the interface only for a
-  logged-in, non-guest player: solo sessions and the room host. Guests and
-  logged-out players keep the old behaviour (records live and die with the
-  browser profile). Each user has their own save for each ROM; the save/load
-  buttons are hidden for J2ME because there is nothing left to press — the class
-  library choice lives in the start dialog (`J2meEngineDialog.vue`, three
-  engines, remembered per ROM in `localStorage`).
+- **在 MIDlet 运行之前恢复。** 适配层把云快照作为 `save` 参数里的 `blob:` URL
+  交给 frame（`none` = 已登录但没有存档 → 清空那棵树；参数缺失 = 未登录 → 完全
+  不动那棵树）。`rms.js` 往运行时自己的 `loadingPromises` 数组里推一个 promise，
+  `window.onload` 会在启动 VM 之前 await 它，并且只在 `initFS` 打开文件系统之后
+  才发起抓取。因此 MIDlet 在它第一次 `RecordStore.openRecordStore` 时就能看到云
+  存档。8 秒超时与父页面侧 4 秒超时保证这道闸门会用当时能拿到的东西放行，所以
+  网络慢或坏只会拖延启动，绝不阻塞它。
+- **快照格式。** `{"v":1,"at":<ms>,"files":[{"p":"/RecordStore/…","m":<mtime>,"d":"<base64>"}]}`
+  —— 刻意不用运行时自己的 `store.export`，后者转储整个文件系统并在导入时
+  **清空数据库**。恢复会删掉快照里没有的记录，所以一个游戏的记录永远不会漏进
+  另一个游戏。
+- **自动存档。** `rms.js` 包住三个会改动记录的原生实现
+  （`RecordStoreFile.commitWrite`、`truncateFile`、`RecordStoreUtil.deleteFile`），
+  并向播放器发 `j2me-rms-dirty`，防抖 800 ms。适配层再防抖一次（1.2 s），从
+  frame 取一份快照，上传到 `/api/saves/:romId?slot=0` —— 也就是其它平台使用的
+  同一套按用户的存档存储。快照文本的 FNV-1a 摘要让没变过的树不必重复上传。
+  暂停、`exit()`、`pagehide` 与标签页隐藏都会冲刷待发的改动；卸载路径要求
+  `keepalive`，`exit()` 会在拆掉 frame 之前读取快照（限时 1.5 秒）。
+- **谁能用。** `useJ2meCloudSave.js` 只为已登录、非游客的玩家接上这套接口：
+  单机会话与房主。游客与未登录玩家保持旧行为（记录随浏览器配置一起生灭）。每个
+  用户对每个 ROM 有自己的存档；J2ME 的存/读按钮被隐藏，因为已经没有可按的东西
+  —— 类库选择在开局对话框里（`J2meEngineDialog.vue`，三个引擎，按 ROM 记在
+  `localStorage`）。
 
-Verified with a probe (`/tmp/lcdui-probe/rms-probe.mjs`, MIDlet in
-`RmsProbeMidlet.java`) through the real adapter: a fresh profile with no cloud
-save starts empty, the MIDlet writes a record, and two uploads arrive without a
-single button press (record + the later `tick`); a *different* browser profile
-holding only that uploaded snapshot boots with `restore: loaded` and the MIDlet
-reads `v1` back before the VM starts — and does the same under
-`enginemode2-classes2.jar`, where the frame really fetches `java/classes2.jar`.
+用探针验证过（`/tmp/lcdui-probe/rms-probe.mjs`，MIDlet 在
+`RmsProbeMidlet.java`）并走真实适配层：没有云存档的全新配置启动时是空的，MIDlet
+写入一条记录，随后在没有任何按键的情况下到达两次上传（记录 + 之后的 `tick`）；
+另一个只持有那份已上传快照的浏览器配置启动时是 `restore: loaded`，MIDlet 在 VM
+启动前读回 `v1` —— 在 `enginemode2-classes2.jar` 下也一样，此时 frame 真的去取
+`java/classes2.jar`。
 
-## Verified behaviour (2026-10-14)
+## 已验证的行为（2026-10-14）
 
-External sample `/www/wwwroot/default/GAME/J2ME/仙剑奇侠传.jar` (304 KB), run
-through the production player entry in Chromium: first frame after **1.09 s**
-(previous runtime: ~2.0 s after its timer fix, ~18 s before it), the phone **5**
-key moves the title screen into the game's menu, no runtime errors. The menu
-renders the same way under both runtimes (five vertical item columns); that is
-the game's own layout, not a rendering defect.
+外置样本 `/www/wwwroot/default/GAME/J2ME/仙剑奇侠传.jar`（304 KB），在 Chromium
+里走生产播放器入口：首帧在 **1.09 秒**后（上一版运行时：改完定时器问题约 2.0 秒，
+在那之前约 18 秒），手机 **5** 键把标题画面推进游戏菜单，没有运行时错误。两种
+运行时下菜单渲染一致（五列竖向条目）；那是游戏自己的布局，不是渲染缺陷。
 
-Mobile, after the fixes above: the same game through the same player entry on
-the deployed site, driven in **WebKit** (the engine behind iOS Safari and iOS
-Edge) with an iPhone user agent and touch emulation — boot to a painted, running
-session in ~6-8 s, `?v=<runtime version>` on every runtime request, and the
-runtime frame's timers unthrottled (139 `setTimeout(…, 0)` ticks per 600 ms, rAF
-firing). Chromium with mobile emulation boots the same way in ~5 s.
+移动端，在上述修复之后：同一个游戏、同一个播放器入口，在部署好的站点上以
+**WebKit**（iOS Safari 与 iOS Edge 背后的引擎）驱动，用 iPhone user agent 与
+触摸模拟 —— 约 6-8 秒启动到已绘制、可运行的会话，每一次运行时请求都带
+`?v=<runtime version>`，运行时 frame 的定时器不受压制（600 ms 内 139 次
+`setTimeout(…, 0)` tick，rAF 正常触发）。Chromium 开移动模拟约 5 秒启动。
 
-The fixture browser test (`tests/j2me-browser.test.js`) drives MIDlet bytecode,
-input, pause/resume, missing-main-class handling, exit cleanup, the frame timer
-guard, the versioned frame URL and both sides of the boot error grace period;
-`tests/j2me-runtime.test.js` covers ROM validation and the manifest reader, and
-`tests/j2me-runtime-patches.test.js` guards the vendored patches and the build
-stamping. Real-game evidence directories from this session:
-`/tmp/j2mejs/integrated`, `/tmp/j2mejs/matrix`, `/tmp/j2mejs/full`.
+固定用例浏览器测试（`tests/j2me-browser.test.js`）驱动 MIDlet 字节码、输入、
+暂停/恢复、主类缺失处理、退出清理、frame 定时器守卫、带版本的 frame URL 以及
+启动错误宽限期的两侧；`tests/j2me-runtime.test.js` 覆盖 ROM 校验与 manifest
+读取，`tests/j2me-runtime-patches.test.js` 守住内置补丁与构建时的版本盖戳。
+本次会话的真实游戏证据目录：`/tmp/j2mejs/integrated`、`/tmp/j2mejs/matrix`、
+`/tmp/j2mejs/full`。
 
-## Limitations
+## 限制
 
-- Only `.jar`. JAD/JAM are descriptors, `.sqc` suites are not supported.
-- Browsers without `DecompressionStream` / `deflate-raw` (older Android WebViews,
-  some in-app browsers) cannot be pre-checked: the adapter only reads the JAR
-  manifest when it can inflate it, and otherwise hands the game to the runtime,
-  which reads the manifest with its own inflate. On those browsers an
-  unlaunchable JAR therefore fails as a startup timeout instead of a readable
-  message.
-- No save states, no rewind, no cheats: `saveState`/`loadState` reject. J2ME has no
-  state snapshot; the durable half of saving is RMS, which is wired to the cloud
-  instead (see "Java saves (RMS)").
-- RMS storage is tied to our cloud saves for logged-in players: one save per user
-  per ROM, restored before the MIDlet starts and uploaded as the game writes.
-  Logged-out players and room guests keep the records inside that browser only.
-- The class library is chosen by the player in the start dialog (three engines,
-  remembered per ROM); a game that needs MIDP 2.0 features gets them from
-  `enginemode2-classes2.jar` without anyone editing the ROM.
-- MIDP high-level screens (Form/List/Alert/Gauge/TextField) are drawn into the
-  canvas by `lcdui.js`, and text fields are edited in an input the player opens on
-  top of the canvas; the runtime's own DOM dialogs (SMS verification, the Nokia
-  file picker, download failure) and its built-in touch pad still live inside the
-  hidden frame and stay invisible. Those paths are rare (one reference each) and
-  only show up when a MIDlet uses that API.
-- A `TextBox` is entered through the same single-line input, so newlines cannot be
-  typed into it.
-- J2ME is single-player: one seat, no room control for anyone but the host.
+- 只支持 `.jar`。JAD/JAM 是描述文件，`.sqc` 套件不支持。
+- 没有 `DecompressionStream` / `deflate-raw` 的浏览器（较老的 Android WebView、
+  部分应用内浏览器）无法预先检查：适配层只在能解压时才读 JAR manifest，否则把
+  游戏直接交给运行时，由它用自己的 inflate 读 manifest。因此在这类浏览器上，
+  无法启动的 JAR 会以启动超时告终，而不是给出一句可读的消息。
+- 没有即时存档、没有回退、没有金手指：`saveState`/`loadState` 直接拒绝。J2ME
+  没有状态快照；持久化的那一半是 RMS，它改为接到云上（见「Java 存档（RMS）上云」）。
+- 对已登录玩家，RMS 存储与我们的云存档绑定：每个用户每个 ROM 一份，在 MIDlet
+  启动前恢复，并随游戏写入上传。未登录玩家与房间访客的记录只留在这个浏览器里。
+- 类库由玩家在开局对话框里选择（三个引擎，按 ROM 记忆）；需要 MIDP 2.0 特性的
+  游戏从 `enginemode2-classes2.jar` 得到它们，不需要任何人去改 ROM。
+- MIDP 高级界面（Form/List/Alert/Gauge/TextField）由 `lcdui.js` 画进 canvas，
+  文本框在播放器于 canvas 之上打开的输入框里编辑；运行时自己的 DOM 对话框
+  （短信验证、Nokia 文件选择器、下载失败）与它内置的触摸板仍留在隐藏的 frame
+  里、始终不可见。这些路径很少见（各一处引用），只在 MIDlet 用到那个 API 时
+  才会出现。
+- `TextBox` 走的是同一个单行输入框，所以没法往里输入换行。
+- J2ME 是单人平台：一个座位，除房主外任何人都没有房间控制权。

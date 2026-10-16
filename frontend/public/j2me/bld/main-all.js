@@ -9382,6 +9382,14 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
     c.closePath();
   };
   Native["javax/microedition/lcdui/Graphics.drawRGB.([IIIIIIIZ)V"] = function(addr, rgbDataAddr, offset, scanlength, x, y, width, height, processAlpha) { 
+    // Site patch (empty drawRGB): 宽或高为 0 / 负数 / NaN 的区域没有像素可画，真机上
+    // 就是什么都不画。这里原来照原样交给 createImageData(width, height)，浏览器对非正
+    // 尺寸抛 IndexSizeError（DOMException，不是 TypeError），translateException 认不出
+    // 它，异常就被编译代码当成「重新抛出的异常是 null」，最终变成一个假的
+    // NullPointerException 打断整帧绘制 —— 而 paint() 的异常按 MIDP 规定被忽略，画面
+    // 于是永远停在上一帧，游戏逻辑却还在跑（还能听到按键的反应）。空区域在这里直接
+    // 返回，语义与真机一致。
+    if (!(width > 0) || !(height > 0)) return;
     var rgbData = J2ME.getArrayFromAddr(rgbDataAddr);
     tempContext.canvas.height = height;
     tempContext.canvas.width = width;

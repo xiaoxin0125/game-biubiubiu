@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { normalizeRemoteUrl, normalizeRemoteToken } from '../server/remote-storage.js'
 
@@ -28,4 +29,24 @@ test('远端密钥长度校验', () => {
   assert.equal(normalizeRemoteToken('a'.repeat(64)), 'a'.repeat(64))
   assert.throws(() => normalizeRemoteToken('short'), /至少/)
   assert.throws(() => normalizeRemoteToken('x'.repeat(257)), /过长/)
+})
+
+// 「我的 ROM」与管理后台「全部 ROM」的状态筛选都能按存放位置筛：远端 / 本地两项，
+// 本地按「不是 remote」判定（老记录没有 storage 字段，缺省就是本地）。
+test('ROM 列表的状态筛选包含远端与本地两项', () => {
+  const cases = [
+    { path: 'frontend/src/views/MyRoms.vue', target: 'activeVisibility' },
+    { path: 'frontend/src/views/Admin.vue', target: 'adminRomVisibility' },
+  ]
+  for (const { path, target } of cases) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+    assert.match(source, /\{ value: 'remote', label: '远端' \}/, `${path} 缺少「远端」选项`)
+    assert.match(source, /\{ value: 'local', label: '本地' \}/, `${path} 缺少「本地」选项`)
+    assert.match(
+      source,
+      new RegExp(`if \\(${target}\\.value === 'remote'\\) return rom\\.storage === 'remote'\\n\\s*if \\(${target}\\.value === 'local'\\) return rom\\.storage !== 'remote'`),
+      `${path} 没有按 storage 过滤`,
+    )
+    assert.match(source, new RegExp(`watch\\(\\[[^\\]]*${target}[^\\]]*\\]`), `${path} 换状态后没有回到第一页`)
+  }
 })

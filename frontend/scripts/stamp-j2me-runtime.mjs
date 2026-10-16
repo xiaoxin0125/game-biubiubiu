@@ -51,12 +51,18 @@ const files = (await listFiles(runtimeDir))
   .filter((name) => name !== 'version.json')
   .sort()
 
+// 纯文档（GPL 要求的许可证与出处说明）不参与版本指纹：它们不影响运行时行为，
+// 而版本号一变，所有缓存过旧运行时的访客都要把这 4.4 MB 重下一次。改一句中文
+// 说明不该有那个代价。
+const DOC_ONLY_FILES = new Set(['LICENSE', 'LICENSE-README.md'])
+const digested = files.filter((name) => !DOC_ONLY_FILES.has(name))
+
 // Sizes come off the same pass that hashes the files. main.html is the size of
 // the *stamped* file (the ?v= stamps add a few hundred bytes) and is filled in
 // after the rewrite below.
 const sizes = new Map()
 const digest = createHash('sha256')
-for (const name of files) {
+for (const name of digested) {
   const content = name === 'main.html' ? normalizedHtml : await readFile(path.join(runtimeDir, name))
   sizes.set(name, Buffer.byteLength(content))
   digest.update(name)
@@ -89,4 +95,4 @@ const boot = [...new Set(['main.html', ...referenced, ...files.filter((name) => 
 await writeFile(versionFile, `${JSON.stringify({ version, boot }, null, 2)}\n`)
 
 const stampedCount = (stamped.match(/\?v=/g) || []).length
-console.log(`j2me runtime version ${version}: ${stampedCount} asset URLs stamped, ${files.length} files hashed, ${boot.length} boot files listed`)
+console.log(`j2me runtime version ${version}: ${stampedCount} asset URLs stamped, ${digested.length} files hashed, ${boot.length} boot files listed`)

@@ -425,7 +425,7 @@
         <ClaySelect
           v-model="adminRomVisibility"
           class="filter-select"
-          aria-label="筛选公开状态"
+          aria-label="筛选状态"
           :options="adminVisibilitySelectOptions"
         />
       </div>
@@ -657,10 +657,14 @@ const adminRomPlatformSelectOptions = computed(() => [
   { value: 'all', label: '全部平台' },
   ...adminRomPlatformOptions.value.map((p) => ({ value: p.id, label: p.label })),
 ])
+// 状态下拉框：公开状态（公开 / 私密）之外，还能按文件存放位置筛（远端 / 本地，
+// 看 storage 字段，条目上那个「远端」小标签用的就是它）。
 const adminVisibilitySelectOptions = [
   { value: 'all', label: '全部状态' },
   { value: 'public', label: '公开' },
   { value: 'private', label: '私密' },
+  { value: 'remote', label: '远端' },
+  { value: 'local', label: '本地' },
 ]
 function maxPlayerOptionsFor(rom) {
   return [
@@ -681,6 +685,8 @@ const filteredAdminRoms = computed(() => {
     .filter((rom) => {
       if (adminRomVisibility.value === 'public') return !!rom.isPublic
       if (adminRomVisibility.value === 'private') return !rom.isPublic
+      if (adminRomVisibility.value === 'remote') return rom.storage === 'remote'
+      if (adminRomVisibility.value === 'local') return rom.storage !== 'remote'
       return true
     })
     .filter((rom) => {

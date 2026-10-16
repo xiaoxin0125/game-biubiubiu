@@ -80,23 +80,42 @@ test('首页分类栏是「默认 / 最新 / 最热 / 随机 / 收藏」加游�
   assert.match(gallery, />\s*随机 <span class="n">/)
   assert.doesNotMatch(gallery, /v-for="\[key, group\] in Object\.entries\(tabGroups\)"/, '主机分类不再平铺成标签')
 
+  // 每个标签只摆一批：默认整库、最新前 20、最热前 10、随机前 10。先按上限截出这批，
+  // 再在这批里筛分类 / 搜索 —— 标签上的数字、下拉框里的数量、分页都按这批算，
+  // 所以切标签时三处一起变。
+  assert.match(gallery, /const TAB_LIMIT = \{ latest: 20, hot: 10, random: 10 \}/)
+  assert.match(gallery, /function listForTab\(tab\) \{/)
+  assert.match(gallery, /const tabList = computed\(\(\) => listForTab\(activeTab\.value\)\)/)
+  assert.match(gallery, /if \(tab === 'hot'\) return \[\.\.\.list\]\.sort\(\(a, b\) => Number\(b\.playCount \|\| 0\) - Number\(a\.playCount \|\| 0\)\)\.slice\(0, limit\)/)
+  assert.match(gallery, /if \(tab === 'random'\) return shuffled\(list, shuffleSeed\.value\)\.slice\(0, limit\)/)
+  assert.match(gallery, /return list\.slice\(0, limit\)/)
+  // 四个标签的数字各算各的：该标签自己那一批里选中分类下的盘数，选中一个标签不会把
+  // 另外几个数字一起改成它的数量；收藏仍是我收藏的数量
+  assert.match(gallery, /const tabCounts = computed\(\(\) => \(\{[\s\S]*?name: groupCount\(listForTab\('name'\), activeGroup\.value\),[\s\S]*?latest: groupCount\(listForTab\('latest'\), activeGroup\.value\),[\s\S]*?hot: groupCount\(listForTab\('hot'\), activeGroup\.value\),[\s\S]*?random: groupCount\(listForTab\('random'\), activeGroup\.value\),[\s\S]*?\}\)\)/)
+  assert.equal((gallery.match(/\{\{ tabCounts\.\w+ \}\}/g) || []).length, 4)
+  assert.doesNotMatch(gallery, /\{\{ tabCount \}\}/, '标签数字不能用同一个值，否则会被当前标签带跑')
+  assert.match(gallery, /\{\{ favoriteGroupCount \}\}/)
+
   // 下拉框用站点统一的 ClaySelect，选项是「全部 + 各游戏机」，标签是平台表里的
-  // 中文 + 英文名（别名已并成一台机器），后面跟这台机器的数量
+  // 中文 + 英文名（别名已并成一台机器），后面跟这台机器在当前这批里的数量
   assert.match(gallery, /<ClaySelect[\s\S]*?v-model="activeGroup"/)
   assert.match(gallery, /import ClaySelect from '\.\.\/components\/ClaySelect\.vue'/)
-  assert.match(gallery, /label: `全部 \$\{roms\.value\.length\}`/)
-  assert.match(gallery, /platformFacets\(roms\.value, \{ include: activeGroupIsAll\.value \? \[\] : \[activeGroup\.value\] \}\)/)
+  assert.match(gallery, /label: `全部 \$\{tabList\.value\.length\}`/)
+  assert.match(gallery, /platformFacets\(tabList\.value, \{ include: activeGroupIsAll\.value \? \[\] : \[activeGroup\.value\] \}\)/)
   assert.match(gallery, /label: `\$\{machine\.label\} \$\{machine\.count\}`/)
   assert.doesNotMatch(gallery, /tabGroups/, '主机分类不再按厂商分组，而是一台游戏机一项')
   // 分类比较走通用名：老记录里写着别名的也算进对应的游戏机
   assert.match(gallery, /function inGroup\(rom, key\) \{\n\s*if \(!key \|\| key === 'all'\) return true\n\s*return resolvePlatformId\(rom\.platform\) === key/)
   assert.match(gallery, /if \(!activeGroupIsAll\.value\) list = list\.filter\(\(r\) => inGroup\(r, activeGroup\.value\)\)/)
+  // 列表也从这批出发：截断发生在筛分类 / 搜索之前
+  assert.match(gallery, /const filtered = computed\(\(\) => \{\n\s*let list = tabList\.value\n/)
 
   // 默认按名字排（中文拼音、数字自然序，与「我的 ROM」同一套比较规则）；
-  // 最热按游玩次数倒序；最新直接用接口的顺序（上传 / 收藏时间倒序）；随机按种子洗牌
+  // 最新直接用接口的顺序（上传 / 收藏时间倒序，已由 tabList 截好），最热与随机的
+  // 顺序也在 tabList 里定好，筛选时不再重排
   assert.match(gallery, /if \(activeTab\.value === 'name'\) out\.sort\(\(a, b\) => a\.title\.localeCompare\(b\.title, 'zh-Hans-CN', \{ numeric: true, sensitivity: 'base' \}\)\)/)
-  assert.match(gallery, /if \(activeTab\.value === 'hot'\) out\.sort\(\(a, b\) => Number\(b\.playCount \|\| 0\) - Number\(a\.playCount \|\| 0\)\)/)
-  assert.match(gallery, /if \(activeTab\.value === 'random'\) return shuffled\(out, shuffleSeed\.value\)/)
+  assert.doesNotMatch(gallery, /if \(activeTab\.value === 'hot'\) out\.sort/)
+  assert.doesNotMatch(gallery, /if \(activeTab\.value === 'random'\) return shuffled\(out/)
   // 退出登录 / 取消最后一盘收藏时回到默认，不再回到「最新」
   assert.equal((gallery.match(/activeTab\.value = 'name'/g) || []).length, 3)
   assert.doesNotMatch(gallery, /activeTab\.value = 'latest'/)

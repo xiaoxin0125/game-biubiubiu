@@ -19,7 +19,7 @@ import { installRoomsWebSocket } from './routes/rooms-ws.js'
 import { WS_MAX_MESSAGE_BYTES } from './rooms/room-ws-gate.js'
 import { saveRoutes } from './routes/saves.js'
 import { publicSettingsRoutes, adminSettingsRoutes } from './routes/settings.js'
-import { cleanupExpiredSessions } from './middleware/auth.js'
+import { cleanupExpiredSessions, upgradeLegacySessionTokens } from './middleware/auth.js'
 import { csrfProtection, securityHeaders } from './middleware/security.js'
 import { installErrorHandler, requestId } from './middleware/error-handler.js'
 import { getRuntimeConfig } from './runtime-config.js'
@@ -41,6 +41,13 @@ process.on('unhandledRejection', (reason) => {
 })
 
 await runMigrations()
+
+// 历史明文会话令牌在这里一次性改写成 sha256（只换存储格式，不动 Cookie、不动
+// 有效期），跑完这一句之后库里不再有可直接重放的凭据（2026-10-16 重审 N-3）。
+const upgradedSessionTokens = await upgradeLegacySessionTokens()
+if (upgradedSessionTokens) {
+  console.log(`[api] 已把 ${upgradedSessionTokens} 条历史明文会话令牌改写为 sha256`)
+}
 
 // 先把"整站只有一个进程"这条假设变成硬约束，再去启动 HTTP 服务：抢不到锁说明
 // 已经有一个实例在跑（限流、WS 票据、房间状态都各算各的），这里直接退出。
