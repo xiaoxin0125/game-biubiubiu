@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
+import { runInNewContext } from 'node:vm'
 import { J2ME_CAPABILITIES } from '../frontend/src/composables/player/j2meRuntime.js'
 import { J2ME_DEFAULT_ENGINE, J2ME_ENGINES } from '../frontend/src/composables/player/j2meCore.js'
 import {
@@ -18,6 +19,194 @@ import {
 
 const repoRoot = new URL('../', import.meta.url)
 const read = (relative) => readFile(new URL(relative, repoRoot), 'utf8')
+
+// ---- 让帧里的 rms.js 真的跑起来（内存文件系统 + 假定时器） ----
+// 它是个 IIFE，只依赖 window / fs / location / parent / Native / 定时器，这些都能替身。
+// 摘要那条不变量必须用真代码验证：只改时间戳不算改动，改记录才算。
+async function loadRms({ search = '', fetch: fetchImpl = null, files = [] } = {}) {
+  const source = await read('frontend/public/j2me/rms.js')
+  const store = new Map(files.map(([path, bytes, mtime = 111]) => [path, { blob: new Blob([bytes]), mtime }]))
+  const messages = []
+  const timers = new Map()
+  let nextTimer = 0
+  const dirOf = (path) => path.slice(0, path.lastIndexOf('/')) || '/'
+  // 目录不是单独存的记录：只要底下有文件就算存在（与运行时里 mkdirp 的结果等价）。
+  const hasChildren = (path) => {
+    const prefix = path.endsWith('/') ? path : path + '/'
+    return [...store.keys()].some((key) => key.startsWith(prefix))
+  }
+  const fs = {
+    exists: (path) => store.has(path) || hasChildren(path),
+    list: (path) => {
+      const prefix = path.endsWith('/') ? path : path + '/'
+      const names = new Set()
+      for (const key of store.keys()) {
+        if (key.startsWith(prefix)) names.add(key.slice(prefix.length).split('/')[0])
+      }
+      // 目录带尾斜杠（与 main-all.js 的 fs.list 一致）。
+      return [...names].map((name) => ([...store.keys()].some((key) => key.startsWith(prefix + name + '/')) ? name + '/' : name))
+    },
+    getBlob: (path) => (store.has(path) ? store.get(path).blob : null),
+    stat: (path) => (store.has(path) ? { mtime: store.get(path).mtime, size: store.get(path).blob.size } : null),
+    remove: (path) => { store.delete(path) },
+    create: (path, blob) => { store.set(path, { blob, mtime: 222 }); return true },
+    dirname: dirOf,
+    mkdirp: () => true,
+    syncStore: (next) => { next() },
+  }
+  const Native = {}
+  for (const signature of [
+    'com/sun/midp/rms/RecordStoreFile.commitWrite.(I)V',
+    'com/sun/midp/rms/RecordStoreFile.truncateFile.(II)V',
+    'com/sun/midp/rms/RecordStoreUtil.deleteFile.(Ljava/lang/String;Ljava/lang/String;I)V',
+  ]) Native[signature] = () => 0
+  const sandbox = {
+    fs,
+    Native,
+    location: { search, origin: 'https://site.example' },
+    parent: { postMessage: (message) => messages.push(message) },
+    window: {},
+    loadingPromises: [],
+    initFS: Promise.resolve(),
+    fetch: fetchImpl || (async () => { throw new Error('no fetch in this test') }),
+    console,
+    Blob,
+    URLSearchParams,
+    btoa,
+    atob,
+    setTimeout: (callback, delay) => { timers.set(++nextTimer, { callback, delay }); return nextTimer },
+    setInterval: (callback, delay) => { timers.set(++nextTimer, { callback, delay, repeat: true }); return nextTimer },
+    clearTimeout: (id) => { timers.delete(id) },
+    clearInterval: (id) => { timers.delete(id) },
+  }
+  runInNewContext(source, sandbox)
+  return {
+    api: sandbox.window.__j2meRms,
+    messages,
+    // rms.js 会把 Native 里那三个写记录的实现换成自己的包装（包装里带 __rmsHooked）。
+    natives: sandbox.Native,
+    /** 跑一个延迟匹配的定时器（800ms 是改动通知，8000ms 是恢复兜底）。 */
+    runTimer: (delay) => {
+      for (const [id, timer] of timers) {
+        if (timer.delay !== delay) continue
+        timers.delete(id)
+        timer.callback()
+        return true
+      }
+      return false
+    },
+    /** 等某个报文出现（恢复是异步的）。 */
+    waitFor: async (type) => {
+      for (let i = 0; i < 200; i++) {
+        const found = messages.find((message) => message.type === type)
+        if (found) return found
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      throw new Error(`没有等到 ${type} 报文：${JSON.stringify(messages)}`)
+    },
+    /** 模拟游戏自己写记录：把新的文件内容放进（内存）文件系统。 */
+    writeFile: (path, bytes, mtime = 222) => store.set(path, { blob: new Blob([bytes]), mtime }),
+  }
+}
+
+/** 一份 MIDP 记录集文件：40 字节头 + 记录块（块按 8 字节对齐，与真机一样）。 */
+function rmsStoreFile({ lastModified = 1000, records = [[1, Uint8Array.from([1, 2, 3])]] } = {}) {
+  const blocks = records.map(([id, data]) => {
+    const size = data.length % 8 === 0 ? data.length + 8 : data.length + 8 - (data.length % 8) + 8
+    const block = new Uint8Array(size)
+    const view = new DataView(block.buffer)
+    view.setUint32(0, id)
+    view.setUint32(4, data.length)
+    block[8] = 2
+    block.set(data, 9)
+    return block
+  })
+  const dataSize = blocks.reduce((total, block) => total + block.length, 0)
+  const file = new Uint8Array(40 + dataSize)
+  file.set(new TextEncoder().encode('midp-rms'), 0)
+  const view = new DataView(file.buffer)
+  view.setUint32(12, records.length + 1)      // nextRecordID
+  view.setUint32(16, records.length)          // numRecords
+  view.setUint32(20, 1)                       // storeVersion
+  view.setBigUint64(24, BigInt(lastModified)) // 最后写入时间：每次写入都会变
+  view.setUint32(32, dataSize)
+  let offset = 40
+  for (const block of blocks) { file.set(block, offset); offset += block.length }
+  return file
+}
+
+test('rms.js 摘要只看记录内容：原样重写不算改动，改记录才算', async () => {
+  const path = '/RecordStore/Assassin-T.0'
+  const rms = await loadRms({ files: [[path, rmsStoreFile({ lastModified: 1792161064312 })]] })
+  const first = await rms.api.snapshot()
+  assert.ok(first.digest)
+
+  // 1) 游戏把同一份记录原样重写（进菜单 / 过场时很常见）：只有文件头里的"最后写入
+  //    时间"和 mtime 变了 —— 摘要必须不变，否则云端会被这种空改动刷一遍。
+  rms.writeFile(path, rmsStoreFile({ lastModified: 1792162188695 }))
+  const rewritten = await rms.api.snapshot()
+  assert.equal(rewritten.digest, first.digest, '只改时间戳不该算改动')
+
+  // 2) 记录内容真的变了：摘要要变（这里把一条记录多写一个字节）。
+  rms.writeFile(path, rmsStoreFile({ lastModified: 1792162188695, records: [[1, Uint8Array.from([1, 2, 3, 4])]] }))
+  const grown = await rms.api.snapshot()
+  assert.notEqual(grown.digest, first.digest, '记录变了必须算改动')
+
+  // 3) 路径也参与摘要：同一份内容搬到另一个记录名下不算同一份。
+  const moved = await loadRms({ files: [['/RecordStore/Other-T.0', rmsStoreFile({ lastModified: 1792161064312 })]] })
+  assert.notEqual((await moved.api.snapshot()).digest, first.digest, '换个记录名就是另一份存档')
+
+  // 4) 不是记录集的文件（前缀对不上）不归一化，照原样参与摘要。
+  const plain = await loadRms({ files: [['/RecordStore/raw.bin', Uint8Array.from([1, 2, 3])]] })
+  const plainChanged = await loadRms({ files: [['/RecordStore/raw.bin', Uint8Array.from([1, 2, 3, 4])]] })
+  assert.notEqual((await plain.api.snapshot()).digest, (await plainChanged.api.snapshot()).digest)
+})
+
+test('rms.js 报给播放页的"云端这一份"摘要与对同一份内容做快照得到的摘要一致', async () => {
+  const store = rmsStoreFile({ lastModified: 1792161064312, records: [[1, Uint8Array.from([9, 9])]] })
+  const snapshot = JSON.stringify({
+    v: 1,
+    at: 1,
+    files: [{ p: '/RecordStore/Assassin-T.0', m: 1, d: Buffer.from(store).toString('base64') }],
+  })
+  // 有云存档：恢复之后，本地这份的摘要 == 报文里的 digest（播放页拿它当基线，
+  // 游戏随后原样重写就不必再上传）。
+  const restored = await loadRms({ search: '?save=https://cloud.example/saves/1/205.s0.state', fetch: async () => ({ ok: true, text: async () => snapshot }) })
+  const message = await restored.waitFor('j2me-rms-restored')
+  assert.equal(message.status.restore, 'loaded')
+  assert.equal(message.status.files, 1)
+  assert.equal(message.digest, (await restored.api.snapshot()).digest)
+  assert.equal(restored.api.status().digest, message.digest)
+
+  // 没有云存档：清干净之后基准是"空的"（游戏什么都不写就不会上传）。
+  const cleared = await loadRms({ search: '?save=none', files: [['/RecordStore/旧游戏的.0', rmsStoreFile()]] })
+  const clearedMessage = await cleared.waitFor('j2me-rms-restored')
+  assert.equal(clearedMessage.status.restore, 'cleared')
+  assert.equal(clearedMessage.status.removed, 1)
+  assert.equal(clearedMessage.digest, (await cleared.api.snapshot()).digest)
+
+  // 读失败 / 没登录：不报 digest —— 本地是什么、云端是什么都不知道，第一次改动照旧上传。
+  const failed = await loadRms({ search: '?save=https://cloud.example/saves/1/205.s0.state', fetch: async () => ({ ok: false, status: 500 }) })
+  const failedMessage = await failed.waitFor('j2me-rms-restored')
+  assert.equal(failedMessage.status.restore, 'failed')
+  assert.equal(failedMessage.digest, null)
+  const skipped = await loadRms({ files: [['/RecordStore/A.0', rmsStoreFile()]] })
+  assert.equal((await skipped.waitFor('j2me-rms-restored')).digest, null)
+})
+
+test('rms.js：写记录的原生实现被包住，去抖之后报 j2me-rms-dirty', async () => {
+  const rms = await loadRms()
+  await rms.waitFor('j2me-rms-restored')
+  assert.equal(rms.messages.some((message) => message.type === 'j2me-rms-dirty'), false)
+  assert.equal(await rms.natives['com/sun/midp/rms/RecordStoreFile.commitWrite.(I)V'].__rmsHooked, true, 'commitWrite 必须被包住')
+  // 游戏写一次记录：去抖 800ms 之后报一条"改了"，而且只报一条（连着写好几条记录也只报一次）。
+  rms.natives['com/sun/midp/rms/RecordStoreFile.commitWrite.(I)V'](1)
+  rms.natives['com/sun/midp/rms/RecordStoreUtil.deleteFile.(Ljava/lang/String;Ljava/lang/String;I)V']()
+  assert.equal(rms.messages.some((message) => message.type === 'j2me-rms-dirty'), false, '还没到去抖时间')
+  assert.equal(rms.runTimer(800), true)
+  assert.equal(rms.messages.filter((message) => message.type === 'j2me-rms-dirty').length, 1)
+  assert.equal(rms.api.dirty(), true)
+})
 
 test('三个类库档位都给玩家看得懂的名字，且与运行时认得的那批一致', () => {
   assert.deepEqual(
@@ -72,9 +261,9 @@ test('帧里的 rms.js：等文件系统就绪、恢复赶在 MIDlet 之前、�
   assert.match(rms, /'com\/sun\/midp\/rms\/RecordStoreFile\.truncateFile\.\(II\)V'/)
   assert.match(rms, /'com\/sun\/midp\/rms\/RecordStoreUtil\.deleteFile\.\(Ljava\/lang\/String;Ljava\/lang\/String;I\)V'/)
   assert.match(rms, /post\(\{ type: 'j2me-rms-dirty' \}\)/)
-  // 导出：整棵 /RecordStore 读成 JSON，摘要用来去重。
+  // 导出：整棵 /RecordStore 读成 JSON，摘要用来去重（归一化见上面那三条测试）。
   assert.match(rms, /function snapshot\(\)/)
-  assert.match(rms, /digest: digestOf\(text\)/)
+  assert.match(rms, /digest: digestOfFiles\(files\)/)
   assert.match(rms, /window\.__j2meRms = \{/)
 })
 
@@ -88,10 +277,13 @@ test('播放页：开局读云存档、改动后自动上传、离开前补一�
   // 读取失败 / 超时都当作「没有存档」，不能挡住开局。
   assert.match(adapter, /J2ME_CLOUD_SAVE_TIMEOUT_MS = 4000/)
   assert.match(adapter, /console\.warn\('\[j2me\] 云存档读取超时，本次从本地状态启动'\)/)
-  // 运行中：帧说改了 → 去抖后上传；摘要没变不重复传。
+  // 运行中：帧说改了 → 去抖后上传；和"云端这一份"一样（摘要相同）就不重复传。
   assert.match(adapter, /if \(data\.type === 'j2me-rms-dirty'\) \{ scheduleCloudSave\(\); return \}/)
-  assert.match(adapter, /if \(!shot \|\| shot\.digest === lastUploadDigest\) return/)
+  assert.match(adapter, /if \(!shot \|\| shot\.digest === cloudDigest\) return/)
   assert.match(adapter, /await cloud\.save\(shot\.blob, \{ keepalive \}\)/)
+  assert.match(adapter, /cloudDigest = shot\.digest/)
+  // 开局恢复进来的那份就是"云端这一份"：摘要收下来，游戏随后原样重写就不算改动。
+  assert.match(adapter, /if \(typeof data\.digest === 'string' && data\.digest\) cloudDigest = data\.digest/)
   // 暂停 / 关标签页 / 退出各补一次；退出前要在拆掉 iframe 之前把快照读完。
   assert.match(adapter, /void flushCloudSave\(\)\n    \},\n    async resume\(\)/)
   assert.match(adapter, /window\.addEventListener\('pagehide', onPageHide\)/)

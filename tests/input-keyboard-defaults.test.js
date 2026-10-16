@@ -12,13 +12,17 @@ import {
   effectiveLocalKeyboardForPlayer,
   isSavedDefaultKeyboard,
   isSavedLocalPlayer2DefaultKeyboard,
+  isValidKeyboardBinding,
 } from '../frontend/src/composables/input/keyboardProfiles.js'
 import {
   buildRemotePlayerKeyMaps,
   buildRemotePlayersRetroarchConfig,
 } from '../frontend/src/composables/input/remotePlayers.js'
 import { buildPlayerRetroarchConfig } from '../frontend/src/composables/input/retroarchConfig.js'
-import { pcButtonsForPlatform } from '../frontend/src/constants/platforms.js'
+import { pcButtonsForPlatform, getPlatform } from '../frontend/src/constants/platforms.js'
+import { isSinglePlayerPlatform } from '../shared/registry/platform-players.js'
+import { normalizeRetroarchKey } from '../frontend/src/composables/input/keyboardKeys.js'
+import { J2ME_BUTTON_KEYS } from '../frontend/src/composables/player/j2meRuntime.js'
 import {
   interceptLocalPlayer2RuntimeKey,
   localPlayer2RuntimeKeySet,
@@ -47,6 +51,18 @@ const MEGADRIVE_DEFAULT = {
   ...PLAYER_1_DEFAULT,
   y: 'j', b: 'k', a: 'l',
   l: 'u', x: 'i', r: 'o',
+}
+
+// J2ME：手机键盘照数字小键盘摆 —— 手机 1 / 3 / 5 / 7 / 9 / 0 落在小键盘上同样数字的
+// 那几颗键（retropad 的 x / a / l2 / y / b / r2），* 落在 0 旁边那颗 .（小数点），
+// # 落在小键盘回车；两块软键（select = 左软键 / start = 右软键）是主回车与右 Shift。
+// 十字仍是 WASD，所以一只手管方向、一只手管手机键盘。
+const J2ME_DEFAULT = {
+  ...PLAYER_1_DEFAULT,
+  x: 'numpad1', a: 'numpad3', l2: 'numpad5',
+  y: 'numpad7', b: 'numpad9', r2: 'numpad0',
+  l: 'kp_period', r: 'kp_enter',
+  select: 'enter', start: 'rshift',
 }
 
 const PLAYER_2_DEFAULT = {
@@ -108,6 +124,10 @@ const OLD_PLAYER_2_DEFAULT = {
 // 老数据出现，由下面单独一条用例盯着「照样套用同一套键位」。
 const PLATFORMS = ['nes', 'sfc', 'gba', 'megadrive', 'arcade', 'psx', 'pcengine', 'pcecd', 'neogeocd', 'ngp', '3do', 'sega32x', 'j2me']
 
+// P2 的默认键位只在多人机上成立：单人机没有 P2（按键设置里那一页根本不出现，J2ME
+// 模拟的是一部手机），而 J2ME 把 P1 摆在小键盘上，正好和 P2 的通用默认同一片区。
+const MULTIPLAYER_PLATFORMS = PLATFORMS.filter((id) => !isSinglePlayerPlatform(id))
+
 const PLAYER_BUTTON = '(up|down|left|right|a|b|x|y|l|r|l2|r2|l3|r3|start|select)'
 
 function activePlayerConfig(cfg, players = [1, 2, 3, 4]) {
@@ -155,9 +175,42 @@ test('街机 / MD 六键按两排三列：下排 J K L、上排 U I O', () => {
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('megadrive'), MEGADRIVE_DEFAULT)
   // 老记录里的别名（genesis）收敛到 MD，照样套用六键键位，不掉回通用默认
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('genesis'), MEGADRIVE_DEFAULT)
-  // J2ME 没有自己的键位：手机上它多摆一颗十字方向键，键盘行与通用默认一致（确定键
-  // 仍是数字行上的 7，也就是手机键盘的「5」）。
-  assert.deepEqual(defaultPlayer1KeyboardForPlatform('j2me'), PLAYER_1_DEFAULT)
+})
+
+test('J2ME：手机键盘照小键盘摆，* / # 落在 . 与小键盘回车，软键是回车与右 Shift', () => {
+  assert.deepEqual(defaultPlayer1KeyboardForPlatform('j2me'), J2ME_DEFAULT)
+  // 面板上每一颗手机键写的数字，就是它默认落在小键盘上的那颗键。
+  const labels = getPlatform('j2me').buttonLabels
+  for (const button of ['x', 'a', 'l2', 'y', 'b', 'r2']) {
+    assert.equal(J2ME_DEFAULT[button], `numpad${labels[button].replace(/\D/g, '')}`, `${button}（手机 ${labels[button]}）没落在小键盘上`)
+  }
+  assert.equal(J2ME_DEFAULT.l, 'kp_period')   // ＊ → 0 旁边那颗 .
+  assert.equal(J2ME_DEFAULT.r, 'kp_enter')    // ＃ → 小键盘回车
+  // select 是左软键、start 是右软键（见 j2meRuntime.js 的 J2ME_BUTTON_KEYS）。
+  assert.equal(labels.select, '软键1')
+  assert.equal(J2ME_DEFAULT.select, 'enter')
+  assert.equal(labels.start, '软键2')
+  assert.equal(J2ME_DEFAULT.start, 'rshift')
+  // 十字与平台用不到的按钮跟着通用默认走，和其它平台变体一样。
+  assert.equal(J2ME_DEFAULT.up, PLAYER_1_DEFAULT.up)
+  assert.equal(J2ME_DEFAULT.l3, PLAYER_1_DEFAULT.l3)
+})
+
+test('J2ME：每颗按钮都有关键、键码与互不重复的默认键', () => {
+  const buttons = pcButtonsForPlatform('j2me')
+  const keys = buttons.map((button) => J2ME_DEFAULT[button])
+  assert.equal(new Set(keys).size, buttons.length, 'J2ME 的默认键有重复')
+  for (const button of buttons) {
+    assert.ok(isValidKeyboardBinding(J2ME_DEFAULT[button]), `J2ME 的 ${button} 没有默认键，PC 键盘上按不到`)
+    assert.ok(J2ME_BUTTON_KEYS[button] != null, `J2ME 的 ${button} 没有 MIDP 键码`)
+  }
+  // 适配层按运行时键位反查按钮（见 j2meRuntime.js 的 keyboard()）：每个默认键都要
+  // 落回它自己那颗按钮，否则按下去会打到别的手机键上。
+  for (const button of buttons) {
+    const binding = normalizeRetroarchKey(J2ME_DEFAULT[button])
+    const found = Object.keys(J2ME_BUTTON_KEYS).find((b) => normalizeRetroarchKey(J2ME_DEFAULT[b]) === binding)
+    assert.equal(found, button, `${J2ME_DEFAULT[button]} 没有落到 ${button} 上`)
+  }
 })
 
 test('默认 P2：方向键十字 + 数字小键盘成对铺开', () => {
@@ -202,7 +255,7 @@ test('P2 运行时键位覆盖全部 16 个按钮、无重复、不落在 P1 默
 })
 
 test('P1 默认（含各平台变体）与 P2 默认（含各平台变体）不重叠', () => {
-  for (const platform of PLATFORMS) {
+  for (const platform of MULTIPLAYER_PLATFORMS) {
     const player2Keys = new Set(Object.values(platformPlayer2Keyboard(platform)))
     const overlap = Object.values(platformPlayer1Keyboard(platform)).filter((key) => player2Keys.has(key))
     assert.deepEqual(overlap, [], `${platform} 的 P1 默认和 P2 默认撞键`)
@@ -210,7 +263,7 @@ test('P1 默认（含各平台变体）与 P2 默认（含各平台变体）不�
 })
 
 test('单机双打：P1 与 P2 的 core 配置没有重复键', () => {
-  for (const platform of PLATFORMS) {
+  for (const platform of MULTIPLAYER_PLATFORMS) {
     const buttons = pcButtonsForPlatform(platform)
     const cfg = {
       ...player1ConfigFor(platform),
@@ -225,7 +278,7 @@ test('单机双打：P1 与 P2 的 core 配置没有重复键', () => {
 })
 
 test('四人房间：host 的 P1 与远端 P2/P3/P4 的 core 配置没有重复键', () => {
-  for (const platform of PLATFORMS) {
+  for (const platform of MULTIPLAYER_PLATFORMS) {
     const buttons = pcButtonsForPlatform(platform)
     const player1Config = player1ConfigFor(platform)
     const reserved = activePlayerConfig(player1Config, [1]).map((entry) => entry.key)

@@ -6,6 +6,21 @@
  * small control surface the adapter needs.
  */
 (function () {
+  // 三星时代的 MIDlet（「冒险小子」）会先问 `com.samsung.util.AudioClip.isSupported()`：
+  // 拿到 true 才分配自己那张关卡常量表（ABGame.x() 里的 `if (i) c = new int[7]`），而关卡
+  // 音乐、关卡切换这些路径会不带条件地读它 —— 内置类库带的那份 AudioClip 是完整的 Java
+  // 空实现（构造与 play/stop/pause/resume 都不做事），isSupported() 却写死 `return false`，
+  // 于是游戏在关卡里按一下确定键就读到一张从未分配的 int[7]：空指针结束 MIDlet 线程、
+  // 画面定在最后一帧。真机上这个类由三星/国产手机的类库提供并答 true，这里照真机答 true：
+  // 本运行时里 AudioClip 的每个调用本来就是安全空操作（与站点对其它「在这里是空操作」的
+  // MIDP 内部实现的做法一致）。这条 shim 依赖 bld/j2me.js 的补丁 30 —— ReplaceMethod 表
+  // 要在方法解析时也被查一次，否则 MIDlet 自己字节码里的调用根本走不到它。
+  if (typeof ReplaceMethod === 'object' && ReplaceMethod) {
+    ReplaceMethod['com/samsung/util/AudioClip.isSupported.()Z'] = function () {
+      return 1;
+    };
+  }
+
   function report(message) {
     try {
       // 指定目标源而不是 '*':运行时按设计与本页同源，消息不该有机会投给别的窗口。
@@ -21,6 +36,19 @@
   window.addEventListener('unhandledrejection', function (event) {
     report(event.reason);
   });
+
+  // The runtime's built-in touch pad used to say `onselectstart='return false'`
+  // (next to an `οnselect` whose "o" was a Greek omicron, i.e. not a handler at
+  // all): this site serves its pages with `script-src 'self' blob: 'unsafe-eval'
+  // 'wasm-unsafe-eval'`, so the browser refuses to run an inline handler and logs
+  // "Executing inline event handler violates ..." the moment a selection starts on
+  // the pad. The behaviour lives here instead, where a listener is not inline.
+  var siteGamepad = document.getElementById('gamepad');
+  if (siteGamepad) {
+    siteGamepad.addEventListener('selectstart', function (event) {
+      event.preventDefault();
+    });
+  }
 
   // Pause support: the runtime drives everything (VM scheduler, sleeps, screen
   // blits) through timers and requestAnimationFrame, so holding those back while

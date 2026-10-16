@@ -8,7 +8,9 @@ export { J2ME_DEFAULT_ENGINE } from './j2meCore.js'
 // phone with a direction pad (Canvas.KEY_UP/DOWN/LEFT/RIGHT = -1/-2/-3/-4) —
 // while the face and shoulder buttons stay on the phone keypad, whose labels the
 // virtual pad shows (1/3/7/9 = the game keys, 5 = 确定, * / # , 0 = 键 0) and
-// whose soft keys are select/start. On the touch pad the left-hand stick is
+// whose soft keys are select/start (the PC defaults for this platform sit on the
+// numpad like the phone keypad itself: see keyboardProfiles.js' J2ME_KEYBOARD).
+// On the touch pad the left-hand stick is
 // swapped for the phone's own cross: four irregular pentagons tiling a seamless
 // plus-shape of equal width and height, one per direction, with no centre button
 // (the keypad's centre key is already the l2 row on the shoulder row). The
@@ -453,9 +455,14 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
     if (event.source && event.source !== runtimeWindow()) return
     const data = event.data
     if (!data) return
-    // 帧里的 rms.js：RMS 有改动 → 去抖后自动上传；开局恢复完成 → 记下来备查。
+    // 帧里的 rms.js：RMS 有改动 → 去抖后自动上传；开局恢复完成 → 记下结果，
+    // 并把"云端这一份"的摘要收下（游戏原样重写时就不必再传。见 queueCloudSave）。
     if (data.type === 'j2me-rms-dirty') { scheduleCloudSave(); return }
-    if (data.type === 'j2me-rms-restored') { lastRestore = data.status || null; return }
+    if (data.type === 'j2me-rms-restored') {
+      lastRestore = data.status ? { ...data.status, digest: data.digest || null } : null
+      if (typeof data.digest === 'string' && data.digest) cloudDigest = data.digest
+      return
+    }
     if (data.type !== 'j2me-error') return
     // A running game is torn down by a runtime error (the VM has no way back);
     // a booting one gets the grace period to prove itself first.
@@ -498,8 +505,14 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
   // 帧里的 rms.js 负责把 /RecordStore 读成一份快照、把快照写回去；这里负责时序：
   // 开局把存档交给它（save 参数），之后它说"改了"就上传，暂停 / 退出 / 页面隐藏时
   // 再补一次。玩家不用点任何按钮。
+  //
+  // cloudDigest 是"云端现在这一份"的摘要：开局从云端恢复进来的那一份，或最后一次上传
+  // 的那一份。rms.js 的摘要只看记录内容，时间戳一律不算改动 —— 不少 MIDlet 进菜单、
+  // 过场时会把同一份记录原样重写一遍（2026-10-16 用「刺客骨肉分离」验证过：标题画面
+  // 自己重写 4 轮，写出来的存储文件与恢复进来的云存档逐字节只差文件头里的写入时间），
+  // 那种"重写"不该在玩家的云存档里再留一次记录，更不该弹"已自动存档"。
   let saveBlobUrl = null
-  let lastUploadDigest = null
+  let cloudDigest = null
   let lastRestore = null
   let saveChain = Promise.resolve()
   let saveTimer = null
@@ -514,16 +527,16 @@ export async function prepareJ2me({ rom, romUrl, romFileName, retroarchConfig = 
     document.removeEventListener('visibilitychange', onVisibilityHidden)
   }
 
-  /** 把当前 RMS 快照传上去；内容没变（摘要相同）就不重复传。 */
+  /** 把当前 RMS 快照传上去；和云端那一份一样（摘要相同）就不重复传。 */
   function queueCloudSave({ keepalive = false } = {}) {
     if (!cloud?.save || state === 'exited') return Promise.resolve()
     saveChain = saveChain.then(async () => {
       const api = rmsApi()
       if (!api?.snapshot) return
       const shot = await api.snapshot()
-      if (!shot || shot.digest === lastUploadDigest) return
+      if (!shot || shot.digest === cloudDigest) return
       await cloud.save(shot.blob, { keepalive })
-      lastUploadDigest = shot.digest
+      cloudDigest = shot.digest
     }).catch(error => { console.warn('[j2me] 云存档上传失败', error) })
     return saveChain
   }

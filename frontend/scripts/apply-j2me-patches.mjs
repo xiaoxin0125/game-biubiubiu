@@ -34,6 +34,48 @@
 //                                 (功夫西游 - 乱舞唐僧 froze mid-story)
 //  23. bld/j2me.js              — a JavaScript error that is not a TypeError becomes a
 //                                 Java exception with its message, not a bogus null
+//  24. bld/main-all.js          — drawArc/fillArc are MIDP arcs: the ellipse sits in
+//                                 the middle of the bounding box, not at its top-left
+//                                 corner, and the sweep follows MIDP's angle
+//                                 direction (without it 蹦球传说 paints the ball as a
+//                                 red disc plus an oversized wedge)
+//  25. bld/main-all.js          — Nokia's DirectGraphics.drawImage honours its
+//                                 manipulation argument (rotate/flip) instead of
+//                                 always drawing TRANS_NONE (without it 恐龙快打's
+//                                 hero and mobs break apart whenever they face right)
+//  26. main.html                — the built-in touch pad carries no inline event
+//                                 handler: the CSP has no 'unsafe-inline', so the
+//                                 browser refused to run it and logged a violation
+//                                 on every selection started on the pad (bridge.js
+//                                 re-attaches the behaviour as a listener)
+//  27. bld/j2me.js              — a Java exception that unwound a nested interpreter
+//                                 run reaches its caller instead of being swallowed
+//                                 and faked as a normal return (without it 冒险小子's
+//                                 missing-logo IOException never reaches the MIDlet's
+//                                 catch, the loop keeps going with a null image and
+//                                 the thread dies on the splash screen)
+//  28. bld/j2me.js              — an execution window is half an animation frame (8ms),
+//                                 not 80ms: the player mirrors the VM's canvas through a
+//                                 timer on the same main thread, so an 80ms window left
+//                                 the whole page about 13 turns a second (measured 159
+//                                 stalls of ~72ms in 12s). Page frame production 13.6/s →
+//                                 60/s and 正义化身－忍者神龟传 3.4 → 11.5fps (3.2 → 10.9
+//                                 at 4x CPU throttling); 16ms still only reached 50~53/s
+//  29. bld/main-all.js         — a clip rectangle that lies outside the target canvas
+//                                 stays outside it: the fork masked all four edges with
+//                                 `& 32767`, which turns a negative edge (a rectangle
+//                                 wholly left of or above the canvas) into a huge one,
+//                                 so the clip stopped clipping. Games that draw a sprite
+//                                 by clipping to its rectangle and then blitting the whole
+//                                 sheet onto the canvas painted a sheet-wide band across
+//                                 the screen (恐龙快打's knocked-down characters)
+//  30. bld/j2me.js              — the fork's own ReplaceMethod table finally reaches
+//                                 methods a MIDlet calls from its own bytecode, which is
+//                                 how bridge.js shims com.samsung.util.AudioClip into
+//                                 answering "supported" (without it 冒险小子 treats its
+//                                 level-constant array as never allocated and dies with a
+//                                 NullPointerException the moment the player presses the
+//                                 confirm key inside a level)
 //
 // Usage: node frontend/scripts/apply-j2me-patches.mjs [运行时目录]
 //
@@ -315,6 +357,23 @@ if (config.jars || window.__j2meJars) {
             }`
       if (!text.includes(anchor)) throw new Error('compiled array-store null-check anchor not found')
       return text.replace(anchor, '            this.emitNullPointerCheck(array);')
+    },
+  },
+  {
+    // The touch pad carries `onselectstart='return false'` upstream (next to an
+    // `οnselect` whose "o" is a Greek omicron, so that one never ran at all). This
+    // site's Content-Security-Policy is `script-src 'self' blob: 'unsafe-eval'
+    // 'wasm-unsafe-eval'`: an inline handler is refused, and the browser logs
+    // "Executing inline event handler violates ..." every time a selection starts on
+    // the pad. Neither a hash nor a nonce can authorise an attribute like this, so
+    // the attribute goes and bridge.js attaches the same behaviour as a listener.
+    label: 'main.html: the built-in touch pad carries no inline event handler',
+    file: 'main.html',
+    applied: (text) => text.includes('<div id="gamepad">'),
+    transform: (text) => {
+      const tag = /<div id="gamepad"[^>]*>/
+      if (!tag.test(text)) throw new Error('gamepad anchor not found')
+      return text.replace(tag, '<div id="gamepad">')
     },
   },
   {
@@ -873,6 +932,342 @@ function siteLocale() {
         }
         return e;`,
   },
+  // MIDP 的圆弧角度以「0 = 3 点钟、逆时针为正」计，画布的角以「0 = 3 点钟、顺时针为
+  // 正」计（屏幕 y 轴向下），所以画布角 = -MIDP 角，而 MIDP 的正角度对应画布上角度
+  // 递减的方向 —— 也就是 canvas arc() 的 anticlockwise=true。上游把这两个角互换后
+  // 一律按 anticlockwise=false 画：正角度（最常见的那种）刚好凑对，负角度却会沿
+  // 反方向绕整整 270 度。「蹦球传说」的球体阴影正好是一串负角度扇形。
+  {
+    label: 'main-all.js: arc sweeps follow MIDP angles and can run either way',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (MIDP arc angles)'),
+    anchor: `  function createEllipticalArc(c, x, y, rw, rh, arcStart, arcEnd, closed) {
+    c.save();
+    c.translate(x, y);
+    if (closed) {
+      c.moveTo(0, 0);
+    }
+    c.scale(1, rh / rw);
+    c.arc(0, 0, rw, arcStart, arcEnd, false);`,
+    replacement: `  // Site patch (MIDP arc angles): MIDP 的圆弧角度是「0 = 3 点钟、逆时针为正」，
+  // 画布的角是「0 = 3 点钟、顺时针为正」（屏幕 y 轴向下），所以画布角 = -MIDP 角，
+  // 而 MIDP 的正角度对应画布上角度递减的方向（canvas arc() 的 anticlockwise=true）。
+  // 上游把起止角互换后一律按 anticlockwise=false 画：正角度刚好凑对，负角度却会沿
+  // 另一个方向绕 270 度。|arcAngle| >= 360 时按整圈处理 —— 画布对 start == end 的
+  // 圆弧什么都不画。
+  function siteArc(startAngle, arcAngle) {
+    if (arcAngle >= 360 || arcAngle <= -360) {
+      return {startRad: 0, endRad: Math.PI * 2, anticlockwise: false};
+    }
+    return {
+      startRad: -startAngle * .0175,
+      endRad: -(startAngle + arcAngle) * .0175,
+      anticlockwise: arcAngle > 0,
+    };
+  }
+  function createEllipticalArc(c, x, y, rw, rh, arcStart, arcEnd, closed, anticlockwise) {
+    c.save();
+    c.translate(x, y);
+    if (closed) {
+      c.moveTo(0, 0);
+    }
+    c.scale(1, rh / rw);
+    c.arc(0, 0, rw, arcStart, arcEnd, !!anticlockwise);`,
+  },
+  // 与上一条配套：两个圆弧 native 把包围盒的左上角当成了椭圆圆心传给
+  // createEllipticalArc（它要的是圆心），fillArc 还把这个角当成了扇形的顶点。
+  // 于是在真机上居中的弧，在这里整块向左上偏了半个包围盒，扇形还多出一块连着
+  // 左上角的楔形 —— 「蹦球传说」的球体（42x42 的软件球面 + 一串这种扇形阴影）
+  // 因此画成了一坨红白相间的怪东西。
+  {
+    label: 'main-all.js: drawArc/fillArc sit in the middle of the bounding box',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (arcs centred in the bounding box)'),
+    anchor: `  Native["javax/microedition/lcdui/Graphics.drawArc.(IIIIII)V"] = function(addr, x, y, width, height, startAngle, arcAngle) {
+    if (width < 0 || height < 0) {
+      return;
+    }
+    var c = NativeMap.get(addr).getGraphicsContext();
+    var endRad = -startAngle * .0175;
+    var startRad = endRad - arcAngle * .0175;
+    c.beginPath();
+    createEllipticalArc(c, x, y, width / 2, height / 2, startRad, endRad, false);
+    c.stroke();`,
+    replacement: `  Native["javax/microedition/lcdui/Graphics.drawArc.(IIIIII)V"] = function(addr, x, y, width, height, startAngle, arcAngle) {
+    if (width < 0 || height < 0) {
+      return;
+    }
+    // Site patch (arcs centred in the bounding box): 椭圆的圆心在包围盒正中，
+    // 不是它的左上角。角度换算与方向见 siteArc()。
+    var c = NativeMap.get(addr).getGraphicsContext();
+    var arc = siteArc(startAngle, arcAngle);
+    c.beginPath();
+    createEllipticalArc(c, x + width / 2, y + height / 2, width / 2, height / 2, arc.startRad, arc.endRad, false, arc.anticlockwise);
+    c.stroke();`,
+    then: {
+      anchor: `    var c = NativeMap.get(addr).getGraphicsContext();
+    var endRad = -startAngle * .0175;
+    var startRad = endRad - arcAngle * .0175;
+    c.beginPath();
+    c.moveTo(x, y);
+    createEllipticalArc(c, x, y, width / 2, height / 2, startRad, endRad, true);
+    c.moveTo(x, y);
+    c.fill();`,
+      replacement: `    // Site patch (arcs centred in the bounding box): 圆心在包围盒正中，扇形从圆心
+    // 张开（原来的顶点是包围盒的左上角，扇叶因此多出一块连到左上角的楔形）。
+    var c = NativeMap.get(addr).getGraphicsContext();
+    var cx = x + width / 2;
+    var cy = y + height / 2;
+    var arc = siteArc(startAngle, arcAngle);
+    c.beginPath();
+    c.moveTo(cx, cy);
+    createEllipticalArc(c, cx, cy, width / 2, height / 2, arc.startRad, arc.endRad, false, arc.anticlockwise);
+    c.closePath();
+    c.fill();`,
+    },
+  },
+  // 「恐龙快打」的主角朝右时整个人散成一堆错位的身体部件、朝左时完全正常，同一张
+  // 精灵表里的小怪与道具也一样。原因是 Nokia 的
+  // DirectGraphics.drawImage(img, x, y, anchor, manipulation) 里的 manipulation
+  // 被这份实现整个丢掉了：它一律按 TRANS_NONE 把整张图贴到 (x, y)。
+  //
+  // 游戏是照真机的行为算坐标的：先把裁剪区设成「变换后的图该出现的那个矩形」，再把
+  // 整张图按变换贴上去，让要用的那块源图正好落进裁剪区（源区域在变换后的图里的偏移
+  // = 图尺寸 - 源坐标 - 源尺寸）。不翻转时，落进裁剪区的是同一张表里另一块内容 ——
+  // 朝右的每一帧都由另一组精灵组成，所以画面是一堆错位的部件；朝左的帧用
+  // manipulation=0 走的就是对的。同一个 ROM 里 manipulation 的分布也印证了这一点：
+  // 朝右/朝左的差别只在 8192（FLIP_HORIZONTAL）上。
+  //
+  // 下面这张表把 Nokia 的组合折算成 MIDP 的 TRANS_* 码，绘制仍交给 renderRegion
+  // （drawRegion / Image.createImage(…, transform) 走的都是它）。八种组合都按「源区域
+  // 必须落进裁剪区」核对过 —— 这正是游戏为每种组合算出的目标坐标所要求的结果：
+  // FLIP_HORIZONTAL 单独出现是 TRANS_MIRROR，FLIP_HORIZONTAL|ROTATE_90 是
+  // TRANS_MIRROR_ROT90（不是 TRANS_MIRROR_ROT270），ROTATE_90 单独出现是
+  // TRANS_ROT270。除了这个 ROM 自己的几何，折算表与 MicroEmulator 的 Nokia API
+  // 实现（J2ME-Loader 继承的那份）一致，FreeJ2ME 对单个旋转/翻转的结果也一样。
+  //
+  // 表必须定义在 `var TRANS_*` 那一段之后：这次踩到的坑。`TRANS_*` 是 `var`，写在
+  // 文件更靠后的位置，放在它们前面的表字面量读到的全是 undefined，于是每次折算都得到
+  // undefined，renderRegion 拿 undefined 变换算出的目标坐标是 NaN —— 画是画了，什么
+  // 都没落在画布上，游戏里的表现正是「朝右的精灵整块消失」（而 manipulation=0 的朝左
+  // 帧走 Graphics.drawImage，完全正常）。
+  {
+    label: 'main-all.js: Nokia DirectGraphics.drawImage honours its manipulation argument',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('function siteManipulationToTransform(manipulation) {')
+      && text.indexOf('function siteManipulationToTransform(manipulation) {') > text.indexOf('var TRANS_MIRROR_ROT90 = 7;'),
+    anchor: `Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/Image;IIII)V"] = function(addr, imageAddr, x, y, anchor,unknow) { 
+  if (imageAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException("image is null");
+  }
+  
+  var self = getHandle(addr);
+  var image = getHandle(imageAddr);
+  var imageData = getHandle(image.imageData);
+  //console.log(imageData,x, y)
+  var c = NativeMap.get(self.graphics).getGraphicsContext(); 
+  renderRegion(c, NativeMap.get(image.imageData).context.canvas, 0, 0, imageData.width, imageData.height, TRANS_NONE, x, y, anchor);
+};`,
+    replacement: `// Site patch (Nokia image manipulation): manipulation 折算成 MIDP 变换码后再交给
+// renderRegion 去画（折算表与判定在下面的 TRANS_* 定义之后）。
+Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/Image;IIII)V"] = function(addr, imageAddr, x, y, anchor, manipulation) { 
+  if (imageAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException("image is null");
+  }
+  
+  var self = getHandle(addr);
+  var image = getHandle(imageAddr);
+  var imageData = getHandle(image.imageData);
+  var c = NativeMap.get(self.graphics).getGraphicsContext(); 
+  renderRegion(c, NativeMap.get(image.imageData).context.canvas, 0, 0, imageData.width, imageData.height, siteManipulationToTransform(manipulation), x, y, anchor);
+};`,
+    then: {
+      anchor: `  var TRANS_MIRROR_ROT90 = 7;
+  function renderRegion(dstContext, srcCanvas, sx, sy, sw, sh, transform, absX, absY, anchor) {`,
+      replacement: `  var TRANS_MIRROR_ROT90 = 7;
+  // Site patch (Nokia image manipulation): Nokia 的 manipulation 是「第 13/14 位 =
+  // 左右/上下翻转，低位 = 逆时针 90/180/270 度」，两者可叠加。折算成 MIDP 的
+  // TRANS_* 码后交给 renderRegion 去画；无法拆解的取值按真机抛
+  // IllegalArgumentException（MicroEmulator 的 Nokia API 实现同样如此）。
+  //
+  // 这张表必须留在这里（TRANS_* 已经赋过值）：放在它们前面时，字面量读到的全是
+  // undefined，折算结果也是 undefined，renderRegion 于是拿一个不认识的变换算坐标，
+  // 目标位置成了 NaN —— 画面上就是「朝右的精灵整块消失」，而 manipulation=0 的朝左帧
+  // 走 Graphics.drawImage，完全看不出问题。
+  var siteNokiaManipulation = [
+    [TRANS_NONE, TRANS_ROT270, TRANS_ROT180, TRANS_ROT90],
+    [TRANS_MIRROR, TRANS_MIRROR_ROT90, TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270],
+    [TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270, TRANS_MIRROR, TRANS_MIRROR_ROT90],
+    [TRANS_ROT180, TRANS_ROT90, TRANS_NONE, TRANS_ROT270],
+  ];
+  function siteManipulationToTransform(manipulation) {
+    var flip = manipulation >>> 13;
+    var rotation = manipulation & 8191;
+    if (flip > 3 || rotation % 90 !== 0 || rotation > 270) {
+      throw $.newIllegalArgumentException("Unsupported manipulation: " + manipulation);
+    }
+    return siteNokiaManipulation[flip][rotation / 90];
+  }
+  function renderRegion(dstContext, srcCanvas, sx, sy, sw, sh, transform, absX, absY, anchor) {`,
+    },
+  },
+  {
+    // fastInterpreterFrameAdapter 是「编译代码或原生方法调进解释器」的入口：它压一个
+    // ExitInterpreter 标记再进 interpret()。exceptionUnwind 走到这个标记时展开的只是
+    // 这次嵌套运行压进来的帧 —— 调用者（编译方法或外层解释器循环）还在，处理器也在
+    // 那里 —— 所以异常本来就该继续往上传。
+    //
+    // 上游的 catch 把它和 JS 错误一起吞掉、返回 0 假装调用成功。补丁 15 修的是解释器
+    // 循环里同源的吞异常，「冒险小子」撞上的正是这一处漏网的：它的 logo 循环
+    // load("/logo"+i+".png") 依赖 IOException 里的 catch (Exception)，而这个运行时里
+    // Image.createImage 那条链是「原生 → 再进解释器」，于是每张缺失的图片抛出的异常
+    // 都停在这条 catch 上 —— 循环拿到 null 继续装下一张，四个 logo 全部试完，最后画
+    // 那张空图时空指针杀掉线程，游戏停在 HandyGames 商标上再也进不去。
+    label: 'bld/j2me.js: a Java exception leaving a nested interpreter run reaches its caller',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (nested interpreter exceptions):'),
+    anchor: `            var v=0;
+            try{ 
+                v = interpret(thread);
+                //console.log('interpret '+v)
+            }
+            catch(err){
+                console.log('interpret error:',err);
+                return v;
+            } `,
+    replacement: `            var v=0;
+            try{ 
+                v = interpret(thread);
+                //console.log('interpret '+v)
+            }
+            catch(err){
+                // Site patch (nested interpreter exceptions): exceptionUnwind 走到这层
+                // ExitInterpreter 标记时，展开的只是这次嵌套运行压进来的帧，调用者
+                // （编译方法的 try/catch，或外层解释器循环的 catch → exceptionUnwind）
+                // 还在那里，处理器也在它自己的异常表里。带 classInfo 的就是这种 Java
+                // 异常，照原样往上传；其余是运行时自己的 JS 错误，维持原样记一条日志。
+                if (err && err.classInfo) {
+                    throw err;
+                }
+                console.log('interpret error:',err);
+                return v;
+            } `,
+  },
+  // 上游把「一次执行窗口」定成 80ms，想法是「系统要在 100ms 内响应，剩下 20ms 留给事件
+  // 循环」。但播放页显示的是从运行时页面镜像过来的一张画布，镜像、触摸手柄与按钮全在
+  // 同一条主线程上：窗口的长度就是「整页每秒能画几次」的上界，而一次窗口边界还要等当前
+  // 那段 Java 执行返回并排上下一个任务，实际节奏约是窗口的 1.3 倍。80ms 于是只留给整页
+  // 每秒约 13 次执行机会 —— 恐龙快打实测 12000ms 里有 11826ms 在跑虚拟机任务，被切成
+  // 159 段约 72ms 的长任务，页面里连一个独立的 requestAnimationFrame 循环都只能跑到
+  // 13.6 次/秒，画面、触摸手柄、按钮、暂停全部跟着掉到 13 次/秒，手机上（CPU 慢几倍）
+  // 只会更糟。
+  //
+  // 改成半个 60Hz 帧（8ms）后，同一条线程上的动画帧产出实测 13.6 → 60 次/秒、长任务
+  // 消失；出帧率：正义化身－忍者神龟传 3.4 → 11.5fps（4 倍 CPU 降频下 3.2 → 10.9），
+  // 恐龙快打 4 倍降频下 12.5 → 13.3fps；轻游戏没有任何变化（蹦球传说 58.8 → 58.6、
+  // 仙剑奇侠传 54.4 → 54.2，页面帧产出都还在 60）。恐龙快打 1 倍下仍是 13.3fps ——
+  // 它自己就按约 75ms 一帧的节奏跑，与窗口无关。
+  //
+  // 为什么是半个帧而不是一个帧（16ms）：16ms 下同样量到页面帧产出只有 50~53 次/秒
+  // （边界间隔被拖到约 20ms），出帧率也略低（忍者神龟传 1 倍 10.6、4 倍 10.2，恐龙快打
+  // 4 倍 13.1）；再降到一个帧的八分之一（4ms）则没有额外收益（忍者神龟传 4 倍 11.0、
+  // 恐龙快打 4 倍 13.2），只多出调度次数。虚拟机拿到的 CPU 总量不变（依旧 ~99%）。
+  {
+    label: 'bld/j2me.js: an execution window is half an animation frame',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (half-frame execution window):'),
+    anchor: '    var MAX_WINDOW_EXECUTION_TIME = 80;',
+    replacement: `    // Site patch (half-frame execution window): 执行窗口 = 半个 60Hz 的帧。
+    // 一次窗口边界还要等当前那段 Java 执行返回并排上下一个任务，实际节奏约是窗口的
+    // 1.3 倍，所以 80ms 的窗口只留给整页每秒约 13 次执行机会（实测 12000ms 里 11826ms
+    // 在跑虚拟机，159 段约 72ms 的长任务），而 16ms 又只到 50~53 次/秒；8ms 下动画帧
+    // 产出 13.6 → 60 次/秒、长任务消失、忍者神龟传 3.4 → 11.5fps，虚拟机拿到的 CPU 总量
+    // 不变（依旧 ~99%）。再小到 4ms 没有额外收益。
+    var MAX_WINDOW_EXECUTION_TIME = 8;`,
+  },
+  // 「恐龙快打」里被打倒的敌人与主角，只要贴图有一部分移出画面**左**边（游戏会把裁剪区
+  // 设成一个负的 x），屏幕上就会出现一条与精灵同高的精灵表碎片 —— 看上去像那张贴图
+  // 「错乱」。原因是这份实现的 Graphics.setClip() 给四个边界各套了一个 `& 32767`：对
+  // 非负值是恒等运算，对负值却是 `v & 32767 = 32768 + v`，于是一块完全落在画布外的矩形
+  // （右/下边界为负）变成一个宽三万多像素的裁剪区 —— 裁剪不但没起作用，还比画布大得多。
+  // 游戏正是靠「先 setClip 到精灵矩形、再把整张精灵表按变换贴上去，让要用的那块源图
+  // 落进裁剪区」来画精灵的（见补丁 25），裁剪一失效，落进画面的就是精灵表里另一段内容：
+  // 一条与精灵同高的横带，位置由整张表贴上去时的偏移决定，有时压在角色身上、有时铺在
+  // 路面上（会出现在画面任意位置，玩家看到的就是「倒地的人贴图错乱」）。完全落在画面外
+  // 的精灵本该什么都不画。这里把四条边各自夹进 [min, max]（即与目标画布求交），空交集
+  // 照旧被下面的判断折叠成空裁剪区。
+  {
+    label: 'main-all.js: a clip outside the target stays outside',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('Math.min(Math.max(minX, newX2), maxX)'),
+    anchor: `    newX1 = Math.max(minX, newX1) & 32767;
+    newY1 = Math.max(minY, newY1) & 32767;
+    newX2 = Math.min(maxX, newX2) & 32767;
+    newY2 = Math.min(maxY, newY2) & 32767;`,
+    replacement: `    // Site patch (clip outside the target): 这里原来把四个边界各与 32767 按位与，而这个
+    // 掩码只有在值为负时才不是恒等运算 —— 一块完全落在画布外（右侧或下侧边界为负）的
+    // 裁剪区因此变成一个巨大的裁剪区，游戏「先按精灵矩形设裁剪区、再把整张精灵表贴上去」
+    // 的画法就失去了裁剪：屏幕上会出现一条横贯画面的精灵表碎片。详情见
+    // frontend/scripts/apply-j2me-patches.mjs 与 j2me-integration.md。
+    newX1 = Math.min(Math.max(minX, newX1), maxX);
+    newY1 = Math.min(Math.max(minY, newY1), maxY);
+    newX2 = Math.min(Math.max(minX, newX2), maxX);
+    newY2 = Math.min(Math.max(minY, newY2), maxY);`,
+  },
+  {
+    // fork 自己的 ReplaceMethod 表（「这里实现替换java中的方法」）只在 JS 调用进来时被查过：
+    // getLinkedMethod（编译代码或原生方法调一个 Java 方法）与
+    // findNativeMethodImplementation。MIDlet 从自己的字节码里 invokestatic 一个类库方法
+    // 时，解释器把字节码解释到底，一次也不查这张表 —— 站点在 bridge.js 里用它做的 shim
+    // 因此全部不生效（三星时代的 MIDlet 问 com.samsung.util.AudioClip.isSupported()，
+    // 内置类库那份空实现写死答 false，于是「冒险小子」在关卡里按确定键时读到一张从未分配
+    // 的关卡常量表，空指针杀掉整个线程、画面定在最后一帧）。
+    //
+    // 挂在方法解析上：常量池把解析结果缓存进 cp.resolved[]，所以每个方法引用只多一次查表，
+    // 解释路径与编译路径都能拿到替换后的 fn。
+    label: 'bld/j2me.js: ReplaceMethod also reaches methods a MIDlet calls from its own bytecode',
+    file: 'bld/j2me.js',
+    applied: (text) => text.includes('// Site patch (method replacement):'),
+    anchor: `                    var method = c.getMethodByIndex(i);
+                    // if(ReplaceMethod)
+                    // {
+                    //     var methodInfo=method;
+                    //     //这里实现替换java中的方法
+                    //     var methodjs=ReplaceMethod[methodInfo.implKey];
+                    //     if(methodjs)
+                    //     {
+                    //         console.log(methodInfo.implKey,"replaced!"); 
+                    //         method.fn = methodjs;
+                    //         method.state=1;
+                    //         return method;
+                    //     }   
+                    // } 
+                    return method;`,
+    replacement: `                    var method = c.getMethodByIndex(i);
+                    // Site patch (method replacement): 下面这几行原本是 fork 作者注释掉的
+                    // 原意（「这里实现替换java中的方法」）。三个挂点里只有
+                    // getLinkedMethod / findNativeMethodImplementation 生效，而 MIDlet 自己
+                    // 的字节码调用类库方法时走的正是这里 —— 解析一次就把替换后的 fn 装上，
+                    // 常量池会把结果缓存下来。
+                    var replacement = ReplaceMethod && ReplaceMethod[method.implKey];
+                    if (replacement) {
+                        method.fn = replacement;
+                        method.state = 1 /* Compiled */;
+                        J2ME.linkedMethods[method.id] = replacement;
+                        return method;
+                    }
+                    return method;`,
+  },
+  // 试过、但没有留下来的一条：让 Thread.yield() 在没有别的可运行线程、执行窗口也还没
+  // 用完时直接返回。它确实把每秒 29.4 万次（恐龙快打实测，见 j2me-integration.md 的
+  // 「线程让出与执行窗口」）的「展开整个 Java 栈 + 调度器重排 + 重入解释器」换成了一次
+  // 判断，解释器吞吐也跟着涨了 3~4 倍（按抢占检查次数估算：恐龙快打 123 → 454 次/秒，
+  // 忍者神龟传 139 → 520 次/秒），但**画面一帧也没多**：这些 MIDlet 的等待循环是
+  // `while (现在 < 截止时刻) Thread.yield();`，省下来的 CPU 全被它自己转手烧回了空转里，
+  // 帧率在 1 倍、4 倍、8 倍 CPU 降频下都与只改窗口时完全一致（恐龙快打 13.3/12.5/12.7，
+  // 忍者神龟传 10.6/9.6/8.5）。而代价是实实在在的：每次调用多一次 performance.now()，
+  // profile 里 canSkipYield 自己就占了 28% 的样本，还改了 Thread.yield 的语义（等待别的
+  // 线程或事件循环的场景要多等一个窗口）。没有收益就不留。
 ]
 
 let failed = false

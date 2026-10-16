@@ -3638,6 +3638,14 @@ var J2ME;
                 //console.log('interpret '+v)
             }
             catch(err){
+                // Site patch (nested interpreter exceptions): exceptionUnwind 走到这层
+                // ExitInterpreter 标记时，展开的只是这次嵌套运行压进来的帧，调用者
+                // （编译方法的 try/catch，或外层解释器循环的 catch → exceptionUnwind）
+                // 还在那里，处理器也在它自己的异常表里。带 classInfo 的就是这种 Java
+                // 异常，照原样往上传；其余是运行时自己的 JS 错误，维持原样记一条日志。
+                if (err && err.classInfo) {
+                    throw err;
+                }
                 console.log('interpret error:',err);
                 return v;
             } 
@@ -8814,19 +8822,18 @@ var J2ME;
                 var i = c.indexOfMethod(utf8Name, utf8Signature);
                 if (i >= 0) {
                     var method = c.getMethodByIndex(i);
-                    // if(ReplaceMethod)
-                    // {
-                    //     var methodInfo=method;
-                    //     //这里实现替换java中的方法
-                    //     var methodjs=ReplaceMethod[methodInfo.implKey];
-                    //     if(methodjs)
-                    //     {
-                    //         console.log(methodInfo.implKey,"replaced!"); 
-                    //         method.fn = methodjs;
-                    //         method.state=1;
-                    //         return method;
-                    //     }   
-                    // } 
+                    // Site patch (method replacement): 下面这几行原本是 fork 作者注释掉的
+                    // 原意（「这里实现替换java中的方法」）。三个挂点里只有
+                    // getLinkedMethod / findNativeMethodImplementation 生效，而 MIDlet 自己
+                    // 的字节码调用类库方法时走的正是这里 —— 解析一次就把替换后的 fn 装上，
+                    // 常量池会把结果缓存下来。
+                    var replacement = ReplaceMethod && ReplaceMethod[method.implKey];
+                    if (replacement) {
+                        method.fn = replacement;
+                        method.state = 1 /* Compiled */;
+                        J2ME.linkedMethods[method.id] = replacement;
+                        return method;
+                    }
                     return method;
                 }
                 c = c.superClass;
@@ -10401,7 +10408,13 @@ var J2ME;
      * have 20ms to get an event, start processing it, and render an update.
      * @const
      */
-    var MAX_WINDOW_EXECUTION_TIME = 80;
+    // Site patch (half-frame execution window): 执行窗口 = 半个 60Hz 的帧。
+    // 一次窗口边界还要等当前那段 Java 执行返回并排上下一个任务，实际节奏约是窗口的
+    // 1.3 倍，所以 80ms 的窗口只留给整页每秒约 13 次执行机会（实测 12000ms 里 11826ms
+    // 在跑虚拟机，159 段约 72ms 的长任务），而 16ms 又只到 50~53 次/秒；8ms 下动画帧
+    // 产出 13.6 → 60 次/秒、长任务消失、忍者神龟传 3.4 → 11.5fps，虚拟机拿到的 CPU 总量
+    // 不变（依旧 ~99%）。再小到 4ms 没有额外收益。
+    var MAX_WINDOW_EXECUTION_TIME = 8;
     /**
      * Number of ms between preemption checks, chosen arbitrarily.
      * @const

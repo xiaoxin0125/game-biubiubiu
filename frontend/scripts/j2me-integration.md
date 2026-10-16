@@ -96,6 +96,29 @@ node frontend/scripts/apply-j2me-patches.mjs
 23. `bld/j2me.js` —— 既不是 `TypeError`、也不是 fork 的 `JavaRuntimeException`
     的 JavaScript 错误，会变成携带其名字与消息的 Java 异常，而不是以一个没有
     `_address` 的对象身份进入编译代码。
+24. `bld/main-all.js` —— `Graphics.drawArc` / `fillArc` 按 MIDP 画弧：椭圆在包围盒
+    正中（而不是左上角），扇形从圆心张开，扫过的方向也按 MIDP 的角度约定
+    （见下面「圆弧画在包围盒的左上角」）。
+25. `bld/main-all.js` —— Nokia 的 `DirectGraphics.drawImage` 认它的 `manipulation`
+    参数（旋转与翻转），不再一律按 `TRANS_NONE` 画（见下面「朝右的精灵散成一堆部件」）。
+26. `main.html` —— 内置触摸板上的内联事件处理器被删掉。这条 CSP 没有
+    `'unsafe-inline'`，浏览器会拒绝执行内联处理器、每次在这块板上拉起选区都往
+    控制台写一条 `Executing inline event handler violates …`；同样的行为由
+    `bridge.js` 用 `addEventListener` 挂回去（见下面「控制台输出」）。
+27. `bld/j2me.js` —— 展开到嵌套解释器运行的 Java 异常（解释器每个被编译方法或原生
+    方法调进来的入口都会压一个 `ExitInterpreter` 标记）继续交给上面的调用者，而不是
+    被吞掉后当成一次正常返回（见下面「嵌套运行里被吞掉的异常」）。
+28. `bld/j2me.js` —— 一次执行窗口是半个 60Hz 的帧（8ms），不再是上游的 80ms。
+    播放页显示的是从运行时页面镜像过来的画布，镜像、触摸手柄与按钮都在同一条主
+    线程上，80ms 的窗口让整页每秒只拿得到约 13 次执行机会、16ms 也只到 50~53 次
+    （见下面「整页每秒只有 13 次执行机会」）。
+29. `bld/main-all.js` —— 完全落在画布外（边界为负）的裁剪区不再被 `& 32767` 折算成
+    一个巨大的裁剪区：先按精灵矩形设裁剪区、再把整张精灵表贴上去的画法因此重新受到
+    裁剪（恐龙快打被击倒的角色曾画成一条横贯画面的精灵表碎片）。
+30. `bld/j2me.js` —— fork 自己的 `ReplaceMethod` 表终于能作用到 MIDlet 从自己字节码里
+    发出的调用（原来只有 JS 调用进来时才会查它）；`bridge.js` 就是靠它把三星的
+    `com.samsung.util.AudioClip.isSupported()` 换成答 true（见下面「关卡里按确定键就
+    卡死」）。
 
 ## 控制台输出
 
@@ -125,6 +148,26 @@ J2ME_TEST_CHROME=/path/to/chrome node tests/j2me-real-game.mjs /path/game.jar /t
 
 页面必须叫 `main.html`：运行时靠 URL 里的这个名字决定自己工作在 "index" 还是
 "player" 模式。
+
+内联事件处理器在这个站点上没有生存空间：应用服务端给出的 `script-src` 是
+`'self' blob: 'unsafe-eval' 'wasm-unsafe-eval'`，既没有 `'unsafe-inline'`，也没有
+`'unsafe-hashes'` —— 浏览器会拒绝执行 `on*=` 这类属性里的代码，并在每次要执行它时
+往控制台写一条
+
+```
+Executing inline event handler violates the following Content Security Policy
+directive 'script-src 'self' blob: 'unsafe-eval' 'wasm-unsafe-eval''. Either the
+'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required
+to enable inline execution. ...
+```
+
+上游 `main.html` 的触摸板上原本写着 `onselectstart='return false'`（旁边那句
+`οnselect='document.selection.empty()'` 的名字里 "o" 是希腊字母，从来就不是事件
+处理器），于是在这块板上拉起选区时，浏览器一边拒绝执行、一边留下上面这条报错。
+补丁 26 把属性删掉，行为改由 `bridge.js` 的
+`addEventListener('selectstart', …preventDefault)` 承担。2026-10-16 用同一段 CSP
+头 + 同一段标记在 Chromium 上复现过：属性躺在标记里不报错，报错发生在处理器第一次
+被编译时（也就是事件真的派发到那个元素时），所以症状是「碰到那块板才刷一条」。
 
 ## MIDP 高级界面（lcdui.js）
 
@@ -247,6 +290,108 @@ user-agent 判断。
 能处理的异常变成了又一行红色。三个补丁之后同样的运行：没有 error，运行时也没有
 warning，游戏一路玩过它的加载界面和各关卡。
 
+### 嵌套运行里被吞掉的异常（2026-10-16 修复）
+
+「冒险小子」（AdventureBoy，HandyGames 出品的《Adventure in Loom Land》，
+`ABGame`，2026-10-16 收录）启动时停在发行商的商标画面上，控制台最后的几行是：
+
+```
+debug error occurs at : java/io/IOException detailMessage: logo1.png not found
+debug Java exception left the interpreter: java/io/IOException
+log   interpret error: constructor
+...
+Uncaught Java exception: java/lang/NullPointerException, detailMessage: image is null
+Thread terminated by java/lang/NullPointerException: image is null
+```
+
+游戏自己是接得住那条 IOException 的。它在 `ABGame.V()` 里把商标图装进
+`Image[5]`：先取 `tmt.png`，再按 `"logo" + i + ".png"` 一张张往下试，整段循环包在
+`catch (Exception)` 里，第一张取不到就把这个 catch 当循环出口。而这个 ROM 里只有
+`logo0.png`（`logo1` 到 `logo4` 是发行商那些不随包发布的版本），真机上游戏就是靠这个
+catch 停下来的。
+
+这里的运行方式不一样：`Image.createImage(String)` 那条链（`ImageDataFactory` →
+`Class.getResourceAsStream` → `ResourceInputStream`）是「原生方法再调进解释器」，
+也就是一次**嵌套**的解释器运行。异常在这层展开时，`Thread.exceptionUnwind` 走完它
+自己压进来的帧，撞上 `fastInterpreterFrameAdapter` 压的 `ExitInterpreter` 标记 ——
+标记下面还有 `V()` 的帧，`V()` 的异常表里就有那个 `catch (Exception)` —— 但它按
+「上面是编译帧、编译帧自己有处理器」的约定把异常往 JS 那一侧扔。扔出去正好落进
+上游那条 `catch (err) { console.log('interpret error:', err); return v; }`：它把
+Java 异常和运行时自己的 JS 错误一起吞掉，返回 0 假装调用成功。
+
+于是 `catch` 处理器一次也没跑：循环拿到一个 null 继续装下一张商标图，四张全试完，
+最后拿那张空图去画的时候，`Graphics.drawImage` 的 null 检查抛出
+`NullPointerException: image is null`，整个 MIDlet 线程就此结束 —— 画面停在商标上。
+
+这和「异常墙」是同一处错误的两半：补丁 15 修的是**解释器循环**里的吞异常，这一处是
+`fastInterpreterFrameAdapter`（每个「编译方法 / 原生方法调进解释器」的入口）里的
+同一条。补丁 27 让带 `classInfo` 的异常照原样往上传：调用者是编译方法时，它自己的
+`try/catch` 按异常表处理或再抛；调用者是解释器循环时，循环的 catch 会把它交给
+`exceptionUnwind` 继续找外面的处理器。运行时的 JS 错误维持原样记一条日志。
+
+补丁之后同一个 ROM：日志里只剩一条 `logo1.png not found`（第一张缺失的图就停下来了，
+这正是 ROM 里 `logo0.png` 之下没有别的原因），启动 1.0 秒到国旗选择，确定键进标题与
+排行榜，方向键与确定键能正常玩。同一批对照 ROM（蹦球传说、恐龙快打、功夫西游、
+Forgotten Warrior、Lode Runner、Diamond Rush）启动与操作都不变。
+
+### 关卡里按一下确定键就卡死：三星音频探针答 false（2026-10-16 修复）
+
+上一节让「冒险小子」能进游戏了，但玩着玩着画面会突然定住，控制台只剩两行（截图里就是这两行）：
+
+```
+Uncaught Java exception: java/lang/NullPointerException
+Thread terminated by java/lang/NullPointerException
+```
+
+复现很稳：一路按确定键玩到关卡里，再按一下确定键必现。用探针取到异常展开时的 Java 栈：
+
+```
+[I]ABGame.M.()V@334 op=46(IALOAD)      <- 读 c[4] / c[2]
+[I]ABGame.d.(I)V@207
+[I]ABGame.c.(II)V@57
+[I]ABGame.b.(II)V@65
+[I]c.run.()V@11
+```
+
+`IALOAD` 的数组是 `ABGame.c`：一张 7 个 int 的关卡常量表（每关的音乐与资源 id）。
+它只在 `ABGame.x()` 里分配，而且带着条件 —— `if (i) { c = new int[7]; … }`。`i` 来自
+游戏的设置初始化 `ABGame.i()`：`i = b.a()`，而 `b.a()` 就是
+`com.samsung.util.AudioClip.isSupported()`。真机上这个类由三星（以及当年大量国产手机）
+的类库提供并答 true，于是表被分配、音效走 AudioClip；本站内置类库带的那份 `AudioClip`
+是完整的 Java 空实现（构造与 play/stop/pause/resume 都不做事），只有 `isSupported()`
+写死 `iconst_0`（false）—— 表于是从未分配，而 `ABGame.M()` 与 `ABGame.c(int)` 的关卡音乐
+分支照样会去读它，一读就是空指针：MIDlet 线程结束，画面定在最后一帧。
+
+两处一起改：
+
+* `bridge.js` 用 fork 自己的 `ReplaceMethod` 表把
+  `com/samsung/util/AudioClip.isSupported.()Z` 换成答 true。本运行时里 AudioClip 的每个
+  调用本来就是安全空操作，与站点对其它「在这里是空操作」的 MIDP 内部实现的做法一致。
+* 补丁 30 让这张表也能作用到 MIDlet 自己字节码里的调用：原来只有
+  `getLinkedMethod` / `findNativeMethodImplementation` 这两条 JS 调用路径会查它，而
+  解释器解释 MIDlet 的 `invokestatic` 时一次也不查 —— 作者在 `getMethodByName` 里留的
+  注释代码（`//这里实现替换java中的方法`）正是这个挂点。补丁 30 在方法解析时套一次替换，
+  常量池把结果缓存进 `cp.resolved[]`，每个引用只多一次查表。
+
+验证：同样按 22 次确定键，帧帧都在变、控制台 0 条 error/warning；按随机键玩 80 秒
+（239 次采样、219 张不同的画面）不再出现空指针。同类 ROM（蹦球传说、快打旋风、
+Forgotten Warrior、Lode Runner、Diamond Rush）启动与操作不变 —— 其中 Forgotten Warrior
+也引用 `AudioClip`，但它从不问 `isSupported()`，行为不受影响。
+
+**类库档位**：`java/classes2.jar`（enginemode2，MIDP 2.0 那一档）里根本没有
+`com/samsung/util/AudioClip`，这个 ROM 换到那一档会在 `ABGame.i()` 里抛
+`ClassNotFoundException`、停在空白画面 —— 三星类库本来就是这一档刻意不带的东西，
+这类 ROM 要用默认的兼容库（enginemode1-classesold.jar，也是播放页的默认选项）。
+
+**同一处卡死为什么在线上又活了一天**（2026-10-16）：这一节的两处改动落在
+`frontend/public/j2me/` 里，而访客执行的是 `frontend/dist` 里那份构建时复制过去的
+副本。当时 dist 是补丁之前构建的，于是「已经修好」的补丁一行都没上线：同一个 ROM
+在线上进入关卡后按确定键照旧空指针卡死，控制台版本号还是旧的那一个
+（`?v=ddf7625e334e`）。重新构建（版本号换成新的）之后问题消失。这类「源码修好、
+线上照旧」的错位现在由 `tests/j2me-runtime-patches.test.js` 最后一条用例挡住：dist
+存在时逐个文件比对 `frontend/public/j2me` 与 `frontend/dist/j2me`（`main.html` 的
+`?v=` 版本号先抹掉），不一致就报出是哪几个文件，提示重新构建。
+
 ### 一个忙碌的 Java 线程饿死事件循环（2026-10-16 修复）
 
 「功夫西游 - 乱舞唐僧」（`com.sinaflying.engine.GameMIDlet`，817 KB，
@@ -303,6 +448,79 @@ JavaScript 栈为空时运行 —— 这正是那个原生实现挂起调用线�
 反而会损坏 VM），以及把它当成存档 bug。它也不是 `System.gc` 专有：绘制路径上
 任何异步原生实现都会以同样的方式死锁，而这个游戏在 `System.gc` 之后就直接走进了
 `ImageDataFactory.createImmutableImageData`（经浏览器做图片解码），症状一模一样。
+
+### 整页每秒只有 13 次执行机会（2026-10-16 修复）
+
+玩家反馈「J2ME 游戏卡得厉害」。用播放页真正走的那条路径（`prepareJ2me` → iframe →
+镜像画布 → 播放器 canvas）在无头 Chromium 里量了七个 ROM 之后，问题分成两半：
+游戏自己的出帧率，和整页还能不能画。
+
+运行时把整个 Java VM 跑在播放页的主线程上，一次最多霸占它
+`MAX_WINDOW_EXECUTION_TIME`（上游 80 ms）。而播放页显示的那张画布，是用一个 16 ms
+的 `setTimeout` 循环从运行时页面的 canvas 镜像过来的 —— 这条循环也在同一条主线程
+上，于是窗口的长度就是「整页每秒能画几次」的上界；而一次窗口边界还要等当前那段
+Java 执行返回、再排上下一个任务，实际节奏约是窗口的 1.3 倍。80 ms 于是只留给整页
+每秒约 13 次执行机会，吃满 CPU 的 ROM 实测正是如此：
+
+| ROM | VM 出帧 | 页面帧产出（页面里独立的 rAF 循环） | 主线程 |
+| --- | --- | --- | --- |
+| 恐龙快打 | 13.3 fps（帧间隔中位数 75 ms） | 13.6 fps | 12000 ms 里 11826 ms 在跑任务 |
+| 正义化身－忍者神龟传 | 3.4 fps | 11.1 fps | 98%（159 段约 72 ms 的「长任务」） |
+| 蹦球传说 | 58.8 fps | 59.5 fps | 18% |
+
+第三行是判据：轻游戏在同一个窗口下一切正常，所以既不是镜像慢、也不是 rAF 被浏览器
+压制，而是**窗口太长**。同一个 ROM 里那个与游戏无关的 rAF 循环只能跑到 13.6 次/秒，
+这一点最能说明「不是游戏慢，是整页拿不到帧」。
+
+把窗口改成半个 60Hz 的帧（8 ms）之后：
+
+| ROM | VM 出帧 1× | VM 出帧 4× 降频 | 页面帧产出 1× | 页面帧产出 4× |
+| --- | --- | --- | --- | --- |
+| 恐龙快打 | 13.3 → 13.3 | 12.5 → 13.3 | 13.6 → 60.0 | 12.9 → 59.0 |
+| 正义化身－忍者神龟传 | 3.4 → 11.5 | 3.2 → 10.9 | 11.1 → 59.8 | 10.8 → 59.0 |
+| 蹦球传说 | 58.8 → 58.6 | — | 59.5 → 59.6 | — |
+| 仙剑奇侠传 | 54.4 → 54.2 | — | 60.1 → 60.0 | — |
+
+恐龙快打仍是 13.3 fps：它自己就按约 75 ms 一帧的节奏跑（窗口改成 4 ms 也一样），
+与窗口无关 —— 它变的是整页的帧产出（13.6 → 60）。忍者神龟传不一样：它的 `paint()`
+走 `DisplayDevice.refresh0`，那个原生实现用 `requestAnimationFrame` 挂起绘制线程，
+rAF 被 80 ms 的窗口饿着，出帧率于是被压到 3.4 fps；窗口短了以后回到 11.5 fps。
+CPU 总占用不变（依旧 ~99%），变的只是 VM 把执行权还回去的次数：每秒约 13 次 →
+约 120 次。
+
+为什么是半个帧而不是一个帧（16 ms）：16 ms 下同样量到页面帧产出只有 50~53 次/秒
+（边界间隔被拖到约 20 ms），出帧率也略低（忍者神龟传 1× 10.6、4× 10.2，恐龙快打
+4× 13.1）。再降到一个帧的八分之一（4 ms）没有额外收益（忍者神龟传 4× 11.0、恐龙
+快打 4× 13.2），只多出调度次数。
+
+#### 试过、但没有留下来的：让 `Thread.yield()` 变便宜
+
+先量到的其实是另一半。这些 MIDlet 的等待循环写成
+`while (System.currentTimeMillis() < 截止时刻) Thread.yield();`，而在这个运行时里
+一次 `Thread.yield()` 走的是完整重路径：`beginUnwind` / `nativeBailout`
+（`getUnwindMethodInfo` 加造一个 bailout 帧）→ 抛过解释器 → `endUnwind` +
+`pushPendingNativeFrames` → `Scheduler.enqueue`（unshift + sort +
+`updateMinVirtualRuntime`）→ 由 `run()` 重新 `execute()` 并重入解释器。恐龙快打实测
+每秒调用 29.4 万次（`J2ME.unwindCount` 每秒 +33~38 万），CPU profile 里这条路径占了
+主线程 45% 的时间，而真正解释字节码只占 18%。
+
+于是试了一版「没有别的可运行线程、执行窗口也还没用完时直接返回」的 `Thread.yield()`
+（判据是 `runningQueue.length === 0` 且 `performance.now() - windowStartTime <
+MAX_WINDOW_EXECUTION_TIME`；窗口到期照旧走真 yield，所以「事件循环最长被挡多久」的
+保证不变，在编译方法里同样成立 —— `shouldPreempt` 只覆盖解释器）。它确实省掉了那些
+展开：解释器吞吐按抢占检查次数估算涨了 3~4 倍（恐龙快打 123 → 454 次/秒，忍者神龟传
+139 → 520 次/秒），但**画面一帧也没多** —— 等待循环会把省下来的 CPU 原样烧回空转里，
+两种实现的帧率在 1 倍、4 倍、8 倍 CPU 降频下完全一致（恐龙快打 13.3/12.5/12.7 对
+13.3/12.6/12.6，忍者神龟传 10.6/9.6/8.5 对 10.6/10.0/8.7），页面帧产出也一样。
+代价却是实实在在的：每次调用多一次 `performance.now()`，profile 里 `canSkipYield`
+自己就占了 28% 的样本；它还改了 `Thread.yield` 的语义（等别的线程或事件循环的代码
+要多等一个窗口）。没有收益就不留：补丁清单里没有这一条，`Thread.yield` 保持上游
+写法（`tests/j2me-runtime-patches.test.js` 里有断言守住）。
+
+真正解决问题的是窗口本身：窗口短了，解释器的抢占检查（补丁 20）与 `refresh0` 的 rAF
+都能按时排上，页面和游戏不再互相饿着。量这些用的探针在 `/tmp/j2me-perf/`：
+`probe4.mjs` 量 VM 出帧、页面帧产出与主线程占用（`CPU_THROTTLE=<倍数>` 用
+`Emulation.setCPUThrottlingRate` 模拟手机 CPU），`probe8.mjs` 按原因统计线程让出。
 
 ### 拼错的编码类名（2026-10-16 修复）
 
@@ -389,6 +607,187 @@ fork 的 `JavaRuntimeException`，于是这个 `DOMException` 原样穿过 —�
 持续变化且 `Exception caught in Display` 永不出现。补丁 22 之前，那次运行按了
 约 20 次键到达剧情后画面就不再变化，日志里留下一个 `NullPointerException`；
 之后，同样的运行越过了那个场景继续推进。
+
+### 圆弧画在包围盒的左上角（2026-10-16 修复）
+
+「蹦球传说」的主角球画成了一个红白相间的怪块：一个红色圆盘，加一块偏向右下、
+半透明的白色球体。球本身是游戏自己算出来的 42×42 像素块，用
+`Graphics.drawRGB` 贴上去，球面高光则是一串 `fillArc`：
+
+```
+SITE-DRAW drawRGB len=1764 off=0 scan=42 d=97,203 42x42 alpha=1
+SITE-DRAW fillArc d=101,213 32x34 ang=90,90
+SITE-DRAW fillArc d=101,214 32x32 ang=180,90
+SITE-DRAW fillArc d=105,222 24x24 ang=0,90
+```
+
+两个圆弧 native 都把包围盒的**左上角**当成椭圆圆心交给了 `createEllipticalArc()`
+（它要的确实是圆心 —— `createRoundRect()` 就是按圆心调用的），`fillArc` 还把这个
+角当成了扇形的顶点（`c.moveTo(x, y)`）。于是每一片弧都向左上偏了半个包围盒，扇形
+还多出一块连到那个角的楔形：整颗球的高光被画成一坨压在球上的大白块，这也就是玩家
+看到的「主角球解析得不对」。
+
+补丁 24 修两件事：
+
+- **圆心与扇形顶点** —— 圆心取包围盒正中，扇形从圆心张开（`moveTo(cx, cy)` 加
+  `closePath()`），与真机一致。
+- **扫过的方向与整圆** —— MIDP 的角度以「0 = 3 点钟、逆时针为正」计，画布的角以
+  「0 = 3 点钟、顺时针为正」计（屏幕 y 轴向下），所以画布角 = -MIDP 角。上游把起止
+  角互换后一律按 `anticlockwise=false` 画：正角度（游戏里最常见的那种）刚好凑对，
+  负角度却会沿另一个方向绕 270 度。`|arcAngle| >= 360` 另按整圆处理，因为画布对
+  `start == end` 的圆弧什么都不画。
+
+验证用仓库里自带的探针（不需要任何商业 ROM，它自己现编一个只画圆弧的 MIDlet）：
+
+```bash
+J2ME_TEST_CHROME=/path/to/chrome node tests/j2me-arc-probe.mjs /tmp/arc-probe
+```
+
+15 格分别覆盖正角、负角、跨 0 度、整圆、空角与 `drawArc`；脚本把截图里每一格与
+「MIDP 规定的扇形」逐点比对 —— 半径 7 与 15 处按 5 度采样必须在扇形内、半径 25 处
+必须留白（贴着边界射线 1.6 像素以内的点会被抗锯齿混色，跳过）。补丁前 804 个采样点
+不符，补丁后 2319 个采样点全部通过。同一套探针下，「蹦球传说」的主角球也从这个怪块
+恢复成正常的红球加高光。
+
+### 朝右的精灵散成一堆部件（2026-10-16 修复）
+
+「恐龙快打」（Gameloft 的 J2ME 版，ROM id 174）的主角朝右时整个人是一堆错位的
+身体部件，朝左时完全正常；同一张精灵表里的小怪与道具也跟着坏。截图里的差别很干净
+—— 朝左的走路、出拳都对，朝右的每一帧都散架。
+
+游戏用的是 Nokia 的 `DirectGraphics.drawImage(img, x, y, anchor, manipulation)`
+（Nokia UI API 的图片变换入口），而这份实现把第 5 个参数整个丢掉、一律按
+`TRANS_NONE` 把整张图贴到 `(x, y)`：
+
+```
+Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/Image;IIII)V"] = function(addr, imageAddr, x, y, anchor,unknow) { … renderRegion(…, TRANS_NONE, x, y, anchor); };
+```
+
+游戏是照真机的行为算坐标的，两件事合在一起就出错了：它先把 MIDP 裁剪区设成
+「变换后的图该出现的那个矩形」，再把**整张**精灵表按变换贴上去，让要用的那块源图
+正好落进裁剪区（源区域在变换后的图里的偏移 = 图尺寸 - 源坐标 - 源尺寸）。变换被丢掉
+之后，落进裁剪区的是同一张表里另一块内容 —— 朝右的每一帧都由另一组精灵组成，于是
+画面变成一堆错位的部件；朝左的帧 `manipulation = 0`，走的本来就是对的路。
+
+补丁 25 把 Nokia 的 `manipulation` 折算成 MIDP 的 `TRANS_*` 码，绘制仍交给
+`renderRegion()`（`Graphics.drawRegion`、`Image.createImage(…, transform)` 走的都是
+这条路径）：
+
+```
+manipulation = 第 13 位（FLIP_HORIZONTAL 8192）| 第 14 位（FLIP_VERTICAL 16384）| 低位（90/180/270）
+```
+
+| 翻转 \ 旋转 | 0 | 90 | 180 | 270 |
+| --- | --- | --- | --- | --- |
+| 无 | TRANS_NONE | TRANS_ROT270 | TRANS_ROT180 | TRANS_ROT90 |
+| FLIP_HORIZONTAL | TRANS_MIRROR | TRANS_MIRROR_ROT90 | TRANS_MIRROR_ROT180 | TRANS_MIRROR_ROT270 |
+| FLIP_VERTICAL | TRANS_MIRROR_ROT180 | TRANS_MIRROR_ROT270 | TRANS_MIRROR | TRANS_MIRROR_ROT90 |
+| 两者 | TRANS_ROT180 | TRANS_ROT90 | TRANS_NONE | TRANS_ROT270 |
+
+这张表有一条统一的规则：**Nokia 先按给定角度逆时针旋转，再在旋转后的坐标系里翻转**
+（等价于 MIDP 的「先镜像、再顺时针旋转」）。它被两样东西印证：MicroEmulator 的 Nokia
+API 实现（`MANIPULATION2TRANSFORM`，J2ME-Loader 继承的那份）与本表逐项一致；FreeJ2ME
+对单独旋转/翻转的折算也一致（它把「翻转 + 旋转」换成两次图片变换的组合，方向与另一条
+规则相反 —— 按这个 ROM 的几何，本表才是对的，下面就是判定依据）。
+
+顺着这个 ROM 自身的几何还能定出**方向与顺序**：每种组合只有一个解能让源区域落进裁剪
+区，而游戏为每种组合算出的目标坐标正好就是这个要求 —— `8192 → TRANS_MIRROR`、
+`8192|90 → TRANS_MIRROR_ROT90`（而不是 `TRANS_MIRROR_ROT270`）、
+`8192|270 → TRANS_MIRROR_ROT270`、`90 → TRANS_ROT270`、`16384 → TRANS_MIRROR_ROT180`，
+表里每一项都对得上。反过来说，旋转方向或翻转顺序填错时源区域会落到裁剪区之外，画面上
+就是「什么都没画」。
+
+拆不出来的取值（旋转不是 90 的倍数、度数超过 270、翻转位之外的高位有值）按真机抛
+Java 的 `IllegalArgumentException`，而不是悄悄画成原图 —— 与 MicroEmulator 的做法
+一致，将来真遇到这种 ROM 时也会指明是哪个值。
+
+### 同一个补丁的坑：折算表必须写在 `TRANS_*` 之后
+
+这条补丁第一次上线时把表写在了 `Native[...] = function (...) {...}` 那里，也就是
+`var TRANS_NONE = 0; ... var TRANS_MIRROR_ROT90 = 7;` 这八行的**前面**。`var` 会提升但
+赋值不会：表字面量求值时那八个变量都还是 `undefined`，于是 `siteManipulationToTransform()`
+每次返回 `undefined`。`renderRegion()` 拿到不认识的变换就走不进第二个 `switch`，目标坐标
+`x` / `y` 保持 `undefined`，交给 `drawImage()` 就是 NaN —— 画了，但什么都没落在画布上。
+
+症状因此长得像「反向修坏」：朝左的帧（`manipulation = 0`，走 `Graphics.drawImage`）完好，
+朝右的帧（8192，走 Nokia 路径）整块消失，而不是错位。判定它的办法是**同一次会话里切换
+新旧行为**：给折算函数加一个开关，关掉时按 `TRANS_NONE` 画，打开时按折算表画。同一帧
+下前者能看见（散架的）主角、后者空空如也，说明问题就出在这条路径上；再用一个干净画布
+手工复现 `renderRegion` 的镜像（`scale(-1,1)` + 整图 `drawImage`）就能看到镜像本身没
+问题 —— 问题在折算结果。`tests/j2me-runtime-patches.test.js` 里现在有两道守卫：一条断言
+表出现在 `var TRANS_MIRROR_ROT90 = 7;` 之后，另一条按产物里的**真实顺序**求值这段代码
+（而不是把常量当参数注入）并检查四个基本取值都不是 `undefined`。
+
+验证：同一个 ROM 走生产适配层（`tests/j2me-real-game.mjs` 那套外置 ROM 探针，额外把
+运行时自己的 native 逐个包一层计数），按键推进到关卡。调用分布本身就点明了症状所在 ——
+朝右的每一帧都是 `8192`，朝左的帧是 `0`（加上零星几次 `90`/`180`/`8282`/`16384`，是别处
+的道具与特效）。补丁前主角与旁边的小怪散成一堆部件、剧情场景里也一样；补丁后朝右的
+走路、出拳与朝左的走路都正常，剧情场景里的主角与敌人也不再碎片化，控制台除了游戏自己
+那行被捕获的 `NullPointerException` 调试输出之外没有任何 error/warning，每帧的绘制调用数
+与补丁前完全一致（变换是画布自己的，没有多出一次拷贝）。
+
+顺带核对过本站其余 10 个 J2ME ROM：只有「恐龙快打」调用
+`com/nokia/mid/ui/DirectGraphics.drawImage`（其余用的是 `fillPolygon` /
+`drawPolygon` / `setARGBColor` / `DeviceControl`），所以这次改动的影响范围就是它。
+
+### 画在画面外的裁剪区变成一个巨大的裁剪区（2026-10-16 修复）
+
+「恐龙快打」里被打倒的敌人与主角，只要贴图有一部分移出画面左边，画面上就会多出一条与
+精灵同高的**精灵表碎片**：有时压在角色身上（看上去像那张贴图错乱），有时铺在路面上，
+位置由整张表贴上去时的偏移决定，横跨画面的左半部分（实测最远到 x ≈ 184，见下）。
+
+根因在 `GraphicsInfo.prototype.setClip()` 的四个 `& 32767`：
+
+```js
+    newX1 = Math.max(minX, newX1) & 32767;
+    newY1 = Math.max(minY, newY1) & 32767;
+    newX2 = Math.min(maxX, newX2) & 32767;
+    newY2 = Math.min(maxY, newY2) & 32767;
+```
+
+对非负值这个掩码是恒等运算；对负值它是 `v & 32767 = 32768 + v`。而
+`Math.min(maxX, newX2)` 只有在**请求的矩形完全落在画布左外侧**（右边界 `x + width < 0`）
+时才会是负数 —— 也就是说，唯一被这个掩码改动的输入，恰好是「与画布求交为空」的那一类
+请求。掩码把它变成 `32768 + 负数`，一个宽三万多像素的裁剪区，比 240x320 的画布大得多：
+裁剪不但没生效，还等于没有裁剪。
+
+游戏正是靠裁剪画精灵的：`n.a(Graphics, Image, int sx, int sy, int sw, int sh, int dx, int dy,
+int anchor, int transform)` 先把裁剪区设成精灵矩形 `(dx, dy, sw, sh)`，再把**整张精灵表**
+按变换贴到 `(dx - sx, dy - sy)`，让要用的那块源图正好落进裁剪区（这个 ROM 的角色精灵表
+是一张 200x171 的图，表里放着同一个角色的各种姿势，所以落进画面的碎片常常是一具
+**躺着的身体**——玩家看到的就是「倒地的敌人/主角贴图错乱」）。裁剪失效后，贴上去的整张
+表只要与画面相交就会画出来：碎片的高度就是那个精灵的高度（实测 4~32 像素，多数在
+`y ≈ 133~228`，也就是地面与影子那一带），位置取决于表的偏移。
+
+修法是把四条边各自夹进 `[min, max]`（即与目标画布求交），空交集照旧被下面那句判断折叠
+成 `[0, 0, 0, 0]`（空裁剪区，`applyGraphics()` 会把它变成画布上的空裁剪）：
+
+```js
+    newX1 = Math.min(Math.max(minX, newX1), maxX);
+    ...
+```
+
+这条改动**只**影响那些与画布求交为空的请求（见上：掩码只在右/下边界为负时生效），对
+画布内与部分越界的矩形结果完全一致，所以不可能画少任何内容。
+
+验证：本次调查用了一个外置探针（模式与 `tests/j2me-real-game.mjs` 相同：同一个 ROM
+走生产适配层、按键脚本推进到关卡），它在运行时页面里包一层 `CanvasRenderingContext2D`，记录
+每一次 `clip()` 与 `drawImage()` 的**设备坐标**与当前裁剪区，并在绘制前后对同一块区域取
+像素。判定标准不依赖任何外部参照：**真机上不会有比画布更大的裁剪区**，也不会在「与画布
+求交为空」的裁剪区下画出任何像素。
+
+- 补丁前（同一个 ROM，同一套按键脚本，60 秒）：`310` 次裁剪区大于画布，其中 `310` 次
+  真的画了东西，共改变 `34777` 个像素；按帧统计，最重的一帧改了 `15678` 个像素。
+- 补丁后：`0` 次。裁剪区请求的其余行为完全一致（同一时间窗内 `clipEmpty` 3560 → 3666，
+  出画面边界的 drawImage 14481 → 14271，绘制调用总量 37243 → 36776）。
+- 同一次会话里切换新旧行为的成对截图（把「被修正的裁剪区」下的那次绘制单独重放到画布
+  副本上，两次裁剪都取自同一帧的同一瞬间）：旧行为在画面左端画出一具多余的躺倒身体，
+  新行为那里什么都不画（差异 687 / 639 / 621 … 像素，逐对可查）。
+
+`tests/j2me-runtime-patches.test.js` 里有两道守卫：一条断言产物里的四行夹取写法在、四个
+`& 32767` 不在；另一条按产物里的**真实代码**求值 `setClip`，逐点核对「完全在画布外 →
+空裁剪区」「部分越界 → 裁到画布边」「画布内 → 原样保留」，并断言任何请求得到的裁剪区都
+落在画布之内（把补丁挪回旧写法时这两条都会红）。
 
 ### 更早的分配器证据
 
@@ -524,23 +923,27 @@ J2ME 没有 libretro 核心可下载，但启动一个游戏仍要拉约 4.4 MB 
   `player` 会被忽略，而 J2ME 是单人平台（见 `PLATFORM_SINGLE_PLAYER`），所以
   房间只给 P1 一个座位。
 
-| 应用按钮 | 手机键 | 键码 |
-| --- | --- | --- |
-| 上 / 下 / 左 / 右 | 方向键（导航键） | -1 / -2 / -3 / -4 |
-| x / a / y / b | 1 / 3 / 7 / 9 | 49 / 51 / 55 / 57 |
-| l2 | 5（确定） | 53 |
-| r2 | 0 | 48 |
-| l / r | * / # | 42 / 35 |
-| select / start | 左 / 右软键 | -6 / -7 |
+| 应用按钮 | 手机键 | 键码 | PC 键盘默认 |
+| --- | --- | --- | --- |
+| 上 / 下 / 左 / 右 | 方向键（导航键） | -1 / -2 / -3 / -4 | W / S / A / D |
+| x / a / y / b | 1 / 3 / 7 / 9 | 49 / 51 / 55 / 57 | 小键盘 1 / 3 / 7 / 9 |
+| l2 | 5（确定） | 53 | 小键盘 5 |
+| r2 | 0 | 48 | 小键盘 0 |
+| l / r | * / # | 42 / 35 | 小键盘 . / 小键盘回车 |
+| select / start | 左 / 右软键 | -6 / -7 | 回车 / 右 Shift |
 
 方向键发送的是 MIDP 的导航键码（`Canvas.KEY_UP/DOWN/LEFT/RIGHT`），这是带方向
 键的手机所上报的、也是键盘时代的 MIDlet 在 `keyPressed` 里用来比较的（下面的
 例子在同样的分支里同时检查 `-1`/`50` 与 `-2`/`56`，所以两种约定它都认）。面板
-键与肩键保持在手机键盘上，它们的标签就是 PC 键盘设置里显示的文字。触摸手柄上，
+键与肩键保持在手机键盘上，它们的标签就是 PC 键盘设置里显示的文字 —— 而默认
+键位把它们摆在数字小键盘上同样数字的那几颗键上（`keyboardProfiles.js` 的
+`J2ME_KEYBOARD`，与街机 / MD 的变体并列），0 旁边那颗 `.` 是 `*`、小键盘回车
+是 `#`，两块软键在主回车与右 Shift 上，十字留在 WASD。触摸手柄上，
 左手摇杆换成手机自己的**十字键**：四个不规则五边形（一条矩形臂加中心三角）拼成
 一个宽高相等的无缝十字，一个方向一块，没有中心按钮 —— 手机键盘的中心键
-（5 / MIDP FIRE，retropad 的 `l2`）已经在肩键那一行，写作「5 确定」。PC 键盘
-默认值与别处一致（那一行的键是 `7`）；没有绑定任何 J2ME 专有的东西。
+（5 / MIDP FIRE，retropad 的 `l2`）已经在肩键那一行，写作「5 确定」（PC 键盘上
+就是小键盘 5）。玩家自己改过键就整份保留，改过的键照旧经前端换算成上面这套运行
+期键位再送进适配层。
 
 只有从不看原始键码的 MIDlet 能区分这些约定：它们问 `getGameAction()` /
 `GameCanvas.getKeyStates()`，而这个构建产物的 `KeyConverter` 丢掉了 MIDP
@@ -575,17 +978,50 @@ frame 里，所以只有那个 frame 能碰它。
   （`RecordStoreFile.commitWrite`、`truncateFile`、`RecordStoreUtil.deleteFile`），
   并向播放器发 `j2me-rms-dirty`，防抖 800 ms。适配层再防抖一次（1.2 s），从
   frame 取一份快照，上传到 `/api/saves/:romId?slot=0` —— 也就是其它平台使用的
-  同一套按用户的存档存储。快照文本的 FNV-1a 摘要让没变过的树不必重复上传。
-  暂停、`exit()`、`pagehide` 与标签页隐藏都会冲刷待发的改动；卸载路径要求
-  `keepalive`，`exit()` 会在拆掉 frame 之前读取快照（限时 1.5 秒）。
+  同一套按用户的存档存储。暂停、`exit()`、`pagehide` 与标签页隐藏都会冲刷待发的
+  改动；卸载路径要求 `keepalive`，`exit()` 会在拆掉 frame 之前读取快照（限时 1.5 秒）。
+- **摘要只看记录内容。** 快照的 FNV-1a 摘要（`digest`）不包含任何时间戳：快照自己的
+  `at`、每个文件的 mtime，以及记录集文件头里偏移 24 起的「最后写入时间」（运行时写的
+  是 `System.currentTimeMillis()`，每次写入都变）都不参与。**开局恢复完成时，frame
+  把恢复进来的那一份的摘要一并报给播放器**（`j2me-rms-restored` 的 `digest`），播放器
+  当作「云端现在这一份」的基准。于是"游戏把同一份记录原样重写一遍"既不会上传，也不会
+  弹「已自动存档」—— 而这种事很常见：不少 MIDlet 进菜单、过场、初始化状态机时就会把
+  记录整体重写一遍（证据见下面「用探针验证过」）。
+  读失败 / 超时（`failed` / `timeout`）不报 `digest`：那种情况下本地与云端各是什么都
+  不知道，第一次改动照旧上传。摘要是 32 位 FNV-1a，只用来判断「和云端那一份是不是同
+  一份」，不做完整性校验。
 - **谁能用。** `useJ2meCloudSave.js` 只为已登录、非游客的玩家接上这套接口：
   单机会话与房主。游客与未登录玩家保持旧行为（记录随浏览器配置一起生灭）。每个
   用户对每个 ROM 有自己的存档；J2ME 的存/读按钮被隐藏，因为已经没有可按的东西
   —— 类库选择在开局对话框里（`J2meEngineDialog.vue`，三个引擎，按 ROM 记在
   `localStorage`）。
 
-用探针验证过（`/tmp/lcdui-probe/rms-probe.mjs`，MIDlet 在
-`RmsProbeMidlet.java`）并走真实适配层：没有云存档的全新配置启动时是空的，MIDlet
+用探针验证过（`tests/j2me-rms-probe.mjs`，可选、不进 `npm test`）：它复制一份运行时、
+往那份 `rms.js` 里塞一个把当前 Java 调用栈一起报上来的钩子，再用假的云存档接口驱动真实
+适配层，所以每次写入都能看到是游戏自己的哪条路径干的：
+
+```bash
+J2ME_TEST_CHROME=/path/to/chrome node tests/j2me-rms-probe.mjs /path/game.jar /tmp/evidence
+# 可选：J2ME_PROBE_SAVE=<快照文件>（模拟已有云存档）、J2ME_PROBE_KEYS=<按键序列>、
+#       J2ME_PROBE_IDLE_MS=<按第一个键之前静置多久>
+```
+
+以「刺客骨肉分离」（ROM 205）为例，恢复用户自己的云存档后静置 18 秒、**不按任何键**：
+游戏自己写了 8 次，栈是
+
+```
+h.a(I[B)V <- k.c(I)V <- k.c()V <- k.a()V <- k.b()V <- GameMIDlet.run()V
+```
+
+（`RmsProbeMidlet` 那种"只有一个探针 MIDlet"的用例不会出现写入；这条栈里没有一行是站点
+的代码），而 `uploads` 里只有开局那次读取 —— 那 8 次只是把同一份记录原样重写一遍
+（存储文件与恢复进去的云存档逐字节只差文件头里的写入时间）。归一化之前，这种空改动每次
+都会传一份新快照并弹一次「已自动存档」，玩家看到的就是「一进菜单就替我存了一次档」。
+把 `J2ME_PROBE_SAVE` 去掉（云端为空）再跑：同一次重写会上传 247 字节，正是「内容真的
+变了才传」的另一半。
+
+MIDlet 侧的读写接线用探针（`/tmp/lcdui-probe/rms-probe.mjs`，MIDlet 在
+`RmsProbeMidlet.java`）验证过并走真实适配层：没有云存档的全新配置启动时是空的，MIDlet
 写入一条记录，随后在没有任何按键的情况下到达两次上传（记录 + 之后的 `tick`）；
 另一个只持有那份已上传快照的浏览器配置启动时是 `restore: loaded`，MIDlet 在 VM
 启动前读回 `v1` —— 在 `enginemode2-classes2.jar` 下也一样，此时 frame 真的去取
@@ -621,7 +1057,9 @@ frame 里，所以只有那个 frame 能碰它。
 - 没有即时存档、没有回退、没有金手指：`saveState`/`loadState` 直接拒绝。J2ME
   没有状态快照；持久化的那一半是 RMS，它改为接到云上（见「Java 存档（RMS）上云」）。
 - 对已登录玩家，RMS 存储与我们的云存档绑定：每个用户每个 ROM 一份，在 MIDlet
-  启动前恢复，并随游戏写入上传。未登录玩家与房间访客的记录只留在这个浏览器里。
+  启动前恢复，并随游戏写入上传（记录内容真的变了才传：游戏只是把同一份记录原样重写
+  一遍不算改动，见上面「摘要只看记录内容」）。未登录玩家与房间访客的记录只留在这个
+  浏览器里。
 - 类库由玩家在开局对话框里选择（三个引擎，按 ROM 记忆）；需要 MIDP 2.0 特性的
   游戏从 `enginemode2-classes2.jar` 得到它们，不需要任何人去改 ROM。
 - MIDP 高级界面（Form/List/Alert/Gauge/TextField）由 `lcdui.js` 画进 canvas，

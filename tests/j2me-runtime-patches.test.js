@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, copyFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -98,12 +98,36 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   // 线程真的死掉时，控制台要说出是哪个 Java 异常，而不是打一个对象转储。
   assert.match(engine, /\/\/ Site patch \(readable thread death\):/)
   assert.match(engine, /console\.error\("Thread terminated by " \+ e\.classInfo\._name \+/)
+  // fastInterpreterFrameAdapter 的 catch 与上一条同源：展开到嵌套标记（另一个
+  // ExitInterpreter / Native）的 Java 异常只是被交还给 JS 这一侧的调用者，不是没人接，
+  // 上游却把它连同 JS 错误一起吞掉、返回 0 假装调用成功 —— 外层解释器里的 catch 处理器
+  // 再也收不到它。「冒险小子」的 logo 循环就是这么停不下来的：缺一张图片抛出的
+  // IOException 被吞掉后拿到 null 继续装下一张，四个全试完，最后画那张空图时空指针
+  // 杀掉线程，游戏停在商标画面上。带 classInfo 的必须照原样往上传。
+  assert.match(engine, /\/\/ Site patch \(nested interpreter exceptions\):/)
+  assert.match(engine, /catch\(err\)\{\n                \/\/ Site patch \(nested interpreter exceptions\):[\s\S]*?if \(err && err\.classInfo\) \{\n                    throw err;\n                \}\n                console\.log\('interpret error:',err\);\n                return v;\n            \}/)
   // 解释器必须周期性让出执行权：fork 关掉了编译方法的抢占检查，解释器里原本一次检查
   // 也没有，于是一个不阻塞的 Java 线程就能把 JS 事件循环占死 —— 别的线程在异步
   // native（System.gc、图片解码）里等的 setTimeout / Promise 因此永远不执行，那个
   // 线程再也不会被唤醒，整页无响应。「功夫西游 - 乱舞唐僧」就是这样白屏的。
   assert.match(engine, /\/\/ Site patch \(interpreter preemption\):/)
   assert.match(engine, /if \(\(\+\+PS & 1023\) === 0\) \{\n                PE\(\);\n                if \(U\) \{\n                    thread\.set\(fp, sp, opPC\);\n                    return;\n                \}\n            \}/)
+  // 一个执行窗口 = 半个 60Hz 的帧（8ms），不是上游的 80ms。播放页显示的是从运行时页面
+  // 镜像过来的画布，镜像、触摸手柄与按钮都在同一条主线程上：窗口的长度就是「整页每秒能
+  // 画几次」的上界，而一次窗口边界还要等当前那段 Java 执行返回并排上下一个任务，实际
+  // 节奏约是窗口的 1.3 倍。80ms 于是留给整页每秒约 13 次执行机会（实测 12000ms 里
+  // 11826ms 在跑虚拟机任务，被切成 159 段约 72ms 的长任务），连页面里一个独立的
+  // requestAnimationFrame 循环都只能跑到 13.6 次/秒；16ms 也只到 50~53 次/秒。
+  assert.match(engine, /\/\/ Site patch \(half-frame execution window\):/)
+  assert.match(engine, /var MAX_WINDOW_EXECUTION_TIME = 8;/)
+  assert.doesNotMatch(engine, /var MAX_WINDOW_EXECUTION_TIME = (16|80);/)
+  // Thread.yield() 保持上游写法：试过「没有别的可运行线程时直接返回」的版本，它把
+  // 恐龙快打每秒 29.4 万次的「展开 Java 栈 + 调度器重排 + 重入解释器」换成一次判断，
+  // 解释器吞吐也涨了 3~4 倍，但画面一帧也没多 —— 这些 MIDlet 的等待循环
+  // `while (现在 < 截止时刻) Thread.yield();` 会把省下来的 CPU 原样烧回空转里，
+  // 帧率在 1/4/8 倍 CPU 降频下都与只改窗口时一致，而每次调用多出的那次
+  // performance.now() 自己就占了 28% 的样本。见 j2me-integration.md。
+  assert.match(engine, /Native\["java\/lang\/Thread\.yield\.\(\)V"\] = function \(addr\) \{\n        \$\.yield\("Thread\.yield"\);\n        \$\.nativeBailout\(9 \/\* Void \*\/\);\n    \};/)
   // drawRGB：宽或高为 0 的区域在真机上什么都不画。原来它照原样进 createImageData()，
   // 浏览器抛 IndexSizeError（DOMException，不是 TypeError），translateException 认不出，
   // 编译代码的 catch 于是把它当成「重新抛出的异常是 null」，抛出一个假的空指针打断整帧
@@ -114,6 +138,56 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   // undefined，原始 name/message 全部丢失，只剩一句没头没尾的空指针。
   assert.match(engine, /\/\/ Site patch \(untranslatable JS errors\):/)
   assert.match(engine, /return \$\.newRuntimeException\(\(e\.name \? e\.name \+ ": " : ""\) \+ \(e\.message \? e\.message : String\(e\)\)\);/)
+  // 圆弧：MIDP 的圆心在包围盒正中，扇形的顶点也在那儿，扫过方向按 MIDP 的角度约定。
+  // 「蹦球传说」的主角球是用一串 fillArc 画的高光，圆心错到左上角后整颗球变成一坨
+  // 红白怪块；负角度还要靠 anticlockwise 才不会绕反方向 270 度。
+  assert.match(bundle, /\/\/ Site patch \(MIDP arc angles\):/)
+  assert.match(bundle, /\/\/ Site patch \(arcs centred in the bounding box\):/)
+  assert.match(bundle, /function siteArc\(startAngle, arcAngle\) \{/)
+  assert.match(bundle, /anticlockwise: arcAngle > 0,/)
+  assert.match(bundle, /function createEllipticalArc\(c, x, y, rw, rh, arcStart, arcEnd, closed, anticlockwise\) \{/)
+  assert.match(bundle, /c\.arc\(0, 0, rw, arcStart, arcEnd, !!anticlockwise\);/)
+  assert.match(bundle, /createEllipticalArc\(c, x \+ width \/ 2, y \+ height \/ 2, width \/ 2, height \/ 2, arc\.startRad, arc\.endRad, false, arc\.anticlockwise\);\n    c\.stroke\(\);/)
+  assert.match(bundle, /c\.moveTo\(cx, cy\);\n    createEllipticalArc\(c, cx, cy, width \/ 2, height \/ 2, arc\.startRad, arc\.endRad, false, arc\.anticlockwise\);\n    c\.closePath\(\);\n    c\.fill\(\);/)
+  // 圆的四角仍然是按圆心调用的（这条补丁不能把 createRoundRect 一起改坏）。
+  assert.equal(
+    (bundle.match(/createEllipticalArc\(c, x \+ width - rw, y \+ rh, rw, rh, 1\.5 \* Math\.PI, 2 \* Math\.PI, false\);/g) || []).length,
+    1,
+  )
+  // 左上角当圆心的老写法必须彻底消失：它会把每一片弧都向左上挪半个包围盒。
+  assert.doesNotMatch(bundle, /createEllipticalArc\(c, x, y, width \/ 2, height \/ 2, startRad, endRad/)
+  assert.doesNotMatch(bundle, /var endRad = -startAngle \* \.0175;\n    var startRad = endRad - arcAngle \* \.0175;/)
+  // 裁剪区落在画布之外时必须保持为空。这四条边上原来各有一个 `& 32767`，它对非负值
+  // 是恒等运算、对负值却是 `v & 32767 = 32768 + v` —— 一块完全落在画面外（右/下边界
+  // 为负）的裁剪区因此变成一个宽三万多像素的裁剪区，比画布还大。游戏「先按精灵矩形
+  // 设裁剪区、再把整张精灵表贴上去」的画法全靠这个裁剪区，「恐龙快打」倒地/被打飞的
+  // 敌人与主角贴图移出画面左边时，画面上就多出一条横贯的精灵表碎片。
+  assert.match(bundle, /\/\/ Site patch \(clip outside the target\):/)
+  assert.match(bundle, /newX1 = Math\.min\(Math\.max\(minX, newX1\), maxX\);/)
+  assert.match(bundle, /newX2 = Math\.min\(Math\.max\(minX, newX2\), maxX\);/)
+  assert.doesNotMatch(bundle, /Math\.max\(minX, newX1\) & 32767;/)
+  assert.doesNotMatch(bundle, /Math\.min\(maxX, newX2\) & 32767;/)
+  // Nokia 的 DirectGraphics.drawImage 带着 manipulation（旋转/翻转）参数。丢掉它之后
+  // 需要镜像的精灵会被当成原图贴到「镜像后该在的位置」上 —— 游戏是先设裁剪区、再把
+  // 整张图按变换贴上去的，落进裁剪区的就成了同一张精灵表里另一块内容：「恐龙快打」的
+  // 主角朝右时散成一堆错位的部件、朝左（manipulation=0）完全正常。
+  assert.match(bundle, /\/\/ Site patch \(Nokia image manipulation\):/)
+  assert.match(bundle, /function siteManipulationToTransform\(manipulation\) \{/)
+  assert.match(
+    bundle,
+    /var siteNokiaManipulation = \[\n    \[TRANS_NONE, TRANS_ROT270, TRANS_ROT180, TRANS_ROT90\],\n    \[TRANS_MIRROR, TRANS_MIRROR_ROT90, TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270\],\n    \[TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270, TRANS_MIRROR, TRANS_MIRROR_ROT90\],\n    \[TRANS_ROT180, TRANS_ROT90, TRANS_NONE, TRANS_ROT270\],\n  \];/,
+  )
+  assert.match(bundle, /renderRegion\(c, NativeMap\.get\(image\.imageData\)\.context\.canvas, 0, 0, imageData\.width, imageData\.height, siteManipulationToTransform\(manipulation\), x, y, anchor\);/)
+  // 老写法（参数名 unknow、丢掉 manipulation、一律 TRANS_NONE）必须彻底消失。
+  // Graphics.drawImage(img, x, y, anchor) 那条本来就没有变换，不在检查范围内。
+  assert.doesNotMatch(bundle, /anchor,unknow/)
+  // 折算表必须写在 `var TRANS_*` 之后：写成它们前面时，字面量读到的是尚未赋值的 var
+  // （全是 undefined），每次折算都返回 undefined，renderRegion 拿不认识的变换算出
+  // NaN 目标坐标 —— 画面上就是朝右的精灵整块消失。这一条就是那次事故的守卫。
+  const transAt = bundle.indexOf('var TRANS_MIRROR_ROT90 = 7;')
+  const tableAt = bundle.indexOf('var siteNokiaManipulation = [')
+  assert.ok(transAt >= 0, 'TRANS_* 常量必须还在产物里')
+  assert.ok(tableAt > transAt, '折算表必须定义在 TRANS_* 之后，否则表里全是 undefined')
   // 有些 MIDlet 把「UTF-8」拼成「UFT-8」，CLDC 的 Helper 于是去要
   // com/sun/cldc/i18n/j2me/UFT_8_Reader —— 三个类库里都只有拼写正确的 UTF_8_Reader，
   // Class.forName 抛 ClassNotFoundException，没人接住它的线程就此结束（「昆仑千年情」
@@ -148,6 +222,14 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.match(read('main.html'), /<script defer src="bld\/main-all\.js"><\/script>\n<script defer src="lcdui\.js"><\/script>/)
   // 云存档桥（RMS ⇄ 站点存档）同理：它要用运行时的 fs 与 loadingPromises。
   assert.match(read('main.html'), /<script defer src="lcdui\.js"><\/script>\n<script defer src="rms\.js"><\/script>/)
+  // 内联事件处理器在这条 CSP 下不会执行：script-src 是 'self' blob: 'unsafe-eval'
+  // 'wasm-unsafe-eval'，没有 'unsafe-inline'，而 hash 与 nonce 都授权不了 `on*=`
+  // 这种属性 —— 浏览器拒绝运行它，并在每次派发时往控制台写一条
+  // "Executing inline event handler violates ..."。上游触摸板上的
+  // `onselectstart='return false'` 就是这条报错的来源（见 bridge.js 里挂回的
+  // 监听器），页面里不能再有任何一个内联处理器。
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i)
+  assert.match(read('bridge.js'), /siteGamepad\.addEventListener\('selectstart'/)
 })
 
 // 播放页的十字键发手机的导航键代码（-1..-4），面键与肩键发手机键盘代码（5 当确定、
@@ -188,6 +270,156 @@ test('播放页发的键码在运行时里带着正确的 MIDP 游戏动作', ()
   assert.equal(action(52), 2)
   assert.equal(action(54), 5)
   assert.equal(action(53), 8)
+})
+
+// Nokia 的 DirectGraphics.drawImage(img, x, y, anchor, manipulation) 里，
+// manipulation 是「第 13 位 = 左右翻转（FLIP_HORIZONTAL 8192）、第 14 位 = 上下翻转
+// （FLIP_VERTICAL 16384），低位 = 逆时针旋转的度数（90/180/270）」的叠加。折算成
+// MIDP 的 TRANS_* 码之后由 renderRegion 绘制，所以这张表就是「Nokia 的组合 ↔ MIDP
+// 的变换」的全部依据。
+//
+// 每一项都用同一条规则核对过：Nokia 先按给定角度**逆时针**旋转、再在旋转后的坐标系里
+// 翻转（等价于 MIDP 的「先镜像、再顺时针旋转」）。这也是「恐龙快打」自己算出的目标
+// 坐标所要求的 —— 游戏先设裁剪区、再整图贴上去，源区域必须正好落进裁剪区，只有这张表
+// 能让它成立（8192 → TRANS_MIRROR、8192|90 → TRANS_MIRROR_ROT90、
+// 8192|270 → TRANS_MIRROR_ROT270、90 → TRANS_ROT270 都由这个 ROM 直接验证过）。
+test('Nokia 的 manipulation 折算成 MIDP 变换码', () => {
+  const bundle = read('bld/main-all.js')
+  // 关键：按产物里的**真实顺序**求值 —— 从 `var TRANS_NONE = 0;` 一直切到折算函数结束。
+  // 折算表曾经写在 TRANS_* 之前，那时字面量读到的全是尚未赋值的 var（undefined），
+  // 这个测试（把常量当参数注入的版本）当时是绿的，游戏里朝右的精灵却整块消失。
+  const fromConstants = bundle.indexOf('var TRANS_NONE = 0;')
+  const fromFunction = bundle.indexOf('function siteManipulationToTransform(manipulation) {')
+  assert.ok(fromConstants >= 0, 'TRANS_* 常量必须能在产物里读到')
+  assert.ok(fromFunction > fromConstants, '折算表必须定义在 TRANS_* 之后')
+  const functionEnd = bundle.indexOf('\n  }', bundle.indexOf('return siteNokiaManipulation[flip][rotation / 90];', fromFunction)) + 4
+  assert.ok(functionEnd > fromFunction && functionEnd <= bundle.length, '折算函数的结尾必须能找到')
+  const source = bundle.slice(fromConstants, functionEnd)
+  const $ = { newIllegalArgumentException: (message) => new Error(message) }
+  const toTransform = new Function('$', `${source}\nreturn siteManipulationToTransform;`)($)
+  // 与产物里的常量同值（MIDP 的变换码）。
+  const NONE = 0, MIRROR_ROT180 = 1, MIRROR = 2, ROT180 = 3, MIRROR_ROT270 = 4, ROT90 = 5, ROT270 = 6, MIRROR_ROT90 = 7
+  assert.deepEqual(
+    [toTransform(0), toTransform(8192), toTransform(16384), toTransform(24576)],
+    [NONE, MIRROR, MIRROR_ROT180, ROT180],
+    '表里不能有 undefined：TRANS_* 常量那时必须已经有值（否则 renderRegion 会算出 NaN 坐标，什么也不画）',
+  )
+
+  assert.equal(toTransform(0), NONE)
+  // 恐龙快打实际用到的组合。
+  assert.equal(toTransform(8192), MIRROR)
+  assert.equal(toTransform(16384), MIRROR_ROT180)
+  assert.equal(toTransform(90), ROT270)
+  assert.equal(toTransform(180), ROT180)
+  assert.equal(toTransform(8192 | 90), MIRROR_ROT90)
+  assert.equal(toTransform(8192 | 270), MIRROR_ROT270)
+  // 其余组合：先逆时针旋转、再在旋转后的坐标系里翻转。
+  assert.equal(toTransform(270), ROT90)
+  assert.equal(toTransform(8192 | 16384), ROT180)
+  assert.equal(toTransform(16384 | 90), MIRROR_ROT270)
+  assert.equal(toTransform(16384 | 180), MIRROR)
+  assert.equal(toTransform(16384 | 270), MIRROR_ROT90)
+  assert.equal(toTransform(8192 | 16384 | 90), ROT90)
+  assert.equal(toTransform(8192 | 16384 | 180), NONE)
+  assert.equal(toTransform(8192 | 16384 | 270), ROT270)
+  // 拆不出来的取值按真机抛 IllegalArgumentException，而不是悄悄画成原图。
+  assert.throws(() => toTransform(45), /Unsupported manipulation: 45/)
+  assert.throws(() => toTransform(360), /Unsupported manipulation: 360/)
+  assert.throws(() => toTransform(32768), /Unsupported manipulation: 32768/)
+})
+
+// MIDP 规定 setClip() 设的裁剪区不超过 Graphics 的范围（画布或离屏图），所以把裁剪区
+// 设到画布之外等于「什么都不画」。上游那份实现的四条边各套了一个 `& 32767`，而它对
+// 负值不是恒等运算（`v & 32767 = 32768 + v`）：一块完全落在画面外、右/下边界为负的
+// 裁剪区会变成一个宽三万多像素的裁剪区 —— 裁剪不但没生效，还比画布大得多。游戏用
+// 「先 setClip 到精灵矩形、再把整张精灵表贴上去」画精灵（见补丁 25 与本文档），
+// 裁剪一失效，落进画面的就是精灵表里另一段内容：「恐龙快打」里被打倒、移出画面左边
+// 的敌人与主角，会在画面左端多出一条与精灵同高的精灵表碎片，看上去像贴图错乱。
+//
+// 这一条按产物里的**真实代码**求值 setClip（不是把常量当参数注入），逐点核对边界：
+// 完全在画布外的矩形必须变空、部分越界的矩形必须被裁到画布边、画布内的矩形原样保留。
+test('裁剪区落在画布之外时保持为空', () => {
+  const bundle = read('bld/main-all.js')
+  const fromFunction = bundle.indexOf('GraphicsInfo.prototype.setClip = function(x, y, width, height, minX, minY, maxX, maxY) {')
+  assert.ok(fromFunction >= 0, 'setClip 必须能在产物里读到')
+  const endMarker = bundle.indexOf('\n    this.clipY2 = newY2;\n  };', fromFunction)
+  assert.ok(endMarker > fromFunction, 'setClip 的结尾必须能找到')
+  const source = bundle.slice(fromFunction, endMarker + '\n    this.clipY2 = newY2;\n  };'.length)
+  const GraphicsInfo = function () {}
+  const setClip = new Function('GraphicsInfo', `${source}\nreturn GraphicsInfo.prototype.setClip;`)(GraphicsInfo)
+  const WIDTH = 240
+  const HEIGHT = 320
+  // 目标 240x320（恐龙快打自己的画布），未做过 translate。
+  const clipAfter = (x, y, width, height) => {
+    const info = {
+      transX: 0,
+      transY: 0,
+      clipX1: 0,
+      clipY1: 0,
+      clipX2: WIDTH,
+      clipY2: HEIGHT,
+      contextInfo: { currentlyAppliedGraphicsInfo: null },
+    }
+    setClip.call(info, x, y, width, height, 0, 0, WIDTH, HEIGHT)
+    return [info.clipX1, info.clipY1, info.clipX2, info.clipY2]
+  }
+  // 画布内的矩形原样保留。
+  assert.deepEqual(clipAfter(10, 20, 30, 40), [10, 20, 40, 60])
+  // 部分越界：裁到画布边。
+  assert.deepEqual(clipAfter(-20, 10, 30, 5), [0, 10, 10, 15])
+  assert.deepEqual(clipAfter(230, 10, 40, 5), [230, 10, 240, 15])
+  assert.deepEqual(clipAfter(10, -30, 20, 40), [10, 0, 30, 10])
+  assert.deepEqual(clipAfter(10, 315, 20, 40), [10, 315, 30, 320])
+  // 完全在画布之外：必须是空裁剪区（四个 0），不能变成巨大的裁剪区。
+  for (const [x, y, width, height] of [
+    [-63, 152, 40, 4], [-94, 152, 40, 4], [-63, -30, 40, 4], [260, 152, 40, 4], [10, 340, 40, 4],
+    [40000, 10, 20, 5], [-40000, 10, 20, 5], [-63, 152, 0, 4], [-63, 152, 40, 0],
+  ]) {
+    assert.deepEqual(clipAfter(x, y, width, height), [0, 0, 0, 0], `setClip(${x},${y},${width},${height}) 必须为空裁剪区`)
+  }
+  // 无论请求的矩形在哪，得到的裁剪区都在画布之内 —— 真机不可能画出画布外的像素，
+  // 而这份实现的裁剪区正是「画布 ∩ 请求」。
+  for (const [x, y, width, height] of [
+    [10, 20, 30, 40], [-20, 10, 30, 5], [230, 10, 40, 5], [-63, 152, 40, 4], [260, 152, 40, 4],
+  ]) {
+    const rect = clipAfter(x, y, width, height)
+    assert.ok(rect[0] >= 0 && rect[1] >= 0 && rect[2] <= WIDTH && rect[3] <= HEIGHT,
+      `setClip(${x},${y},${width},${height}) 的裁剪区必须落在画布内，实际 ${JSON.stringify(rect)}`)
+    assert.ok(rect[2] <= rect[0] || rect[3] <= rect[1] || (rect[2] - rect[0] <= WIDTH && rect[3] - rect[1] <= HEIGHT))
+  }
+})
+
+test('Samsung 音频探针答 true，而且这条替换能作用到 MIDlet 自己字节码里的调用', () => {
+  // 三星时代的 MIDlet（「冒险小子」）先问 com.samsung.util.AudioClip.isSupported()，拿到
+  // true 才分配自己那张关卡常量表（ABGame.x() 里的 `if (i) c = new int[7]`），而关卡音乐、
+  // 关卡切换这些路径会不带条件地读它。内置类库那份 AudioClip 是完整的空实现，只有
+  // isSupported() 写死返回 false，于是游戏在关卡里按一下确定键就读到一张从未分配的
+  // int[7]：空指针结束 MIDlet 线程、画面定在最后一帧。站点在 bridge.js 里用 fork 自己的
+  // ReplaceMethod 表把它换成 true（真机上这个类由三星/国产手机的类库提供并答 true）。
+  const bridge = read('bridge.js')
+  const shim = bridge.match(
+    /ReplaceMethod\['com\/samsung\/util\/AudioClip\.isSupported\.\(\)Z'\] = (function \(\) \{\s*return 1;\s*\});/,
+  )
+  assert.ok(shim, 'bridge.js 必须把三星音频探针换成答 true')
+  // 真的求值一次：这段 shim 返回 1（Java 的 boolean true）。
+  assert.equal(new Function('return ' + shim[1])()(), 1)
+
+  // 光有替换还不够：fork 的 ReplaceMethod 表只在 JS 调用进来时被查（getLinkedMethod /
+  // findNativeMethodImplementation），MIDlet 自己字节码里的 invokestatic 会被解释器
+  // 直接解释到底，替换从不生效。补丁 30 把作者留在 getMethodByName 里的注释代码打开，
+  // 在方法解析时套一次替换（常量池缓存结果）。
+  const engine = read('bld/j2me.js')
+  assert.match(engine, /\/\/ Site patch \(method replacement\):/)
+  assert.match(
+    engine,
+    /var replacement = ReplaceMethod && ReplaceMethod\[method\.implKey\];\n                    if \(replacement\) \{\n                        method\.fn = replacement;\n                        method\.state = 1 \/\* Compiled \*\/;\n                        J2ME\.linkedMethods\[method\.id\] = replacement;\n                        return method;\n                    \}/,
+  )
+  // 换掉的那段注释代码不能只剩注释：原来这条路径根本不存在（注释里的老代码还留着，
+  // 所以这里只锁「生效的那一段」不含日志）。
+  assert.doesNotMatch(
+    engine,
+    /\/\/ Site patch \(method replacement\):[\s\S]{0,600}?console\.log\(/,
+  )
 })
 
 test('构建产物给 J2meJS 运行时打好内容版本号', () => {
@@ -288,4 +520,37 @@ test('开发期脚本与文档放在 public/ 之外，构建产物里也不该�
   // 构建链里要有清理步骤：以后再有开发期文件被误放进 public/，也不会随 dist 上线。
   const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'frontend/package.json'), 'utf8'))
   assert.match(pkg.scripts.build, /prune-dist-devfiles\.js/)
+})
+
+test('构建产物里的运行时副本与打过补丁的那份一致', () => {
+  // 线上跑的不是 public/ 里的源码，而是 dist 里的副本：改完运行时不重新构建，
+  // 访客手里仍是旧脚本，「已经修好」的补丁一行都没上线（2026-10-16：「冒险小子」
+  // 按确定键的空指针在源码里修了两轮，线上照旧卡死，因为 dist 是修之前构建的）。
+  // dist 是构建产物、不进版本库，所以只在它存在时校验。
+  const distDir = path.join(repoRoot, 'frontend/dist/j2me')
+  if (!existsSync(distDir)) return
+
+  // main.html 会被打上 ?v=<版本号>（见 stamp-j2me-runtime.mjs），比较前先抹掉。
+  const stripVersion = (text) => text.replace(/[?&]v=[0-9a-f]{12}/g, '')
+  const relativeFiles = (dir, prefix = '') => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+    return entry.isDirectory()
+      ? relativeFiles(path.join(dir, entry.name), relative)
+      : [relative]
+  })
+
+  const stale = []
+  for (const name of relativeFiles(runtimeDir)) {
+    const deployed = path.join(distDir, name)
+    if (!existsSync(deployed)) { stale.push(`${name}（构建产物里没有）`); continue }
+    const source = name === 'main.html'
+      ? stripVersion(readFileSync(path.join(runtimeDir, name), 'utf8')) === stripVersion(readFileSync(deployed, 'utf8'))
+      : readFileSync(path.join(runtimeDir, name)).equals(readFileSync(deployed))
+    if (!source) stale.push(name)
+  }
+  assert.deepEqual(
+    stale,
+    [],
+    `构建产物里的运行时与 frontend/public/j2me 不一致：${stale.join('、')} —— 跑一次 npm run build 再发布`,
+  )
 })

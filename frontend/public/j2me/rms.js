@@ -13,7 +13,8 @@
  *     并留一个超时兜底：存档取不回来，游戏照样要能开。
  *   - 运行中：包装写 RMS 的那几个 native，改动后通知播放页（去抖与上传由它负责）。
  *   - 导出：`snapshot()` 把整棵 /RecordStore 读成一份 JSON，连同内容摘要交给播放页；
- *     摘要没变就不会重复上传。
+ *     摘要只看记录内容（时间戳一律不参与，见下面的「内容摘要」），原样重写不算改动，
+ *     所以不会重复上传。
  *
  * 快照格式是我们自己定的，**不复用运行时的 store.export**：那份会把整个文件系统
  * （含各种临时文件）打进去，导入时还会清库，不适合只当一局的存档用。
@@ -57,12 +58,60 @@
     return bytes
   }
 
-  /** 内容摘要（FNV-1a，32 位）：只用来判断"和上次上传的是不是同一份"。 */
-  function digestOf(text, seed) {
+  // ---- 内容摘要 ----
+  // 摘要只回答一个问题：游戏写进去的记录有没有变。所以下面这些「每次都不同」的东西
+  // 都不参与：快照自己的时间戳、每个文件的 mtime，以及记录集文件头里那个「最后写入
+  // 时间」（偏移 24 起 8 字节，运行时写的是 System.currentTimeMillis()）。
+  //
+  // 少了这层归一化，「把同一份存档原样重写一遍」会被当成改动：不少 MIDlet 进菜单、
+  // 过场、初始化状态机时就会这么干（2026-10-16 用「刺客骨肉分离」验证：它在标题画面
+  // 自己 deleteRecordStore + addRecord 重写了 4 轮，写出来的存储文件与恢复进来的云
+  // 存档逐字节只差文件头里那 8 个字节），玩家看到的就是「一进菜单就替我存了一次档」。
+  var RMS_SIGNATURE = 'midp-rms'
+  var RMS_HEADER_SIZE = 40
+  var RMS_LAST_MODIFIED_AT = 24
+
+  /** FNV-1a，32 位；hashText / hashBytes 共用同一条链，可以互相接续。 */
+  function hashText(text, seed) {
     var hash = seed == null ? 0x811c9dc5 : seed
     for (var i = 0; i < text.length; i++) {
       hash ^= text.charCodeAt(i)
       hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0
+    }
+    return hash
+  }
+
+  function hashBytes(bytes, seed) {
+    var hash = seed == null ? 0x811c9dc5 : seed
+    for (var i = 0; i < bytes.length; i++) {
+      hash ^= bytes[i]
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0
+    }
+    return hash
+  }
+
+  function isRecordStoreFile(bytes) {
+    if (bytes.length < RMS_HEADER_SIZE) return false
+    for (var i = 0; i < RMS_SIGNATURE.length; i++) {
+      if (bytes[i] !== RMS_SIGNATURE.charCodeAt(i)) return false
+    }
+    return true
+  }
+
+  /** 文件里参与摘要的那部分：是记录集就把文件头的「最后写入时间」抹平成 0。 */
+  function stableBytes(file) {
+    var bytes = fromBase64(file.d)
+    if (!isRecordStoreFile(bytes)) return bytes
+    for (var i = 0; i < 8; i++) bytes[RMS_LAST_MODIFIED_AT + i] = 0
+    return bytes
+  }
+
+  /** 整棵树的摘要：路径 + 归一化后的内容，顺序也参与（同一批文件，换个顺序就不算同一份）。 */
+  function digestOfFiles(files) {
+    var hash = hashText('j2me-rms:' + files.length)
+    for (var i = 0; i < files.length; i++) {
+      hash = hashText(files[i].p, hash)
+      hash = hashBytes(stableBytes(files[i]), hash)
     }
     return hash.toString(16)
   }
@@ -109,6 +158,10 @@
     return chain.then(function () { return files })
   }
 
+  /**
+   * 把快照写进文件系统；返回值里的 digest 是"这份内容在云端的摘要"（与 snapshot()
+   * 对同一批文件算出来的完全一致），播放页拿它当作"云端现在这一份"的基准。
+   */
   function applySnapshot(text) {
     var data = JSON.parse(text)
     var files = data && data.files ? data.files : []
@@ -123,7 +176,7 @@
       if (fs.exists(file.p)) fs.remove(file.p)
       if (!fs.create(file.p, new Blob([fromBase64(file.d)]))) throw new Error('写入失败：' + file.p)
     })
-    return files.length
+    return { count: files.length, digest: digestOfFiles(files) }
   }
 
   function removeAll() {
@@ -149,7 +202,7 @@
       var text = JSON.stringify({ v: SNAPSHOT_VERSION, at: Date.now(), files: files })
       return {
         blob: new Blob([text], { type: SNAPSHOT_TYPE }),
-        digest: digestOf(text),
+        digest: digestOfFiles(files),
         files: files.length,
         bytes: text.length,
       }
@@ -206,7 +259,12 @@
   // ---- 启动前的恢复 ----
   // 播放页把它挂进 loadingPromises：运行时 await 完这一批才起 VM，所以 MIDlet 第一次
   // 读 RMS 时看到的一定是云存档（或一份干净的空气）。
-  var status = { restore: 'pending', files: 0, removed: 0, bytes: 0, error: '' }
+  //
+  // 报文里的 digest 是「恢复完之后 /RecordStore 里这一份的摘要」，也就是云端现在这一份
+  // 的摘要；播放页记住它，游戏随后原样重写同一份记录时就不必再上传（见 snapshot 上方的
+  // 归一化说明）。没有恢复成功（failed / timeout）时不报 digest：那时本地是什么、云端是
+  // 什么都不知道，第一次改动照旧上传。
+  var status = { restore: 'pending', files: 0, removed: 0, bytes: 0, error: '', digest: '' }
   var gateResolve = null
   var gateDone = false
   var gate = new Promise(function (resolve) { gateResolve = resolve })
@@ -218,10 +276,15 @@
       if (extra.removed != null) status.removed = extra.removed
       if (extra.bytes != null) status.bytes = extra.bytes
       if (extra.error) status.error = String(extra.error)
+      if (extra.digest) status.digest = extra.digest
     }
     if (gateDone) return
     gateDone = true
-    post({ type: 'j2me-rms-restored', status: { restore: status.restore, files: status.files, removed: status.removed, error: status.error } })
+    post({
+      type: 'j2me-rms-restored',
+      digest: status.digest || null,
+      status: { restore: status.restore, files: status.files, removed: status.removed, error: status.error },
+    })
     gateResolve()
   }
 
@@ -235,14 +298,15 @@
     if (mode == null || mode === '') return finish('skipped')
     if (mode === 'none') {
       var removed = removeAll()
-      return sync(function () { finish('cleared', { removed: removed }) })
+      // 云端这个 ROM 一份都没有：基准就是"空的"，游戏什么都不写就别上传。
+      return sync(function () { finish('cleared', { removed: removed, digest: digestOfFiles([]) }) })
     }
     return fetch(mode, { cache: 'no-store' }).then(function (response) {
       if (!response.ok) throw new Error('HTTP ' + response.status)
       return response.text()
     }).then(function (text) {
-      var count = applySnapshot(text)
-      return sync(function () { finish('loaded', { files: count, bytes: text.length }) })
+      var applied = applySnapshot(text)
+      return sync(function () { finish('loaded', { files: applied.count, bytes: text.length, digest: applied.digest }) })
     }).catch(function (error) {
       console.warn('[j2me] 云存档读取失败：' + (error && error.message ? error.message : error))
       finish('failed', { error: error && error.message ? error.message : error })
@@ -257,9 +321,10 @@
 
   window.__j2meRms = {
     snapshot: snapshot,
-    apply: applySnapshot,
+    // 手写调试用：把一份快照写进那棵树，返回写进去的文件数。
+    apply: function (text) { return applySnapshot(text).count },
     dirty: function () { return dirty },
     paths: rmsPaths,
-    status: function () { return { restore: status.restore, files: status.files, removed: status.removed, bytes: status.bytes, error: status.error } },
+    status: function () { return { restore: status.restore, files: status.files, removed: status.removed, bytes: status.bytes, error: status.error, digest: status.digest } },
   }
 }())

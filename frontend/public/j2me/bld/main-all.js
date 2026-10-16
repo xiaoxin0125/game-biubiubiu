@@ -8684,14 +8684,30 @@ var currentlyFocusedTextEditor;
     }
     return x;
   }
-  function createEllipticalArc(c, x, y, rw, rh, arcStart, arcEnd, closed) {
+  // Site patch (MIDP arc angles): MIDP 的圆弧角度是「0 = 3 点钟、逆时针为正」，
+  // 画布的角是「0 = 3 点钟、顺时针为正」（屏幕 y 轴向下），所以画布角 = -MIDP 角，
+  // 而 MIDP 的正角度对应画布上角度递减的方向（canvas arc() 的 anticlockwise=true）。
+  // 上游把起止角互换后一律按 anticlockwise=false 画：正角度刚好凑对，负角度却会沿
+  // 另一个方向绕 270 度。|arcAngle| >= 360 时按整圈处理 —— 画布对 start == end 的
+  // 圆弧什么都不画。
+  function siteArc(startAngle, arcAngle) {
+    if (arcAngle >= 360 || arcAngle <= -360) {
+      return {startRad: 0, endRad: Math.PI * 2, anticlockwise: false};
+    }
+    return {
+      startRad: -startAngle * .0175,
+      endRad: -(startAngle + arcAngle) * .0175,
+      anticlockwise: arcAngle > 0,
+    };
+  }
+  function createEllipticalArc(c, x, y, rw, rh, arcStart, arcEnd, closed, anticlockwise) {
     c.save();
     c.translate(x, y);
     if (closed) {
       c.moveTo(0, 0);
     }
     c.scale(1, rh / rw);
-    c.arc(0, 0, rw, arcStart, arcEnd, false);
+    c.arc(0, 0, rw, arcStart, arcEnd, !!anticlockwise);
     if (closed) {
       c.lineTo(0, 0);
     }
@@ -8923,7 +8939,9 @@ function trans10to16(num10) { //十进制转十六进制
     return result;
 }
 
-Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/Image;IIII)V"] = function(addr, imageAddr, x, y, anchor,unknow) { 
+// Site patch (Nokia image manipulation): manipulation 折算成 MIDP 变换码后再交给
+// renderRegion 去画（折算表与判定在下面的 TRANS_* 定义之后）。
+Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/Image;IIII)V"] = function(addr, imageAddr, x, y, anchor, manipulation) { 
   if (imageAddr === J2ME.Constants.NULL) {
     throw $.newNullPointerException("image is null");
   }
@@ -8931,9 +8949,8 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
   var self = getHandle(addr);
   var image = getHandle(imageAddr);
   var imageData = getHandle(image.imageData);
-  //console.log(imageData,x, y)
   var c = NativeMap.get(self.graphics).getGraphicsContext(); 
-  renderRegion(c, NativeMap.get(image.imageData).context.canvas, 0, 0, imageData.width, imageData.height, TRANS_NONE, x, y, anchor);
+  renderRegion(c, NativeMap.get(image.imageData).context.canvas, 0, 0, imageData.width, imageData.height, siteManipulationToTransform(manipulation), x, y, anchor);
 };
  
   Native["com/nokia/mid/ui/DirectGraphicsImp.fillPolygon.([II[IIII)V"] = function(addr, xPointsAddr,  xOffset,  yPointsAddr,  yOffset,  nPoints,  argbColor) {
@@ -9061,10 +9078,15 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
     var newY1 = y + this.transY;
     var newX2 = newX1 + width;
     var newY2 = newY1 + height;
-    newX1 = Math.max(minX, newX1) & 32767;
-    newY1 = Math.max(minY, newY1) & 32767;
-    newX2 = Math.min(maxX, newX2) & 32767;
-    newY2 = Math.min(maxY, newY2) & 32767;
+    // Site patch (clip outside the target): 这里原来把四个边界各与 32767 按位与，而这个
+    // 掩码只有在值为负时才不是恒等运算 —— 一块完全落在画布外（右侧或下侧边界为负）的
+    // 裁剪区因此变成一个巨大的裁剪区，游戏「先按精灵矩形设裁剪区、再把整张精灵表贴上去」
+    // 的画法就失去了裁剪：屏幕上会出现一条横贯画面的精灵表碎片。详情见
+    // frontend/scripts/apply-j2me-patches.mjs 与 j2me-integration.md。
+    newX1 = Math.min(Math.max(minX, newX1), maxX);
+    newY1 = Math.min(Math.max(minY, newY1), maxY);
+    newX2 = Math.min(Math.max(minX, newX2), maxX);
+    newY2 = Math.min(Math.max(minY, newY2), maxY);
     if (width <= 0 || height <= 0 || newX2 <= newX1 || newY2 <= newY1) {
       newX1 = newY1 = newX2 = newY2 = 0;
     }
@@ -9225,11 +9247,12 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
     if (width < 0 || height < 0) {
       return;
     }
+    // Site patch (arcs centred in the bounding box): 椭圆的圆心在包围盒正中，
+    // 不是它的左上角。角度换算与方向见 siteArc()。
     var c = NativeMap.get(addr).getGraphicsContext();
-    var endRad = -startAngle * .0175;
-    var startRad = endRad - arcAngle * .0175;
+    var arc = siteArc(startAngle, arcAngle);
     c.beginPath();
-    createEllipticalArc(c, x, y, width / 2, height / 2, startRad, endRad, false);
+    createEllipticalArc(c, x + width / 2, y + height / 2, width / 2, height / 2, arc.startRad, arc.endRad, false, arc.anticlockwise);
     c.stroke();
     //console.log("drawArc",addr, x, y, width, height, startAngle, arcAngle);
   };
@@ -9237,13 +9260,16 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
     if (width <= 0 || height <= 0) {
       return;
     }
+    // Site patch (arcs centred in the bounding box): 圆心在包围盒正中，扇形从圆心
+    // 张开（原来的顶点是包围盒的左上角，扇叶因此多出一块连到左上角的楔形）。
     var c = NativeMap.get(addr).getGraphicsContext();
-    var endRad = -startAngle * .0175;
-    var startRad = endRad - arcAngle * .0175;
+    var cx = x + width / 2;
+    var cy = y + height / 2;
+    var arc = siteArc(startAngle, arcAngle);
     c.beginPath();
-    c.moveTo(x, y);
-    createEllipticalArc(c, x, y, width / 2, height / 2, startRad, endRad, true);
-    c.moveTo(x, y);
+    c.moveTo(cx, cy);
+    createEllipticalArc(c, cx, cy, width / 2, height / 2, arc.startRad, arc.endRad, false, arc.anticlockwise);
+    c.closePath();
     c.fill();
   };
   var TRANS_NONE = 0;
@@ -9254,6 +9280,29 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
   var TRANS_ROT90 = 5;
   var TRANS_ROT270 = 6;
   var TRANS_MIRROR_ROT90 = 7;
+  // Site patch (Nokia image manipulation): Nokia 的 manipulation 是「第 13/14 位 =
+  // 左右/上下翻转，低位 = 逆时针 90/180/270 度」，两者可叠加。折算成 MIDP 的
+  // TRANS_* 码后交给 renderRegion 去画；无法拆解的取值按真机抛
+  // IllegalArgumentException（MicroEmulator 的 Nokia API 实现同样如此）。
+  //
+  // 这张表必须留在这里（TRANS_* 已经赋过值）：放在它们前面时，字面量读到的全是
+  // undefined，折算结果也是 undefined，renderRegion 于是拿一个不认识的变换算坐标，
+  // 目标位置成了 NaN —— 画面上就是「朝右的精灵整块消失」，而 manipulation=0 的朝左帧
+  // 走 Graphics.drawImage，完全看不出问题。
+  var siteNokiaManipulation = [
+    [TRANS_NONE, TRANS_ROT270, TRANS_ROT180, TRANS_ROT90],
+    [TRANS_MIRROR, TRANS_MIRROR_ROT90, TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270],
+    [TRANS_MIRROR_ROT180, TRANS_MIRROR_ROT270, TRANS_MIRROR, TRANS_MIRROR_ROT90],
+    [TRANS_ROT180, TRANS_ROT90, TRANS_NONE, TRANS_ROT270],
+  ];
+  function siteManipulationToTransform(manipulation) {
+    var flip = manipulation >>> 13;
+    var rotation = manipulation & 8191;
+    if (flip > 3 || rotation % 90 !== 0 || rotation > 270) {
+      throw $.newIllegalArgumentException("Unsupported manipulation: " + manipulation);
+    }
+    return siteNokiaManipulation[flip][rotation / 90];
+  }
   function renderRegion(dstContext, srcCanvas, sx, sy, sw, sh, transform, absX, absY, anchor) {
     var w, h;
     switch(transform) {

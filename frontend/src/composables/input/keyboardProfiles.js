@@ -32,9 +32,23 @@ const MEGADRIVE_KEYBOARD = {
   l: 'u', x: 'i', r: 'o',
 }
 
+// J2ME 的复刻对象是一部手机，键盘就照手机键盘摆：数字小键盘上同样数字的那几颗键
+// 就是手机的 1 / 3 / 5 / 7 / 9 / 0（retropad 的 x / a / l2 / y / b / r2，标签见
+// constants/platforms.js 的 BUTTON_LABELS.j2me），0 旁边那颗 . 是 *、小键盘回车是 #。
+// 两块软键（select = 左软键 / start = 右软键）落在主回车与右 Shift 上；十字仍是 WASD，
+// 所以两只手一边管方向、一边管手机键盘，互不交叉。
+const J2ME_KEYBOARD = {
+  ...DEFAULT_KEYBOARD,
+  x: 'numpad1', a: 'numpad3', l2: 'numpad5',
+  y: 'numpad7', b: 'numpad9', r2: 'numpad0',
+  l: 'kp_period', r: 'kp_enter',
+  select: 'enter', start: 'rshift',
+}
+
 const PLATFORM_DEFAULT_KEYBOARDS = {
   arcade: ARCADE_KEYBOARD,
   megadrive: MEGADRIVE_KEYBOARD,
+  j2me: J2ME_KEYBOARD,
 }
 
 export const DEFAULT_PLAYER1_RUNTIME_KEYBOARD = { ...DEFAULT_KEYBOARD }
