@@ -14,7 +14,7 @@ export const J2ME_ENGINE_CHOICES = Object.freeze([
   {
     id: 'enginemode1-classesold.jar',
     label: '兼容库（默认）',
-    note: '能启动的游戏最多。大部分游戏、包括《仙剑奇侠传》这类老 MIDlet 都在这一档。',
+    note: '能启动的游戏最多。',
   },
   {
     id: 'enginemode2-classes2.jar',

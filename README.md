@@ -4,7 +4,7 @@
 
 前端 Vue 3 + Vite，后端 Hono（Node.js），数据层 MySQL + Drizzle。模拟器 core、BIOS、ROM 和存档全部放在本地文件系统，不依赖外部 CDN。
 
-当前版本 **v1.7.0**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.0`，同时打 `v1.7`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
+当前版本 **v1.7.1**，`GET /api/health` 会返回版本号，Docker 镜像标签与源码版本同步（`ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.1`，同时打 `v1.7`）。页脚的版本号可以点开，查看 v1.0.0 以来的更新内容（数据在 `frontend/src/constants/changelog.js`）。
 
 > 仓库不包含任何商业 ROM。请只上传、保存和运行你有权使用的 ROM、BIOS 与模拟器核心。
 
@@ -22,7 +22,7 @@
 - 联机房间：公开/私有房间、房间码与密码、聊天、席位同步；host 推流画面与音频，guest 通过 DataChannel 回传输入，游客默认观战；房间内不提供 ROM 版本切换，统一跑进房时选定的版本。客机按键在 host 侧换算成一组只做内部中转的键注入 core，这组键同时会从「房主自己的键位」里全部避开，而且房主真的按到它们时页面会直接吞掉（不会打到别的玩家），客机只认经 DataChannel 回传的输入。STUN / TURN 都能在后台填写，保存后玩家刷新页面即生效，不需要重新构建镜像。
 - 管理后台：用户、ROM、BIOS、站点设置（上传开关、联机开关、游客游玩、STUN 与 TURN 地址及连通性测试）；每个 ROM 可单独配置内置金手指（后台 ROM 列表里的「金手指」按钮）。
 - ROM 与用户列表里的时间统一按 `Asia/Shanghai` 显示：数据库连接、Drizzle 映射和接口输出都固定同一个时区，不再出现差 8 小时的混用。
-- ROM 封面与元数据可编辑；ROM 可转存到独立远端存储（Node 或 PHP 版，见 `deploy/README.md`），不限文件大小。
+- ROM 封面与元数据可编辑；ROM 可转存到独立远端存储（Node 或 PHP 版，见 `deploy/README.md`），不限文件大小。后台「远端设置」里有「本地 ROM 一键迁移」：把本站磁盘上的 ROM 逐个搬到远端（记录 id、收藏、存档、房间、父子版本不变，可随时停止），**本站磁盘上的文件原样保留**——玩家走浏览器直连远端下载失败（远端不可用、网络不通）时，主站自动改用本地副本顶上，远端出问题也能照常开局；本地副本是远端 ROM 播放的唯一兜底，不做代理回源。
 
 ## 技术栈
 
@@ -58,7 +58,7 @@
 ## 架构要点
 
 - 启动：`server/index.js` 先执行数据库迁移和会话清理，再挂载安全中间件、HTTP API、WebSocket 路由，最后托管 `frontend/dist`。
-- ROM 播放：`GET /api/roms/:id/file` 依据 `storage` 字段读本地磁盘或代理远端存储（透传 `Range`），前端交给 Nostalgist 按平台核心启动；J2ME 是例外，`.jar` 交给前端托管的 J2meJS 运行时（同源内嵌页面）解释。
+- ROM 播放：`GET /api/roms/:id/file` 依据 `storage` 字段读本地磁盘或转交远端存储，前端交给 Nostalgist 按平台核心启动；J2ME 是例外，`.jar` 交给前端托管的 J2meJS 运行时（同源内嵌页面）解释。远端 ROM 的取用顺序是「浏览器直连（302 到短期签名地址，主站出口不承载文件）→ 本站磁盘上的本地副本」：302 之前先做一次远端体检（结果缓存 30 秒），远端整体不可用就不发直连；浏览器真正下载失败时，前端会自动带 `?direct=0` 重试，改用本地副本。主站不再带密钥代理回源，没有本地副本的远端记录会如实返回 404。
 - 联机：`/api/rooms/:code/ws` 先经 `room-ws-gate` 校验会话、票据、功能开关与限流，再加入在线房间；房间内 host 运行模拟器并推流，guest 输入经 DataChannel 回传，房主固定为 P1。
 - 单实例假设（已强制）：限流计数、WebSocket 连接票据、房间在线状态、上传并发闸门与临时 TURN 凭据都在**进程内存**里，所以只跑一个 Node 进程（systemd 单实例或单容器）。启动时会用 MySQL 的 `GET_LOCK` 抢 `games-online:primary` 这把锁，抢不到就直接退出（打印原因、退出码 0，避免 systemd 反复重启），要横向扩到多副本必须先按上面的清单换成 Redis/数据库实现（临时起冒烟实例调试时用 `SINGLE_INSTANCE_LOCK=0` 跳过）。
 - 停机与健康：收到 `SIGTERM`/`SIGINT` 会停掉定时器、断开在线 WebSocket、放锁并关闭连接池再退出（10 秒兜底强退）；`GET /api/health` 每次真的 ping 一次数据库，连不上返回 `503` 与 `db: "down"`。
@@ -171,7 +171,7 @@ echo '你的_GITHUB_TOKEN' | docker login ghcr.io -u xiaoxin0125 --password-stdi
 cd /www/wwwroot/game
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 docker compose --env-file /www/wwwroot/game-biu/config/.env ps
-curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.7.0"}
+curl --fail http://127.0.0.1:32741/api/health   # {"ok":true,"version":"1.7.1"}
 ```
 
 所有 Compose 命令都要在源码目录执行并显式带上 `--env-file`。宝塔面板的“Compose/编排”页面不一定读取外部环境变量文件，遇到 `Set ... in .env` 或本地构建提示时，改用宝塔终端执行上面的命令。
@@ -222,7 +222,7 @@ docker compose --env-file /www/wwwroot/game-biu/config/.env pull app
 docker compose --env-file /www/wwwroot/game-biu/config/.env up -d --no-build
 ```
 
-生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.0`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可；v1.6.1 升级到 v1.6.2 只有前端与一条数据迁移（`0008_platform_aliases`，把 `famicom` / `snes` / `genesis` 并到 `nes` / `sfc` / `megadrive`，随后端启动自动执行），没有新的核心与 BIOS，替换镜像或重新构建前端即可；v1.6.2 升级到 v1.6.3 只改前端与 `frontend/public/j2me/` 里的运行时（新增 `rms.js`、补丁 15–18、`lcdui.js` 的文字输入），没有表结构变更、没有新的核心与 BIOS，**但必须重新构建前端**：运行时资源带内容版本号，只换后端镜像不会更新 `j2me/` 下的文件；云存档沿用既有的 `save_states` 表与 `data/saves` 目录，不需要改动。升级后建议清一次手机浏览器缓存或用无痕窗口验证运行时（见「常见问题」里的 J2ME 一节）；v1.6.3 升级到 v1.7.0 是安全与运维加固（TURN 临时凭据、上传与建房限额、会话令牌哈希入库、口令改 scrypt、单实例锁、优雅停机、静态长缓存与真 404），**没有表结构变更**，替换镜像或重新构建前端即可；新增几个可调环境变量（`UPLOAD_CONCURRENCY`、`UPLOAD_RATE_LIMIT_PER_MINUTE`、`SESSION_IDLE_TIMEOUT_DAYS`、`SINGLE_INSTANCE_LOCK`，默认值见 `.env.example` 与 `compose.yaml`），单实例部署不用改；想用临时 TURN 凭据，按 `deploy/STUN.md` 把 coturn 改成 `use-auth-secret`，再到后台「站点设置 → TURN 中继」填同一个共享密钥；升级后按 `deploy/README.md`「日常发布」的流程校验 `/api/health` 报的版本。
+生产建议在 `config/.env` 里固定版本标签（如 `APP_IMAGE=ghcr.io/xiaoxin0125/game-biubiubiu:v1.7.1`）而不是长期使用 `latest`，回滚时改回旧标签并执行 `up -d --no-build --force-recreate app` 即可。注意 `restart` 不会加载新的环境变量，修改 `config/.env` 或 `config/app.json` 后需要 `--force-recreate`。从 v1.1.x 升级到 v1.2.0 会在容器启动时自动执行金手指表迁移（`0006_rom_cheats.sql`）；v1.2.0 升级到 v1.3.0 没有新的表结构变更，直接替换镜像即可；v1.3.0 升级到 v1.4.0 同样没有表结构变更；v1.4.0 升级到 v1.5.0 也没有新的表结构变更，替换镜像后建议再执行一次 `node deploy/build-cores.mjs` 发布当前核心（版本化核心地址与远端托管依赖它，见 `deploy/README.md`）；v1.5.0 升级到 v1.5.1 只改了前端与图标资源，没有表结构变更，替换镜像即可（改过图标配色的话记得重新构建前端）；v1.5.1 升级到 v1.5.2 同样只改前端（FDS 换面 / 换盘按钮、键盘中转键隔离、统一弹窗与分页），没有表结构变更，替换镜像或重新构建前端即可；v1.5.2 升级到 v1.6.0 新增七个平台、四颗 libretro 核心、前端托管的 J2meJS 运行时与三组 BIOS 资源；需补齐 `data/cores`（四份新增核心）与 `data/bios`（`pcecd` / `neogeocd` / `3do` 三个目录），重新构建前端以发布 `j2me/` 资源，并执行一次 `node deploy/build-cores.mjs` 生成新的核心发布版本（远端资源服务器也要同步这一版，见 `deploy/sync-cores.sh`）；v1.6.0 升级到 v1.6.1 只改前端构建与运行时目录（移除了被替换掉的 js2me 运行时与已删除的封面图，并修好构建前的清理），没有表结构变更，也没有新的核心与 BIOS，重新构建前端即可；v1.6.1 升级到 v1.6.2 只有前端与一条数据迁移（`0008_platform_aliases`，把 `famicom` / `snes` / `genesis` 并到 `nes` / `sfc` / `megadrive`，随后端启动自动执行），没有新的核心与 BIOS，替换镜像或重新构建前端即可；v1.6.2 升级到 v1.6.3 只改前端与 `frontend/public/j2me/` 里的运行时（新增 `rms.js`、补丁 15–18、`lcdui.js` 的文字输入），没有表结构变更、没有新的核心与 BIOS，**但必须重新构建前端**：运行时资源带内容版本号，只换后端镜像不会更新 `j2me/` 下的文件；云存档沿用既有的 `save_states` 表与 `data/saves` 目录，不需要改动。升级后建议清一次手机浏览器缓存或用无痕窗口验证运行时（见「常见问题」里的 J2ME 一节）；v1.6.3 升级到 v1.7.0 是安全与运维加固（TURN 临时凭据、上传与建房限额、会话令牌哈希入库、口令改 scrypt、单实例锁、优雅停机、静态长缓存与真 404），**没有表结构变更**，替换镜像或重新构建前端即可；新增几个可调环境变量（`UPLOAD_CONCURRENCY`、`UPLOAD_RATE_LIMIT_PER_MINUTE`、`SESSION_IDLE_TIMEOUT_DAYS`、`SINGLE_INSTANCE_LOCK`，默认值见 `.env.example` 与 `compose.yaml`），单实例部署不用改；想用临时 TURN 凭据，按 `deploy/STUN.md` 把 coturn 改成 `use-auth-secret`，再到后台「站点设置 → TURN 中继」填同一个共享密钥；v1.7.0 升级到 v1.7.1 是远端存储与 ROM 播放的兜底改造（远端 ROM 在本站保留副本、直连失败自动回落、后台一键迁移存量 ROM）与账号体验修正（用户名支持中文、注册提示按字段给出），**没有表结构变更**，也没有新的核心与 BIOS，但**前端改动较多**（玩家页的直连失败回落、后台「本地 ROM 一键迁移」面板、注册表单与用户名规则），替换镜像或重新构建前端即可；这一版起远端存储的 ROM 会在本站磁盘保留一份文件（直连失败时的唯一兜底），本地磁盘占用会上升，请预留空间，也不要手工删这些文件；历史遗留的 `remote:` 占位记录（本站没有副本，早期脚本只写了占位值）在直连不可用时播放会如实报 404，需要重新上传一次补齐本地兜底；升级后按 `deploy/README.md`「日常发布」的流程校验 `/api/health` 报的版本。
 
 **6. 备份与恢复**
 
@@ -345,7 +345,7 @@ FDS 是磁碟机，游戏中途要换 A / B 面：播放页的按钮组里会多
 ```bash
 npm run build
 node --check server/index.js
-curl http://127.0.0.1:3000/api/health   # {"ok":true,"version":"1.7.0","db":"up","ms":1}
+curl http://127.0.0.1:3000/api/health   # {"ok":true,"version":"1.7.1","db":"up","ms":1}
 ```
 
 ## 常见问题

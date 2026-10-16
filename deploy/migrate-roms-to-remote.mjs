@@ -14,16 +14,21 @@
  *   node deploy/migrate-roms-to-remote.mjs --apply           # 执行，并写出回滚文件
  *   node deploy/migrate-roms-to-remote.mjs --rollback deploy/migrations/roms-remote-<时间>.json
  *
+ * 后台「站点设置 → 远端设置 → 本地 ROM 一键迁移」做的是同一件事（不写回滚文件）；
+ * 日常用后台那个即可，这个脚本适合需要预演 / 限定范围 / 留回滚文件的场合。
+ *
  * 安全约束：
- *   - 只上传、只改 storage/remote_file_id/file_path，不动本地文件；本地副本留到
- *     独立确认后再自行清理（脚本会打印可清理清单）。
+ *   - 只上传、只改 storage/remote_file_id，不动本地文件；filePath 保留为本地副本，
+ *     它是远端 ROM 播放的兜底（浏览器直连远端失败时主站读它），所以不要手工删除
+ *     （清理清单见脚本结尾）。
  *   - 先上传成功、远端返回的大小与 sha256 都与本地一致，才更新数据库。
  *   - 每个成功的记录都会写进回滚文件，可整批回滚（--keep-remote 保留远端副本）。
  *   - 可重复执行：已经是远端存储的记录会跳过。
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { pipeline } from 'node:stream/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,7 +38,7 @@ import '../server/config.js'
 const { eq } = await import('drizzle-orm')
 const { db } = await import('../server/db/index.js')
 const { roms } = await import('../server/db/schema.js')
-const { remoteUpload, remoteDelete, remoteDownloadConfig, remoteStorageConfig } = await import('../server/remote-storage.js')
+const { remoteUploadStream, remoteDelete, remoteDownloadConfig, remoteStorageConfig } = await import('../server/remote-storage.js')
 const { assertInsideRoot } = await import('../server/storage.js')
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
@@ -67,8 +72,11 @@ function formatBytes(bytes) {
   return `${value}B`
 }
 
-function sha256OfBuffer(buffer) {
-  return createHash('sha256').update(buffer).digest('hex')
+// 迁移上传用流式：几百 MB 到几 GB 的文件不进内存（与后台「一键迁移」一致）。
+async function sha256OfFile(filePath) {
+  const hash = createHash('sha256')
+  await pipeline(createReadStream(filePath), hash)
+  return hash.digest('hex')
 }
 
 function resolveLocalPath(filePath) {
@@ -183,15 +191,22 @@ for (const row of candidates) {
 
   const size = statSync(localPath).size
   try {
-    const buffer = readFileSync(localPath)
-    const sha256 = sha256OfBuffer(buffer)
-    const result = await remoteUpload({ buffer, fileName: row.fileName, sha256 })
+    const sha256 = await sha256OfFile(localPath)
+    // 流式上传 + 远端校验（大小与 sha256 都对得上才算成功）。
+    const result = await remoteUploadStream({
+      stream: createReadStream(localPath),
+      fileName: row.fileName,
+      sha256,
+      size,
+    })
     if (Number(result.size) !== size || (result.sha256 && result.sha256 !== sha256)) {
       throw new Error(`远端校验不一致（本地 ${size}/${sha256.slice(0, 12)}…，远端 ${result.size}/${String(result.sha256).slice(0, 12)}…）`)
     }
 
+    // 保留 filePath：它是本地副本，浏览器直连远端失败时主站拿它兜底
+    // （与后台「一键迁移」行为一致）。本地副本不要删，删了该 ROM 就没有兜底了。
     await db.update(roms)
-      .set({ storage: 'remote', remoteFileId: String(result.id), filePath: `remote:${result.id}` })
+      .set({ storage: 'remote', remoteFileId: String(result.id) })
       .where(eq(roms.id, row.id))
 
     entries.push({
@@ -218,7 +233,8 @@ console.log(`\n完成：成功 ${uploaded}，失败 ${failed}`)
 if (uploaded) {
   console.log(`回滚文件：${outFile}`)
   console.log(`回滚命令：node deploy/migrate-roms-to-remote.mjs --rollback ${outFile}`)
-  console.log('\n本地副本已保留。浏览器实测能正常开局后，再单独删除下列文件（脚本不会自动删）：')
+  console.log('\n本地副本已保留（直连远端失败时主站用它兜底），脚本不会删，也请不要手动删 ——')
+  console.log('删掉之后这个 ROM 在没有直连时就无法播放。相应文件位置：')
   for (const entry of entries) console.log(`  ${entry.localPath}`)
 }
 if (failed) process.exitCode = 1

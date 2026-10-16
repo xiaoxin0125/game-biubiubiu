@@ -51,6 +51,21 @@ curl -s http://127.0.0.1:8790/health -H "X-Token: $(sudo cat /www/wwwroot/rom-up
 - 上传和播放都由主站带密钥转发，浏览器不会拿到密钥，也无需给远端开 CORS；
 - 若远端在另一台机器，记得放行主站服务器 IP，并在远端改掉默认端口/密钥。
 
+### 把已有 ROM 搬到远端（一键迁移）
+
+后台「站点设置 → 远端设置 → 本地 ROM 一键迁移」：
+
+- 「一键迁移到远端」把本站磁盘上还没迁走的 ROM 逐个上传（流式，多大都不进内存）、
+  与本地逐一核对大小和 sha256 之后才更新记录，可随时「停止」；已经迁过的记录会跳过，
+  所以重跑是安全的。任务跑在服务进程内存里（单实例），重启服务后重新点一次即可。
+- 迁移往远端加一份，**本站磁盘上的文件原样保留**，那是远端 ROM 播放的唯一兜底：
+  玩家浏览器直连远端失败（远端不可用、网络不通）时前端会改回主站读本地副本。
+  302 之前主站还会先体检一次远端（结果缓存 30 秒），远端整体挂了就不会把玩家
+  送到一个连不上的地址上。主站不再带密钥代理回源，所以本地副本不要手工删除，
+  否则该 ROM 在没有直连时无法播放。
+- 需要预演、限定范围（`--id` / `--min-size`）或留回滚文件时，仍可用命令行版
+  `node deploy/migrate-roms-to-remote.mjs`，它和后台走同一套上传与校验逻辑。
+
 ### 远端只有 PHP 时（PHP 版 rom-upload）
 
 远端那台机器不方便装 Node（只有 PHP + Nginx/Apache，例如另一台宝塔服务器）时，用 PHP 版即可，
@@ -140,11 +155,14 @@ npm run test:coverage               # 带覆盖率的测试报告（仅供参考
 - 站点根目录是 `frontend/dist`，宝塔申请、续签 HTTPS 证书时会把校验文件写到 `frontend/dist/.well-known/acme-challenge`，该目录由 root 创建。`frontend/vite.config.js` 已设置 `emptyOutDir: false`，构建脚本只清理 vite 自己生成的 `dist/assets` 和 `dist/index.html`，因此证书目录不会导致构建失败。
 - 核心与 ROM 都有"浏览器直连远端"的开关，位置在后台「站点设置」：核心是「核心资源（远端托管）」，
   ROM 是「远端存储 → ROM 由浏览器直连远端下载」。两者都默认走本机，验收通过后再打开；
-  关闭后立刻回退本机路径（核心关开关，ROM 由主站带密钥转发）。
+  关闭后立刻回退本机路径（核心关开关，ROM 走本地副本）。ROM 直连打开后，浏览器端拿到
+  网络错误或非 2xx 会自己改回本站读本地副本，不必人工介入。
 - 远端若跑的是旧的 rom-upload（Node / PHP 两版），浏览器直连需要的 `/signed/:id` 接口要先用
   `node deploy/patch-remote-signed.mjs <目标文件>` 补上（幂等、会先备份）。
-- 存量 ROM 迁到远端用 `node deploy/migrate-roms-to-remote.mjs`（默认预演），它会保留原记录 id
-  与收藏/存档/房间等关联，并写出可回滚的 JSON；本地副本不会自动删。
+- 存量 ROM 迁到远端有两个入口：后台「站点设置 → 远端设置 → 本地 ROM 一键迁移」（日常用这个），
+  或命令行 `node deploy/migrate-roms-to-remote.mjs`（默认预演，支持 `--id` / `--min-size` 限定范围
+  并写出可回滚的 JSON）。两者都保留原记录 id 与收藏/存档/房间等关联，本地文件也原样保留 ——
+  它是远端 ROM 播放的兜底（远端直连失败时主站读它），所以不要手工删。
 - STUN 不再通过环境变量下发，改为后台“站点设置”中填写，保存在数据库里，保存后无需重新打包。保存前可以点「测试 STUN 服务器」：后端会向填写的地址发真实 STUN 请求（UDP/TCP）并报告延迟与出口地址，浏览器侧再做一次 ICE 采集自检。TURN 同样是后台「站点设置 → TURN 中继」里的地址 + 用户名 + 密码优先，环境变量 `VITE_WEBRTC_TURN_*` 只作兜底；点「测试 TURN 中继」时若填了凭据会真的分配一次中继端口。在另一台服务器上自建 STUN 服务的方法见 `deploy/STUN.md`。
 - 数据库里的时间统一按 `Asia/Shanghai`（+08:00）读写：`server/db/index.js` 建连接时会话时区钉在 `+08:00`，`server/db/schema.js` 也用自定义 timestamp 类型做同样的换算（见 `server/db/timezone.js`）。服务器的系统时区或 `TZ` 与它不一致时，列表里显示的时间不会跟着偏，但 MySQL 里已有的历史数据需按同一时区理解。
 - `.env` 中的 `NODE_ENV=production` 会使写请求校验 Origin。`CSRF_ALLOWED_ORIGINS` 必须包含浏览器实际访问的地址。

@@ -12,6 +12,11 @@ import { BIOS_BY_PLATFORM, BIOS_PLATFORM_LABELS } from '../../shared/registry/pl
 import { audit } from '../audit.js'
 import { coverUrlFor } from './roms.js'
 import { cheatCountsFor, listRomCheats, MAX_ROM_CHEATS, replaceRomCheats } from '../rom-cheats.js'
+import {
+  cancelRomRemoteMigration,
+  romRemoteMigrationOverview,
+  startRomRemoteMigration,
+} from '../rom-remote-migration.js'
 
 export const adminRoutes = new Hono()
 
@@ -213,4 +218,42 @@ adminRoutes.put('/roms/:id/cheats', async (c) => {
     metadata: { count: cheats.length },
   })
   return c.json({ cheats })
+})
+
+// ── 本地 ROM → 远端存储：一键迁移 ─────────────────────────────────────────
+// 后端任务串行搬文件（见 rom-remote-migration.js），前端轮询这个 GET 拿进度。
+// 两个 POST 分别是启动与停止；迁移保留本地副本（远端 ROM 播放的兜底），
+// 所以没有"删本地副本"的入口。
+
+adminRoutes.get('/roms/remote-migration', async (c) => {
+  return c.json(await romRemoteMigrationOverview())
+})
+
+adminRoutes.post('/roms/remote-migration', async (c) => {
+  let result
+  try {
+    result = await startRomRemoteMigration()
+  } catch (error) {
+    return c.json({ error: error?.message || '启动迁移失败' }, 400)
+  }
+  if (result.started) {
+    await audit(c, {
+      action: 'rom.remote.migrate.start',
+      targetType: 'rom',
+      metadata: { total: result.task.total, totalBytes: result.task.totalBytes },
+    })
+  }
+  return c.json({ ...result, overview: await romRemoteMigrationOverview() })
+})
+
+adminRoutes.post('/roms/remote-migration/cancel', async (c) => {
+  const result = cancelRomRemoteMigration()
+  if (result.cancelled) {
+    await audit(c, {
+      action: 'rom.remote.migrate.cancel',
+      targetType: 'rom',
+      metadata: { processed: result.task.processed, total: result.task.total },
+    })
+  }
+  return c.json({ ...result, overview: await romRemoteMigrationOverview() })
 })

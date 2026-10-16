@@ -11,8 +11,7 @@
 
         <div class="dialog-body">
           <p class="dialog-message">
-            Java 手机游戏的「兼容库」决定哪些 API 能用：<b>{{ title }}</b> 默认用覆盖面最广的一档。
-            游戏起不来、或提示缺少 MIDP 2.0 特性时，换一档再开一次即可；选择会记在这个 ROM 上。
+            <b>{{ title }}</b> 默认用覆盖面最广的一档。
           </p>
           <div class="choices" role="radiogroup" aria-labelledby="j2me-engine-title">
             <button
@@ -36,8 +35,7 @@
 
           <h4 class="section-title">游戏语言</h4>
           <p class="dialog-message">
-            游戏按「设备语言」挑自己的语言包：中文的写法差一点（zh-SG、zh-Hans-CN）就会退回英文。
-            自动档已经把这些写法都算作中文；想固定用某一种，在这里选。选择记在这台设备上。
+            游戏按「设备语言」挑自己的语言包，缺失时会回退默认。
           </p>
           <div class="choices" role="radiogroup" aria-label="游戏语言">
             <button

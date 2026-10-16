@@ -29,6 +29,19 @@ export const DIRECT_URL_CLOCK_SKEW_SEC = 60
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000
 const DOWNLOAD_TIMEOUT_MS = 60 * 1000
 const HEALTH_TIMEOUT_MS = 8 * 1000
+// 直连前的探测：远端整体不可用时干脆不发 302，玩家直接走本地/代理，不用先
+// 在浏览器里等一次连接失败。结果缓存一小段时间，正常播放路径几乎无额外开销。
+const DIRECT_PROBE_TTL_MS = 30 * 1000
+const DIRECT_PROBE_TIMEOUT_MS = 3000
+
+/**
+ * 流式上传的超时预算：按体积给，慢速上行也能完成；至少 10 分钟。
+ * 目前按每 MiB 2 秒（约 512KB/s）估算，1GB 的文件有约 33 分钟。
+ */
+export function streamUploadTimeoutMs(size) {
+  const bytes = Number(size) || 0
+  return Math.max(UPLOAD_TIMEOUT_MS, Math.ceil(bytes / (1024 * 1024)) * 2000)
+}
 
 export function normalizeRemoteUrl(value) {
   const raw = String(value ?? '').trim()
@@ -186,7 +199,7 @@ function endpoint(config) {
 }
 
 // 只做连通性/鉴权检查，失败时抛出带人话错误信息的异常
-export async function remoteHealth(override = null) {
+export async function remoteHealth(override = null, { timeoutMs = HEALTH_TIMEOUT_MS } = {}) {
   const config = override || (await remoteStorageConfig())
   if (!config.url) throw new Error('尚未配置远端地址')
   if (!config.token) throw new Error('尚未配置远端密钥')
@@ -196,7 +209,7 @@ export async function remoteHealth(override = null) {
   try {
     res = await fetch(joinUrl(config.url, '/health'), {
       headers: { 'X-Token': config.token, Accept: 'application/json' },
-      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
     throw new Error(describeFetchError(err), { cause: err })
@@ -206,6 +219,42 @@ export async function remoteHealth(override = null) {
   if (res.status === 401 || res.status === 403) throw new Error('远端密钥不正确（远端返回 401）')
   if (!res.ok || !body?.ok) throw new Error(`远端返回异常状态 ${res.status}`)
   return { ...body, latencyMs, url: endpoint(config) }
+}
+
+let directProbeCache = { at: 0, ok: false, inflight: null }
+
+/**
+ * 浏览器直连前的一次快速体检：远端还活着才发 302。
+ * 结果缓存 DIRECT_PROBE_TTL_MS，探测失败只影响"要不要直连"，不影响本机兜底链路。
+ */
+export async function remoteDirectReachable() {
+  const now = Date.now()
+  if (now - directProbeCache.at < DIRECT_PROBE_TTL_MS) return directProbeCache.ok
+  if (directProbeCache.inflight) return directProbeCache.inflight
+  const inflight = (async () => {
+    let ok = false
+    try {
+      await remoteHealth(null, { timeoutMs: DIRECT_PROBE_TIMEOUT_MS })
+      ok = true
+    } catch {}
+    directProbeCache = { at: Date.now(), ok, inflight: null }
+    return ok
+  })()
+  directProbeCache = { ...directProbeCache, inflight }
+  return inflight
+}
+
+// 测试用：清掉探测缓存，让下一次调用重新探。
+export function resetRemoteDirectProbe() {
+  directProbeCache = { at: 0, ok: false, inflight: null }
+}
+
+async function parseUploadResponse(res) {
+  const body = await res.json().catch(() => null)
+  if (!res.ok || !body?.id) {
+    throw new Error(body?.error ? `远端服务器拒绝：${body.error}` : `远端服务器返回 ${res.status}`)
+  }
+  return body
 }
 
 export async function remoteUpload({ buffer, fileName, sha256 }) {
@@ -228,11 +277,41 @@ export async function remoteUpload({ buffer, fileName, sha256 }) {
   } catch (err) {
     throw new Error(`上传到远端服务器失败：${describeFetchError(err)}`, { cause: err })
   }
-  const body = await res.json().catch(() => null)
-  if (!res.ok || !body?.id) {
-    throw new Error(body?.error ? `远端服务器拒绝：${body.error}` : `远端服务器返回 ${res.status}`)
+  return parseUploadResponse(res)
+}
+
+/**
+ * 流式上传：请求体是一段可读流，整个文件不进内存。
+ * 一键迁移用它搬大 ROM —— 几百 MB 到几 GB 的文件按 buffer 读会把内存打满。
+ * `signal` 用于任务取消；传了就直接中断这次上传。
+ */
+export async function remoteUploadStream({ stream, fileName, sha256, size, signal = null }) {
+  const config = await remoteStorageConfig()
+  if (!config.configured) throw new Error('尚未配置远端存储')
+  const timeoutSignal = AbortSignal.timeout(streamUploadTimeoutMs(size))
+  const combined = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal
+  let res
+  try {
+    res = await fetch(joinUrl(config.url, '/upload'), {
+      method: 'POST',
+      headers: {
+        'X-Token': config.token,
+        'X-Filename': encodeURIComponent(fileName || 'rom.bin'),
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(size),
+        ...(sha256 ? { 'X-Sha256': sha256 } : {}),
+      },
+      body: stream,
+      // undici 对"流式请求体"要求显式声明半双工。
+      duplex: 'half',
+      signal: combined,
+    })
+  } catch (err) {
+    // 任务被取消时把原始 AbortError 抛上去，让调用方区分"取消"和"上传失败"。
+    if (signal?.aborted) throw err
+    throw new Error(`上传到远端服务器失败：${describeFetchError(err)}`, { cause: err })
   }
-  return body
+  return parseUploadResponse(res)
 }
 
 export async function remoteDelete(remoteFileId) {

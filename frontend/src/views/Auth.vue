@@ -19,7 +19,7 @@
       <form class="auth-form" @submit.prevent="submit">
         <div class="field">
           <label class="label">用户名</label>
-          <input v-model.trim="username" class="input" autocomplete="username" placeholder="3-32 位字母数字下划线" required />
+          <input v-model.trim="username" class="input" autocomplete="username" :placeholder="USERNAME_RULE_HINT" required />
         </div>
         <div class="field">
           <label class="label">密码</label>
@@ -46,6 +46,8 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useSettings } from '../composables/useSettings.js'
+// 用户名规则（含占位符文案）与服务端读的是同一份，避免界面提示和真实校验对不上。
+import { usernameProblem, USERNAME_RULE_HINT } from '../../../shared/username-policy.js'
 
 const { login, register } = useAuth()
 const { settings } = useSettings()
@@ -66,7 +68,13 @@ function validPassword(value) {
 
 async function submit() {
   error.value = ''
-  if (username.value.length < 3) return (error.value = '用户名至少 3 位')
+  if (!username.value) return (error.value = '请输入用户名')
+  // 注册按现行规则先拦一道，用户不用等一次往返就知道名字哪里不合规；
+  // 登录只要求非空：长度与字符集都不再收紧，免得历史账号被前端挡在门外。
+  if (mode.value === 'register') {
+    const problem = usernameProblem(username.value)
+    if (problem) return (error.value = problem)
+  }
   if (mode.value === 'register' && !validPassword(password.value)) {
     return (error.value = '密码至少 8 位')
   }

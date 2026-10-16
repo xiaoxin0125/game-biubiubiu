@@ -209,14 +209,16 @@ const remoteAvailable = computed(() => !!settings.value.remoteUploadAvailable)
 const canUseRemote = computed(() => remoteAvailable.value && !asVariant.value)
 const fileSizeMb = computed(() => (file.value ? (file.value.size / 1024 / 1024).toFixed(1) : '0'))
 const remoteHint = computed(() => {
+  // 远端 ROM 的播放兜底是本地副本（远端直连失败时主站读它），所以远端存储也会
+  // 在本站磁盘留一份，文案如实说明，别让人以为"本机不再占空间"。
   if (useRemoteStorage.value) {
     return file.value
-      ? `将转存到远端存储，本机只保留记录；${fileSizeMb.value}MB 转发需要一点时间`
-      : '将转存到远端存储，本机只保留记录'
+      ? `将转存到远端存储，本站磁盘也保留一份副本作兜底；${fileSizeMb.value}MB 转发需要一点时间`
+      : '将转存到远端存储，本站磁盘也保留一份副本作兜底'
   }
   return file.value
-    ? `当前文件 ${fileSizeMb.value}MB，转存到远端存储服务器后本机只保留记录`
-    : '转存到远端存储服务器，本机只保留记录'
+    ? `当前文件 ${fileSizeMb.value}MB，转存到远端存储服务器（本站仍保留副本）`
+    : '转存到远端存储服务器，本站仍保留一份副本作兜底'
 })
 
 watch(canUseRemote, (allowed) => { if (!allowed) useRemoteStorage.value = false })

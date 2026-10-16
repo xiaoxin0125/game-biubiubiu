@@ -18,17 +18,23 @@ import { getSetting } from './settings.js'
 import { broadcastRoomClosed } from '../room-hub.js'
 import { resolveMaxPlayersInfo } from '../rom-players.js'
 import { PLATFORM_CORES, PLATFORM_IDS, normalizePlatformId } from '../../shared/registry/platform-roms.js'
-import { assertInsideRoot } from '../storage.js'
+import {
+  UPLOADS_DIR,
+  assertInsideRoot,
+  localFallbackFilePath,
+  resolveReadableUploadPath,
+} from '../storage.js'
 import { parseListWindow, listPage } from '../http-utils.js'
 import { audit } from '../audit.js'
 import { listRomCheats } from '../rom-cheats.js'
-import { remoteDelete, remoteOpenFile, remoteUpload, remoteStorageConfig, buildRemoteDownloadUrl } from '../remote-storage.js'
+import {
+  buildRemoteDownloadUrl,
+  remoteDelete,
+  remoteDirectReachable,
+  remoteStorageConfig,
+  remoteUpload,
+} from '../remote-storage.js'
 
-const UPLOADS_DIR = resolve(process.env.UPLOADS_DIR || 'data/uploads')
-const LEGACY_UPLOAD_ROOTS = [
-  process.env.LEGACY_UPLOADS_DIR,
-  '/www/wwwroot/Xgame/data/uploads',
-].filter(Boolean).map((root) => resolve(root))
 const MAX_SIZE = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
 const USER_UPLOAD_QUOTA_BYTES = Number(process.env.USER_UPLOAD_QUOTA_BYTES) || 2 * 1024 * 1024 * 1024
 const ALLOWED_PLATFORMS = new Set(PLATFORM_IDS)
@@ -250,17 +256,6 @@ async function applyPlatformMoves(moves) {
     throw error
   }
   return done
-}
-
-function resolveReadableUploadPath(filePath) {
-  const candidates = [UPLOADS_DIR, ...LEGACY_UPLOAD_ROOTS]
-  for (const root of candidates) {
-    try {
-      const checked = assertInsideRoot(root, filePath)
-      if (existsSync(checked)) return checked
-    } catch {}
-  }
-  throw new Error('upload-file-not-found')
 }
 
 function safeUnlinkUpload(filePath) {
@@ -757,38 +752,40 @@ async function handleRomUpload(c, user) {
   // 不留孤儿文件；否则它们不计配额、也不出现在任何列表里（2026-10 审计 H-2）。
   let coverPath = null
   const discardWrittenArtifacts = async () => {
-    if (storage === 'remote' && remoteFileId) await remoteDelete(remoteFileId)
-    else if (storedPath) safeUnlinkCover(storedPath)
+    if (remoteFileId) await remoteDelete(remoteFileId)
+    if (storedPath) safeUnlinkCover(storedPath)
     if (coverPath) safeUnlinkCover(coverPath)
   }
 
   try {
+    // 本地落盘先做、而且两种存储都要做：远端 ROM 的播放兜底就是这份本地副本
+    // （远端直连失败时读它），所以本站永远保留一份可直接读的文件。
+    mkdirSync(userDir, { recursive: true })
+    const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
+    const storedName = `${randomUUID()}${safeExt}`
+    storedPath = assertInsideRoot(userDir, join(userDir, storedName))
+    const fileBuffer = Buffer.from(await file.arrayBuffer())
+    await writeFile(storedPath, fileBuffer)
+    storedBytes = file.size
+
     if (wantsRemote) {
       const remote = await remoteStorageConfig()
       if (!remote.configured) {
+        await discardWrittenArtifacts()
         return c.json({ error: '尚未配置远端存储，请在站点设置里填写远端地址和密钥' }, 400)
       }
-      const fileBuffer = Buffer.from(await file.arrayBuffer())
       const sha256 = createHash('sha256').update(fileBuffer).digest('hex')
       let uploaded
       try {
         uploaded = await remoteUpload({ buffer: fileBuffer, fileName: file.name, sha256 })
       } catch (err) {
+        await discardWrittenArtifacts()
         return c.json({ error: err?.message || '上传到远端服务器失败' }, 502)
       }
       storage = 'remote'
       remoteFileId = String(uploaded.id)
-      storedPath = `remote:${remoteFileId}`
       storedBytes = Number(uploaded.size || fileBuffer.length)
       storedSha = uploaded.sha256 || sha256
-    } else {
-      mkdirSync(userDir, { recursive: true })
-      const safeExt = extname(file.name).replace(/[^\w.]/g, '').slice(0, 10) || '.bin'
-      const storedName = `${randomUUID()}${safeExt}`
-      storedPath = assertInsideRoot(userDir, join(userDir, storedName))
-      const buf = Buffer.from(await file.arrayBuffer())
-      await writeFile(storedPath, buf)
-      storedBytes = file.size
     }
 
     // Optional cover image. Variants may carry their own cover (the UI offers it
@@ -1096,9 +1093,14 @@ romRoutes.delete('/:id', requireAuth, async (c) => {
       try { safeUnlink(resolve(process.env.SAVES_DIR || 'data/saves'), s.filePath) } catch {}
     }
     // the rom file itself: remote blobs are dropped on the rom-upload service,
-    // local ones from this server's upload directory
+    // local ones from this server's upload directory；远端记录如果还有迁移时
+    // 保留的本地副本，也一起清掉，不留孤儿文件。
     if (t.storage === 'remote') {
       await remoteDelete(t.remoteFileId)
+      const localCopy = localFallbackFilePath(t.filePath)
+      if (localCopy) {
+        try { safeUnlinkUpload(localCopy) } catch {}
+      }
     } else {
       try { safeUnlinkUpload(t.filePath) } catch {}
     }
@@ -1140,47 +1142,47 @@ async function serveRomFile(c) {
     return c.json({ error: 'forbidden' }, 403)
   }
 
-  // Remote-stored ROMs: by default they are streamed back through this server so
-  // the shared token of the rom-upload service never reaches the browser. When
-  // the admin enables direct download, the browser is sent to a short-lived
-  // signed URL instead and this server's uplink no longer carries the file.
+  // 远端 ROM 的下载路径，只有两级：
+  //   1. 浏览器直连：开关开着且远端体检通过时才 302 到短期签名地址，本站出口
+  //      不承载文件；浏览器端拿到网络错误或非 2xx 时，前端会自动带 ?direct=0
+  //      重试，落到下面的本地副本。
+  //   2. 本地副本：上传时写入、一键迁移时保留的原文件。远端整个挂掉、浏览器
+  //      到远端不通，玩家照样能开局。
+  // 主站不再带密钥代理回源：远端 ROM 在本站始终留有一份文件，这是唯一的兜底；
+  // 记录没有本地副本（历史遗留的 remote: 占位值）时如实报 404，不再暗地回源。
   if (rom.storage === 'remote') {
-    const directUrl = await buildRemoteDownloadUrl(rom.remoteFileId)
-    if (directUrl) {
-      // 签名地址是一次性的，不能让中间缓存留下副本。
-      c.header('Cache-Control', 'private, no-store')
-      return c.redirect(directUrl, 302)
+    const skipDirect = c.req.query('direct') === '0'
+    if (!skipDirect) {
+      const directUrl = await buildRemoteDownloadUrl(rom.remoteFileId)
+      // 远端体检没过就干脆不发 302：与其让浏览器先卡在连接失败上再回落，
+      // 不如现在就发本地副本（探测结果缓存 30 秒，见 remote-storage.js）。
+      if (directUrl && await remoteDirectReachable()) {
+        // 签名地址是一次性的，不能让中间缓存留下副本。
+        c.header('Cache-Control', 'private, no-store')
+        return c.redirect(directUrl, 302)
+      }
     }
 
-    let remote
-    try {
-      remote = await remoteOpenFile(rom.remoteFileId, c.req.header('range'))
-    } catch (err) {
-      return c.json({ error: err?.message || '远端文件不可用' }, 502)
+    const localFallback = localFallbackFilePath(rom.filePath)
+    if (localFallback) {
+      const served = sendLocalRomFile(c, rom, localFallback)
+      if (served) return served
     }
-    if (!remote.ok && remote.status !== 206) {
-      const detail = await remote.json().catch(() => null)
-      return c.json({ error: detail?.error || '远端文件不可用' }, remote.status === 404 ? 404 : 502)
-    }
-    c.status(remote.status === 206 ? 206 : 200)
-    c.header('Content-Type', 'application/octet-stream')
-    c.header('Accept-Ranges', remote.headers.get('accept-ranges') || 'bytes')
-    c.header('Content-Disposition', `inline; filename="${encodeURIComponent(rom.fileName)}"`)
-    const length = remote.headers.get('content-length')
-    if (length) c.header('Content-Length', length)
-    const contentRange = remote.headers.get('content-range')
-    if (contentRange) c.header('Content-Range', contentRange)
-    return stream(c, async (s) => {
-      if (!remote.body) return
-      await s.pipe(remote.body)
-    })
+    return c.json({ error: 'ROM 文件缺失：该远端 ROM 在本站没有本地副本' }, 404)
   }
 
+  const served = sendLocalRomFile(c, rom, rom.filePath)
+  if (served) return served
+  return c.json({ error: 'ROM 文件缺失' }, 404)
+}
+
+// 把本站磁盘上的 ROM 文件作为响应发出去；文件读不到时返回 null，由调用方给出 404。
+function sendLocalRomFile(c, rom, filePath) {
   let file
   try {
-    file = openUploadReadStream(rom.filePath)
+    file = openUploadReadStream(filePath)
   } catch {
-    return c.json({ error: 'ROM 文件缺失' }, 404)
+    return null
   }
   c.header('Content-Type', 'application/octet-stream')
   c.header('Content-Length', String(file.stat.size))

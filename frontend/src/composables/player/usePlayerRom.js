@@ -70,20 +70,43 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
     // 分母，不依赖响应头（远端回源、gzip 都会让 Content-Length 失真）。
     const size = Number(meta.fileSize) > 0 ? Number(meta.fileSize) : null
     progress?.ensureTask({ id, label, kind: 'rom', size })
-    try {
-      const blob = await cachedFetch(url, {
-        key: url,
-        expectedSize: size,
-        signal,
-        onProgress: ({ loaded, done, cached }) => {
-          progress?.taskProgress(id, loaded, { session, cached })
-          if (!done) progress?.setStage('resources')
-        },
-      })
+
+    const attempt = (target) => cachedFetch(target, {
+      // 缓存键固定用不带兜底参数的地址：两次尝试拿的是同一个 ROM，不该存成两份。
+      key: url,
+      expectedSize: size,
+      signal,
+      onProgress: ({ loaded, done, cached }) => {
+        progress?.taskProgress(id, loaded, { session, cached })
+        if (!done) progress?.setStage('resources')
+      },
+    })
+
+    const settle = (blob) => {
       progress?.taskSettled(id, 'done', { size: size ?? blob.size, loaded: blob.size })
       return blob
+    }
+
+    try {
+      return settle(await attempt(url))
     } catch (err) {
       if (isAbortError(err)) throw err
+
+      // 远端 ROM 的本地兜底：直连（主站 302 到远端签名地址）失败时，带
+      // direct=0 重新请求主站 —— 主站会跳过 302，优先读迁移时保留的本地副本，
+      // 没有副本再带密钥代理回源。非远端 ROM 一次失败就是失败，不重试。
+      if (meta.storage === 'remote') {
+        progress?.taskProgress(id, 0, { session })
+        progress?.setTaskStatus(id, 'loading', { note: '直连远端失败，改用本站下载…', error: '' })
+        try {
+          return settle(await attempt(`${url}${url.includes('?') ? '&' : '?'}direct=0`))
+        } catch (retryErr) {
+          if (isAbortError(retryErr)) throw retryErr
+          progress?.taskFailed(id, retryErr?.message || '下载失败')
+          throw retryErr
+        }
+      }
+
       progress?.taskFailed(id, err?.message || '下载失败')
       throw err
     }

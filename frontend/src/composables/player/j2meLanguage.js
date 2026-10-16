@@ -11,17 +11,17 @@ export const J2ME_LANGUAGE_CHOICES = Object.freeze([
   {
     id: 'auto',
     label: '自动（跟随浏览器）',
-    note: '按浏览器的语言启动；中文的写法（zh-CN、zh-Hans-CN、zh-SG 等）都会归到游戏认的简体中文。',
+    note: '按浏览器的语言启动。',
   },
   {
     id: 'zh-CN',
     label: '简体中文',
-    note: '按「简体中文」启动。这个语言包缺了哪门语言，游戏自己会退回英文。',
+    note: '按「简体中文」启动。',
   },
   {
     id: 'zh-HK',
     label: '繁体中文',
-    note: '按「繁体中文」启动（港台语言包）。游戏没有繁体包时会退回英文。',
+    note: '按「繁体中文」启动（港台语言包）。',
   },
   {
     id: 'en-US',

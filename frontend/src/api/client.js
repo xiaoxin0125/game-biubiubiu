@@ -137,6 +137,10 @@ export const api = {
   adminRomCheats: (id) => request(`/api/admin/roms/${id}/cheats`),
   adminRomCheatsSave: (id, cheats) => request(`/api/admin/roms/${id}/cheats`, { method: 'PUT', body: { cheats } }),
   adminBios: () => request('/api/admin/bios'),
+  // 本地 ROM 一键迁移到远端存储：GET 拿进度/统计，POST 启动或停止。
+  adminRomRemoteMigration: () => request('/api/admin/roms/remote-migration'),
+  adminStartRomRemoteMigration: () => request('/api/admin/roms/remote-migration', { method: 'POST' }),
+  adminCancelRomRemoteMigration: () => request('/api/admin/roms/remote-migration/cancel', { method: 'POST' }),
   adminUpdateUser: (id, patch) => request(`/api/admin/users/${id}`, { method: 'PATCH', body: patch }),
   adminDeleteUser: (id) => request(`/api/admin/users/${id}`, { method: 'DELETE' }),
 }

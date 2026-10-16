@@ -7,18 +7,32 @@ import { createSession, destroyCurrentSession, currentUser, createWebSocketTicke
 import { rateLimit, consumeRateLimit } from '../middleware/rate-limit.js'
 import { clientIp } from '../middleware/security.js'
 import { hashPassword, verifyPassword, needsRehash, MIN_PASSWORD_LENGTH } from '../passwords.js'
+import {
+  USERNAME_MAX_LENGTH,
+  USERNAME_LOGIN_MAX_LENGTH,
+  usernameProblem,
+} from '../../shared/username-policy.js'
 import { audit } from '../audit.js'
 
 const passwordSchema = z.string()
   .min(MIN_PASSWORD_LENGTH)
 
+// 用户名的规则与提示文案都在 shared/username-policy.js（前端表单读的是同一份），
+// 这里只负责把它包成 zod 校验。max 由调用方决定：注册用注册上限，登录放到列宽。
+function usernameSchema(max) {
+  return z.string().superRefine((value, ctx) => {
+    const problem = usernameProblem(value, { max })
+    if (problem) ctx.addIssue({ code: 'custom', message: problem })
+  })
+}
+
 const credentialsSchema = z.object({
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
+  username: usernameSchema(USERNAME_MAX_LENGTH),
   password: passwordSchema,
 })
 
 const loginSchema = z.object({
-  username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_-]+$/),
+  username: usernameSchema(USERNAME_LOGIN_MAX_LENGTH),
   password: z.string().min(1),
 })
 
@@ -41,12 +55,19 @@ function passwordPolicyMessage() {
   return `密码至少 ${MIN_PASSWORD_LENGTH} 位`
 }
 
+// 校验失败时说清是哪个字段的错：用户名的问题回用户名规则，其余才回密码提示。
+// 以前不分字段一律回"密码至少 8 位"，用户按提示反复改密码也注册不上。
+function policyMessage(parsed) {
+  const issue = parsed.error.issues[0]
+  return issue?.path?.[0] === 'username' ? issue.message : passwordPolicyMessage()
+}
+
 export const authRoutes = new Hono()
 
 authRoutes.post('/register', authLimiter, async (c) => {
   const body = await c.req.json().catch(() => null)
   const parsed = credentialsSchema.safeParse(body)
-  if (!parsed.success) return c.json({ error: passwordPolicyMessage() }, 400)
+  if (!parsed.success) return c.json({ error: policyMessage(parsed) }, 400)
   const { username, password } = parsed.data
 
   const limited = rejectIfLimited(c, username, { windowMs: 10 * 60_000, max: 8 })
@@ -62,7 +83,18 @@ authRoutes.post('/register', authLimiter, async (c) => {
   }
 
   const passwordHash = await hashPassword(password)
-  const row = await insertAndFetch(users, { username, passwordHash, role: 'user' }, eq(users.username, username))
+  // 查重与插入之间隔着一次异步哈希，同名并发注册会双双通过查重，其中一个必然撞上
+  // 用户名唯一索引（MySQL 1062）。这是预期内的冲突，回 409 让用户换名字，
+  // 而不是把驱动层的报错抛成 500。
+  let row
+  try {
+    row = await insertAndFetch(users, { username, passwordHash, role: 'user' }, eq(users.username, username))
+  } catch (err) {
+    if (err?.code === 'ER_DUP_ENTRY' || err?.errno === 1062) {
+      return c.json({ error: '用户名已被占用' }, 409)
+    }
+    throw err
+  }
 
   await createSession(c, row.id)
   await audit(c, { action: 'auth.register', targetType: 'user', targetId: row.id, actor: row })

@@ -43,10 +43,10 @@ test('远端设置集中展示全部远端配置，并保留连接测试', () =>
   ].sort())
   assert.deepEqual([...section.matchAll(/<h3 class="site-block-title">([^<]+)<\/h3>/g)].map((match) => match[1]), [
     'STUN 服务器（可选）', 'TURN 中继（可选）', '远端存储（大 ROM）',
-    '下载地址（浏览器直连）', '核心资源（远端托管）',
+    '本地 ROM 一键迁移', '下载地址（浏览器直连）', '核心资源（远端托管）',
   ])
-  for (const handler of ['testStun', 'testTurn', 'testRemote', 'testCores']) {
-    assert.ok(section.includes(`@click="${handler}"`))
+  for (const handler of ['testStun', 'testTurn', 'testRemote', 'testCores', 'startMigration', 'cancelMigration']) {
+    assert.ok(section.includes(`@click="${handler}"`), `远端设置缺少 ${handler} 入口`)
   }
 })
 

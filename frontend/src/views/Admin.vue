@@ -239,6 +239,65 @@
         <div class="site-block-head">
           <span class="site-block-index" aria-hidden="true">04</span>
           <div class="site-block-heading">
+            <h3 class="site-block-title">本地 ROM 一键迁移</h3>
+            <p class="site-block-desc">把本站磁盘上的 ROM 逐个转存到远端存储。记录 id、收藏、存档、房间、父子版本都不变，本地文件保留作兜底。</p>
+          </div>
+        </div>
+
+        <div class="migrate-facts">
+          <div class="migrate-fact">
+            <span class="mf-label">待迁移（本站磁盘）</span>
+            <span class="mf-value">{{ pendingText }}</span>
+          </div>
+          <div class="migrate-fact">
+            <span class="mf-label">远端 ROM 的本地副本</span>
+            <span class="mf-value">{{ localCopiesText }}</span>
+          </div>
+        </div>
+
+        <template v-if="migrationTask?.running">
+          <div class="migrate-progress" role="progressbar" :aria-valuemin="0" :aria-valuemax="migrationTask.total" :aria-valuenow="migrationTask.processed">
+            <span class="mp-bar" :style="{ width: `${migratePercent}%` }"></span>
+          </div>
+          <p class="migrate-line">
+            正在迁移 {{ migrationTask.processed }}/{{ migrationTask.total }} · 成功 {{ migrationTask.migrated }} · 失败 {{ migrationTask.failed }}
+            <template v-if="migrationTask.current"> · 当前：{{ migrationTask.current.title }}（{{ fmtSize(migrationTask.current.fileSize) }}）</template>
+          </p>
+        </template>
+        <p v-else-if="migrationTask?.finishedAt" class="migrate-line">
+          上次迁移：成功 {{ migrationTask.migrated }} 个（{{ fmtSize(migrationTask.migratedBytes) }}），失败 {{ migrationTask.failed }} 个<template v-if="migrationTask.note"> · {{ migrationTask.note }}</template>
+        </p>
+
+        <div class="remote-test">
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="migrationBusy || migrationTask?.running || !migration?.remoteConfigured || !migration?.pending?.count"
+            @click="startMigration"
+          >
+            {{ migrationTask?.running ? '迁移中…' : '一键迁移到远端' }}
+          </button>
+          <button v-if="migrationTask?.running" class="btn" type="button" :disabled="migrationBusy" @click="cancelMigration">停止</button>
+        </div>
+        <p class="field-hint">
+          迁移往远端加一份，本站磁盘上的文件原样保留：玩家走浏览器直连远端下载失败时，
+          主站会自动改用本地副本（见下面第 05 节的直连开关），远端出问题也不影响开局。
+        </p>
+        <p v-if="migrationError" class="remote-test-result">{{ migrationError }}</p>
+        <details v-if="migrationTask?.errors?.length" class="migrate-errors">
+          <summary>查看失败明细（{{ migrationTask.errors.length }} 条）</summary>
+          <ul>
+            <li v-for="entry in migrationTask.errors" :key="entry.id">
+              <strong>#{{ entry.id }} {{ entry.title }}</strong>：{{ entry.error }}
+            </li>
+          </ul>
+        </details>
+      </div>
+
+      <div class="site-block">
+        <div class="site-block-head">
+          <span class="site-block-index" aria-hidden="true">05</span>
+          <div class="site-block-heading">
             <h3 class="site-block-title">下载地址（浏览器直连）</h3>
             <p class="site-block-desc">让玩家的浏览器直接从远端下载 ROM，减少本站出口流量。</p>
           </div>
@@ -256,7 +315,7 @@
         <label class="toggle-row">
           <div class="toggle-text">
             <div class="tr-t">ROM 由浏览器直连远端下载</div>
-            <div class="tr-s">开启后，主站在校验权限后返回 302，文件不再经过本站出口；关闭或未配置时仍由本站带密钥转发</div>
+            <div class="tr-s">开启后，主站在校验权限后返回 302，文件不再经过本站出口；直连失败（远端不可用、网络不通）时浏览器会自动改回本站读本地副本</div>
           </div>
           <div class="toggle-sw">
             <input type="checkbox" v-model="form.romDirectEnabled" />
@@ -268,7 +327,7 @@
 
       <div class="site-block">
         <div class="site-block-head">
-          <span class="site-block-index" aria-hidden="true">05</span>
+          <span class="site-block-index" aria-hidden="true">06</span>
           <div class="site-block-heading">
             <h3 class="site-block-title">核心资源（远端托管）</h3>
             <p class="site-block-desc">从独立资源服务器加载模拟器核心，降低本站静态资源带宽消耗。</p>
@@ -503,7 +562,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -557,6 +616,28 @@ const testingTurn = ref(false)
 const turnTestResult = ref(null)
 const testingCores = ref(false)
 const coresTestResult = ref(null)
+
+// 本地 ROM 一键迁移：状态从服务端拉，运行时每 1.5 秒轮询一次。
+const migration = ref(null)
+const migrationBusy = ref(false)
+const migrationError = ref('')
+let migrationPoll = null
+const migrationTask = computed(() => migration.value?.task || null)
+const migratePercent = computed(() => {
+  const task = migrationTask.value
+  if (!task?.total) return 0
+  return Math.min(100, Math.round((task.processed / task.total) * 100))
+})
+const pendingText = computed(() => {
+  const pending = migration.value?.pending
+  if (!pending) return '读取中…'
+  return `${pending.count} 个 · ${fmtSize(pending.bytes)}`
+})
+const localCopiesText = computed(() => {
+  const copies = migration.value?.localCopies
+  if (!copies) return '读取中…'
+  return `${copies.count} 个 · ${fmtSize(copies.bytes)}`
+})
 
 const users = ref([])
 const roms = ref([])
@@ -621,6 +702,14 @@ watch([adminRomSearch, adminRomPlatform, adminRomVisibility], () => { adminRomPa
 watch(adminRomPageCount, (count) => {
   if (adminRomPage.value > count) adminRomPage.value = count
 })
+
+// 切到「远端」页签时拉一次迁移状态：打开页面就能看到待迁移统计，
+// 正在跑的任务也会接着轮询（离开页签停轮询，避免后台空转）。
+watch(tab, (value) => {
+  if (value === 'remote') loadMigrationStatus()
+  else stopMigrationPolling()
+})
+onBeforeUnmount(stopMigrationPolling)
 
 onMounted(async () => {
   loadUsers(); loadRoms(); loadBios()
@@ -754,6 +843,68 @@ async function testRemote() {
   } finally {
     testingRemote.value = false
   }
+}
+
+// ── 本地 ROM 一键迁移到远端存储 ─────────────────────────────────────────
+// 任务在服务端后台跑（逐个上传 + 校验 + 更新记录），这里只负责触发与轮询展示。
+function stopMigrationPolling() {
+  if (migrationPoll) {
+    clearInterval(migrationPoll)
+    migrationPoll = null
+  }
+}
+
+function startMigrationPolling() {
+  if (migrationPoll) return
+  migrationPoll = setInterval(() => { loadMigrationStatus({ quiet: true }) }, 1500)
+}
+
+async function loadMigrationStatus({ quiet = false } = {}) {
+  if (!quiet) migrationBusy.value = true
+  try {
+    const data = await api.adminRomRemoteMigration()
+    migration.value = data
+    migrationError.value = ''
+    if (data?.task?.running) startMigrationPolling()
+    else stopMigrationPolling()
+  } catch (err) {
+    if (!quiet) migrationError.value = err?.message || '读取迁移状态失败'
+  } finally {
+    if (!quiet) migrationBusy.value = false
+  }
+}
+
+async function startMigration() {
+  const pending = migration.value?.pending
+  if (!await showConfirm(
+    `把本站磁盘上的 ${pending?.count ?? ''} 个 ROM（约 ${fmtSize(pending?.bytes || 0)}）逐个迁移到远端存储？\n迁移期间可以随时停止，已完成的记录不受影响；本地文件会保留作兜底。`,
+    { title: '一键迁移到远端', confirmText: '开始迁移' },
+  )) return
+  migrationBusy.value = true
+  try {
+    const res = await api.adminStartRomRemoteMigration()
+    if (res?.overview) migration.value = res.overview
+    if (res?.started) startMigrationPolling()
+    else if (res?.reason === 'empty') await showAlert('没有需要迁移的本地 ROM')
+    else if (res?.reason === 'running') await showAlert('已经有一次迁移在跑，请等它结束或先停止')
+  } catch (err) {
+    await showAlert(err?.message || '启动迁移失败')
+  } finally {
+    migrationBusy.value = false
+  }
+}
+
+async function cancelMigration() {
+  migrationBusy.value = true
+  try {
+    const res = await api.adminCancelRomRemoteMigration()
+    if (res?.overview) migration.value = res.overview
+  } catch (err) {
+    await showAlert(err?.message || '停止迁移失败')
+  } finally {
+    migrationBusy.value = false
+  }
+  await loadMigrationStatus({ quiet: true })
 }
 
 // 测试远端核心资源：必须用浏览器实测。HTTPS、跨域许可、证书这些问题只有浏览器
@@ -1201,6 +1352,54 @@ function fmtSize(b) {
   line-height: 1.5;
 }
 .remote-test-result.ok { color: var(--success); }
+
+/* 一键迁移：两栏统计 + 细进度条 + 失败明细 */
+.migrate-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.migrate-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in-sm);
+}
+.mf-label { color: var(--text-tertiary); font-size: 12px; font-weight: 800; }
+.mf-value { color: var(--text-primary); font-size: 15px; font-weight: 900; }
+.migrate-progress {
+  margin-top: 16px;
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--clay-inset-surface);
+  box-shadow: var(--clay-in-sm);
+  overflow: hidden;
+}
+.mp-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ink-purple), var(--ink-pink));
+  transition: width 0.3s var(--ease-out);
+}
+.migrate-line {
+  margin: 10px 2px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.migrate-errors { margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
+.migrate-errors summary { cursor: pointer; font-weight: 800; }
+.migrate-errors ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+.migrate-errors li { line-height: 1.6; overflow-wrap: anywhere; }
 
 /* STUN 测试：每个地址一行结果 */
 .stun-test-result {
