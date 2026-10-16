@@ -1,4 +1,8 @@
-FROM node:22-alpine AS dependencies
+# 依赖安装与前端构建都放在构建机的原生架构上跑（$BUILDPLATFORM），不要落进 QEMU
+# 模拟：v1.7.0 那次依赖升级与锁文件改写让 npm ci 这层缓存失效，arm64 模拟下的
+# `npm ci` 一直没跑完，整轮打包卡满默认的 6 小时被超时取消（见 docker-image.yml 里的
+# timeout-minutes）。前端产物 frontend/dist 与架构无关，在构建机上生成后拷进目标镜像即可。
+FROM --platform=$BUILDPLATFORM node:22-alpine AS dependencies
 # 托管构建机上 npm 偶尔会遇到 DNS / 连接抖动（报错形如 getaddrinfo EAI_AGAIN），
 # 一次抖动整轮打包就失败：把重试次数与重试间隔调大，和 CI 里的设置一致。
 # ENV 不跨构建阶段继承，所以下面 production 阶段要再写一遍。
@@ -10,7 +14,7 @@ COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
 RUN npm ci
 
-FROM dependencies AS frontend-build
+FROM --platform=$BUILDPLATFORM dependencies AS frontend-build
 COPY frontend ./frontend
 COPY shared ./shared
 RUN npm run build
@@ -34,6 +38,9 @@ ENV NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000
 WORKDIR /app
 
+# 这一层必须按目标架构装：生产依赖里可能有原生模块（例如 ws 的可选依赖），在
+# 构建机上装好再拷进 arm64 镜像会装错架构。好在它是 --ignore-scripts 的精简安装，
+# 模拟下也就二三十秒（实测 arm64 侧 21 秒）。
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/package.json
 RUN npm ci --omit=dev --workspaces=false --ignore-scripts \

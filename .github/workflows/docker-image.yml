@@ -26,6 +26,9 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    # 卡住时不要拖满默认的 6 小时：arm64 侧的 npm ci 曾在 QEMU 模拟里一直跑不完，
+    # 整轮打包白等 6 小时才被取消。多架构构建（含冷缓存）正常在十分钟内结束。
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
