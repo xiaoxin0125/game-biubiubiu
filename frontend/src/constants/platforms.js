@@ -72,6 +72,19 @@ export function turboTargetForPlatform(button, platform) {
   return turboButtonsForPlatform(platform)?.[button]
 }
 
+// 按键设置里的行序：MD / 32X 的六键手柄是下排 A B C、上排 X Y Z，但 retropad 的
+// 字母顺序会把 X / Z 归进肩键组，界面上变成 A B C Y … X … Z，看起来 X Y Z 不在
+// 一起。这里按手柄上的真实顺序列出 retropad 键名（y=A、b=B、a=C、l=X、x=Y、r=Z），
+// 其余平台没有覆盖，沿用「十字 → 面键 → 肩键 → 系统键」的通用排法。
+const PC_BUTTON_ORDER = {
+  megadrive: ['up', 'down', 'left', 'right', 'y', 'b', 'a', 'l', 'x', 'r', 'start', 'select'],
+  sega32x: ['up', 'down', 'left', 'right', 'y', 'b', 'a', 'l', 'x', 'r', 'start', 'select'],
+}
+
+export function pcButtonOrderForPlatform(id) {
+  return PC_BUTTON_ORDER[resolvePlatformId(id)] || null
+}
+
 export const platforms = {
   arcade: {
     displayName: '街机 (Arcade)',

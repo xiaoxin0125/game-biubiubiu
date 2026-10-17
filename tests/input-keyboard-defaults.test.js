@@ -9,17 +9,22 @@ import {
   buildLocalPlayerKeyboardMap,
   defaultLocalKeyboardForPlayer,
   defaultPlayer1KeyboardForPlatform,
+  effectiveKeyboardForPlayer,
   effectiveLocalKeyboardForPlayer,
+  isJ2meKeyboardProfile,
   isSavedDefaultKeyboard,
   isSavedLocalPlayer2DefaultKeyboard,
   isValidKeyboardBinding,
+  platformKeyboardProfileId,
+  sanitizePlatformKeyboards,
+  withPlayerKeyboard,
 } from '../frontend/src/composables/input/keyboardProfiles.js'
 import {
   buildRemotePlayerKeyMaps,
   buildRemotePlayersRetroarchConfig,
 } from '../frontend/src/composables/input/remotePlayers.js'
 import { buildPlayerRetroarchConfig } from '../frontend/src/composables/input/retroarchConfig.js'
-import { pcButtonsForPlatform, getPlatform } from '../frontend/src/constants/platforms.js'
+import { pcButtonsForPlatform, pcButtonOrderForPlatform, getPlatform } from '../frontend/src/constants/platforms.js'
 import { isSinglePlayerPlatform } from '../shared/registry/platform-players.js'
 import { normalizeRetroarchKey } from '../frontend/src/composables/input/keyboardKeys.js'
 import { J2ME_BUTTON_KEYS } from '../frontend/src/composables/player/j2meRuntime.js'
@@ -51,6 +56,24 @@ const MEGADRIVE_DEFAULT = {
   ...PLAYER_1_DEFAULT,
   y: 'j', b: 'k', a: 'l',
   l: 'u', x: 'i', r: 'o',
+}
+
+// SMS / Game Gear 只有 1 / 2 两颗按键（retropad b → 1，a → 2），1 落 J、2 落 K。
+const SMS_DEFAULT = {
+  ...PLAYER_1_DEFAULT,
+  a: 'k', b: 'j',
+}
+
+// PCE 六键手柄：III / IV 是 retropad y / x，落 I / O；「模式」（l2）落 M。
+const PCE_DEFAULT = {
+  ...PLAYER_1_DEFAULT,
+  x: 'o', y: 'i', l2: 'm',
+}
+
+// 3DO：A / B / C 是 retropad y / b / a，落 J / K / L。
+const THREEDO_DEFAULT = {
+  ...PLAYER_1_DEFAULT,
+  y: 'j', b: 'k', a: 'l',
 }
 
 // J2ME：手机键盘照数字小键盘摆 —— 手机 1 / 3 / 5 / 7 / 9 / 0 落在小键盘上同样数字的
@@ -177,6 +200,61 @@ test('街机 / MD 六键按两排三列：下排 J K L、上排 U I O', () => {
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('genesis'), MEGADRIVE_DEFAULT)
 })
 
+test('世嘉 32X 与 MD 用同一套六键键位', () => {
+  assert.deepEqual(defaultPlayer1KeyboardForPlatform('sega32x'), MEGADRIVE_DEFAULT)
+  assert.deepEqual(defaultLocalKeyboardForPlayer(2, 'sega32x'), MEGADRIVE_PLAYER_2_DEFAULT)
+})
+
+test('SMS / Game Gear：面板上的 1 落 J、2 落 K', () => {
+  for (const platform of ['sms', 'gamegear']) {
+    assert.deepEqual(defaultPlayer1KeyboardForPlatform(platform), SMS_DEFAULT)
+    const labels = getPlatform(platform).buttonLabels
+    // 核心里 retropad b→1、a→2，所以 1 是 b、2 是 a。
+    assert.equal(labels.b, '1')
+    assert.equal(SMS_DEFAULT.b, 'j', `${platform} 的按键 1 不是 J`)
+    assert.equal(labels.a, '2')
+    assert.equal(SMS_DEFAULT.a, 'k', `${platform} 的按键 2 不是 K`)
+  }
+})
+
+test('PCE / PCE-CD：III / IV 落 I / O，模式落 M', () => {
+  for (const platform of ['pcengine', 'pcecd']) {
+    assert.deepEqual(defaultPlayer1KeyboardForPlatform(platform), PCE_DEFAULT)
+    const labels = getPlatform(platform).buttonLabels
+    assert.equal(labels.y, 'III')
+    assert.equal(PCE_DEFAULT.y, 'i', `${platform} 的 III 不是 I`)
+    assert.equal(labels.x, 'IV')
+    assert.equal(PCE_DEFAULT.x, 'o', `${platform} 的 IV 不是 O`)
+    assert.equal(labels.l2, '模式')
+    assert.equal(PCE_DEFAULT.l2, 'm', `${platform} 的模式不是 M`)
+  }
+})
+
+test('3DO：A / B / C 落 J / K / L', () => {
+  assert.deepEqual(defaultPlayer1KeyboardForPlatform('3do'), THREEDO_DEFAULT)
+  const labels = getPlatform('3do').buttonLabels
+  assert.equal(labels.y, 'A')
+  assert.equal(THREEDO_DEFAULT.y, 'j')
+  assert.equal(labels.b, 'B')
+  assert.equal(THREEDO_DEFAULT.b, 'k')
+  assert.equal(labels.a, 'C')
+  assert.equal(THREEDO_DEFAULT.a, 'l')
+})
+
+test('MD / 32X 的按键设置按手柄顺序 A B C X Y Z 排列', () => {
+  const order = pcButtonOrderForPlatform('megadrive')
+  const keyForLabel = (platform, label) => order.find((key) => getPlatform(platform).buttonLabels[key] === label)
+  assert.deepEqual(
+    ['A', 'B', 'C', 'X', 'Y', 'Z'].map((label) => keyForLabel('megadrive', label)),
+    ['y', 'b', 'a', 'l', 'x', 'r'],
+  )
+  assert.deepEqual(pcButtonOrderForPlatform('sega32x'), order)
+  assert.deepEqual(pcButtonOrderForPlatform('genesis'), order)
+  // 其它平台沿用原来的分组排法。
+  assert.equal(pcButtonOrderForPlatform('nes'), null)
+  assert.equal(pcButtonOrderForPlatform('j2me'), null)
+})
+
 test('J2ME：手机键盘照小键盘摆，* / # 落在 . 与小键盘回车，软键是回车与右 Shift', () => {
   assert.deepEqual(defaultPlayer1KeyboardForPlatform('j2me'), J2ME_DEFAULT)
   // 面板上每一颗手机键写的数字，就是它默认落在小键盘上的那颗键。
@@ -211,6 +289,73 @@ test('J2ME：每颗按钮都有关键、键码与互不重复的默认键', () =
     const found = Object.keys(J2ME_BUTTON_KEYS).find((b) => normalizeRetroarchKey(J2ME_DEFAULT[b]) === binding)
     assert.equal(found, button, `${J2ME_DEFAULT[button]} 没有落到 ${button} 上`)
   }
+})
+
+test('J2ME 改键只写 J2ME 自己的存档，其它平台照旧', () => {
+  // 没改过的账号：共用存档还是通用默认。
+  const stored = { keyboard: { ...PLAYER_1_DEFAULT } }
+  // 在 J2ME 里把手机 3 改到 q，保存的是 J2ME 的整份键位。
+  const customized = { ...J2ME_DEFAULT, a: 'q' }
+  const next = withPlayerKeyboard(stored, 1, customized, 'j2me')
+
+  // 共用存档一个键都没动。
+  assert.deepEqual(next.keyboard, PLAYER_1_DEFAULT)
+  // J2ME 用改过的键位。
+  assert.deepEqual(effectiveKeyboardForPlayer(next, 1, 'j2me'), customized)
+  assert.deepEqual(effectiveLocalKeyboardForPlayer(next, 1, 'j2me'), customized)
+  // 其它平台仍然套用自己的默认，不会变成小键盘。
+  assert.deepEqual(effectiveKeyboardForPlayer(next, 1, 'nes'), PLAYER_1_DEFAULT)
+  assert.deepEqual(effectiveKeyboardForPlayer(next, 1, 'sfc'), PLAYER_1_DEFAULT)
+  assert.deepEqual(effectiveKeyboardForPlayer(next, 1, 'arcade'), ARCADE_DEFAULT)
+  assert.deepEqual(effectiveKeyboardForPlayer(next, 1, 'megadrive'), MEGADRIVE_DEFAULT)
+  assert.deepEqual(effectiveLocalKeyboardForPlayer(next, 1, 'nes'), PLAYER_1_DEFAULT)
+
+  // 有自己默认键位 / 专属存档的平台就那三个（genesis 收敛到 MD）。
+  assert.equal(platformKeyboardProfileId('j2me'), 'j2me')
+  assert.equal(platformKeyboardProfileId('arcade'), 'arcade')
+  assert.equal(platformKeyboardProfileId('genesis'), 'megadrive')
+  assert.equal(platformKeyboardProfileId('nes'), null)
+  assert.equal(platformKeyboardProfileId(null), null)
+})
+
+test('其它平台改键也不会写到 J2ME 的格子里', () => {
+  const stored = withPlayerKeyboard({ keyboard: { ...PLAYER_1_DEFAULT } }, 1, { ...ARCADE_DEFAULT, a: 'q' }, 'arcade')
+  assert.deepEqual(effectiveKeyboardForPlayer(stored, 1, 'arcade'), { ...ARCADE_DEFAULT, a: 'q' })
+  assert.deepEqual(effectiveKeyboardForPlayer(stored, 1, 'j2me'), J2ME_DEFAULT)
+  assert.deepEqual(effectiveKeyboardForPlayer(stored, 1, 'nes'), PLAYER_1_DEFAULT)
+  assert.deepEqual(stored.keyboard, PLAYER_1_DEFAULT)
+})
+
+test('写进共用存档的整套 J2ME 键位会被认出来（迁移用）', () => {
+  // 在 J2ME 里按「重置键盘」之后，共用存档就是这一份。
+  assert.equal(isJ2meKeyboardProfile({ ...J2ME_DEFAULT }), true)
+  // 只改过几颗键也认（十颗手机键里还剩六颗以上对得上）。
+  assert.equal(isJ2meKeyboardProfile({ ...J2ME_DEFAULT, a: 'q' }), true)
+  assert.equal(isJ2meKeyboardProfile({ ...J2ME_DEFAULT, a: 'q', b: 'e', x: 'r' }), true)
+  assert.equal(isJ2meKeyboardProfile({ ...J2ME_DEFAULT, a: 'q', b: 'e', x: 'r', y: 't' }), true)
+  // 通用 / 街机 / MD / 玩家自己摆的键位都不算。
+  assert.equal(isJ2meKeyboardProfile({ ...PLAYER_1_DEFAULT }), false)
+  assert.equal(isJ2meKeyboardProfile({ ...ARCADE_DEFAULT }), false)
+  assert.equal(isJ2meKeyboardProfile({ ...MEGADRIVE_DEFAULT }), false)
+  assert.equal(isJ2meKeyboardProfile({
+    ...DEFAULT_KEYBOARD,
+    a: 'numpad1', b: 'numpad2', x: 'numpad4', y: 'numpad5',
+    l: 'numpad7', r: 'numpad8', l2: 'numpad9', r2: 'numpad0',
+  }), false)
+  // 空存档 / 缺键的存档不是。
+  assert.equal(isJ2meKeyboardProfile({}), false)
+  assert.equal(isJ2meKeyboardProfile(null), false)
+})
+
+test('平台键位存档只保留有默认键位的平台与合法按键', () => {
+  const sanitized = sanitizePlatformKeyboards({
+    j2me: { ...J2ME_DEFAULT, bogus: 'x', a: 'nul' },
+    nes: { ...PLAYER_1_DEFAULT },
+    'not-a-platform': { ...J2ME_DEFAULT },
+  })
+  assert.deepEqual(Object.keys(sanitized), ['j2me'])
+  assert.equal(sanitized.j2me.a, null)
+  assert.equal('bogus' in sanitized.j2me, false)
 })
 
 test('默认 P2：方向键十字 + 数字小键盘成对铺开', () => {
@@ -345,7 +490,7 @@ test('本地吞键不会吃掉 P1 自己的键', () => {
 test('单机吞键：原生事件被拦下，合成事件与单人模式放行', () => {
   const runtimeKeys = localPlayer2RuntimeKeySet(buildLocalPlayerKeyboardMap(2, pcButtonsForPlatform('nes')))
   // NES 用得上十字 + A/B + X/Y（连发）+ Start/Select：z x v n / t m 都在 core 里。
-  for (const key of ['z', 'x', 'v', 'n', 't', 'm', 'up', 'down']) {
+  for (const key of ['z', 'x', 'v', 'n', 't', 'f4', 'up', 'down']) {
     assert.ok(runtimeKeys.has(key), `${key} 应该是 P2 的运行时键`)
   }
 

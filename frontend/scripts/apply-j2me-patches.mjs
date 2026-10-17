@@ -76,6 +76,30 @@
 //                                 level-constant array as never allocated and dies with a
 //                                 NullPointerException the moment the player presses the
 //                                 confirm key inside a level)
+//  31. bld/main-all.js          — J2ME's compressed IMA ADPCM WAVs are decoded in JS
+//                                 (Chrome's decodeAudioData rejects them, and the game
+//                                 刺客信条-兄弟会 keeps all 17 sound effects in that
+//                                 format)
+//  32. bld/main-all.js          — a rejected audio decode no longer tears the session
+//                                 down: the callback form of decodeAudioData still
+//                                 returns a rejected promise, which bridge.js reported
+//                                 as an uncaught error (the same game stopped on the
+//                                 Gameloft logo with "Unable to decode audio data")
+//  33. bld/main-all.js          — Class.forName reports a class that is not in the
+//                                 runtime/JAR as java.lang.ClassNotFoundException.
+//                                 The fork swallowed the loader's marker and returned
+//                                 normally, so an anti-emulator probe such as
+//                                 Class.forName("XMessage") looked like it had found
+//                                 the class. 丧尸危机 - 全城爆发 stopped at
+//                                 「请在手机上运行游戏！」 because of it.
+//  34. java/classesold.jar      — the class library's Class.forName no longer
+//                                 short-circuits the literal "XMessage" to null
+//                                 before the loader (patch 33) can throw. This is
+//                                 the default engine; without it the probe never
+//                                 reaches the native method.
+//  35. java/classes.jar         — same as 34 for the third engine (enginemode3).
+//                                 classes2.jar is upstream-clean and needs no
+//                                 archive rewrite.
 //
 // Usage: node frontend/scripts/apply-j2me-patches.mjs [运行时目录]
 //
@@ -85,10 +109,41 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readZipEntry, rewriteZipEntry } from './j2me-classlib.mjs'
 
 // 默认打在仓库里那份运行时上；也可以用第一个参数指定别的目录
 // （例如已经被复制出去的 dist/j2me）。
 const base = path.resolve(process.argv[2] || fileURLToPath(new URL('../public/j2me', import.meta.url)))
+
+// The class libraries ship a `java/lang/Class.class` whose Class.forName has a
+// hard-coded shortcut: a request for "XMessage" returns null without calling
+// forName0. That is exactly the class the emulator checks in 丧尸危机 - 全城爆发
+// (and in a number of other Chinese MIDlets) probe first, so the shortcut has to
+// go before the native loader can report it as missing. Rewriting the UTF-8
+// constant to an invalid class name of the same length leaves every bytecode
+// offset, constant-pool index and class-file size untouched.
+const CLASS_FORNAME_SHORTCUT = Buffer.from('XMessage')
+const CLASS_FORNAME_SENTINEL = Buffer.from('XMessag!')
+
+function classLibraryForNamePatched(buffer) {
+  try {
+    const classFile = readZipEntry(buffer, 'java/lang/Class.class')
+    return Boolean(classFile && classFile.includes(CLASS_FORNAME_SENTINEL))
+  } catch {
+    return false
+  }
+}
+
+function removeClassForNameShortcut(buffer) {
+  return rewriteZipEntry(buffer, 'java/lang/Class.class', (classFile) => {
+    if (classFile.includes(CLASS_FORNAME_SENTINEL)) return classFile
+    const offset = classFile.indexOf(CLASS_FORNAME_SHORTCUT)
+    if (offset < 0) throw new Error('java/lang/Class.class has no XMessage constant to rewrite')
+    const next = Buffer.from(classFile)
+    CLASS_FORNAME_SENTINEL.copy(next, offset)
+    return next
+  })
+}
 
 const patches = [
   {
@@ -1268,12 +1323,346 @@ Native["com/nokia/mid/ui/DirectGraphicsImp.drawImage.(Ljavax/microedition/lcdui/
   // 忍者神龟传 10.6/9.6/8.5）。而代价是实实在在的：每次调用多一次 performance.now()，
   // profile 里 canSkipYield 自己就占了 28% 的样本，还改了 Thread.yield 的语义（等待别的
   // 线程或事件循环的场景要多等一个窗口）。没有收益就不留。
+
+  // 2026-10-17：「刺客信条-兄弟会」的 17 个音效全是 IMA ADPCM（WAVE_FORMAT_IMA_ADPCM，格式标签
+  // 0x11，8kHz 单声道 4 bit）。Chrome 的 decodeAudioData 只认未压缩 PCM 等少数格式，
+  // 这些 WAV 一律得到 EncodingError：声音没有，而回调形式的 decodeAudioData 仍然会
+  // 返回一个被拒绝的 Promise，bridge.js 把它当成未捕获错误上报，播放器随即拆掉整局
+  // 游戏 —— 玩家看到的是 Gameloft 商标画面停住，控制台只有一条红色的
+  // "Uncaught (in promise) EncodingError: Unable to decode audio data"。
+  //
+  // 两件事分开修：解码器按 Microsoft 的 IMA ADPCM 规范把这些 WAV 解成 PCM
+  // AudioBuffer（别的 WAV 仍然走浏览器）；decoder 不认识或浏览器拒绝的音频只安静地
+  // 不出声，不再拒绝一个没人接的 Promise。这个游戏在标题画面就会预建 19 个 wav
+  // Player，任何一处失败都不该结束这一局。
+  {
+    label: 'main-all.js: IMA ADPCM WAV sound effects are decoded for Web Audio',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (IMA ADPCM WAV decoder)'),
+    anchor: 'function base64ToUint8Array(base64String) {',
+    replacement: `// Site patch (IMA ADPCM WAV decoder): Chrome 的 decodeAudioData 只认未压缩 PCM 等少数格式，
+// J2ME 时代的游戏为了省空间普遍把音效做成 IMA ADPCM（WAVE_FORMAT_IMA_ADPCM，格式
+// 标签 0x11，每声道 4 bit）。这种 WAV 交给浏览器只会得到 EncodingError：声音没有，
+// 而这次拒绝还会被 bridge.js 当成未捕获错误上报，播放器随即把整局游戏拆掉 ——
+// 「刺客信条-兄弟会」在 Gameloft 商标画面就停在这里。下面按 Microsoft 的 IMA ADPCM
+// 规范把它解成 PCM；普通 WAV 仍然走浏览器自己的解码器。
+var siteImaStepTable = [
+  7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+  50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+  253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+  1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+  3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+  11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+  32767
+];
+var siteImaIndexTable = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+
+function siteWavFourCC(bytes, offset) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+function siteWavU16(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+function siteWavU32(bytes, offset) {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+}
+function siteImaNibble(state, nibble) {
+  var step = siteImaStepTable[state.index];
+  var diff = step >> 3;
+  if (nibble & 1) diff += step >> 2;
+  if (nibble & 2) diff += step >> 1;
+  if (nibble & 4) diff += step;
+  if (nibble & 8) state.predictor -= diff;
+  else state.predictor += diff;
+  if (state.predictor > 32767) state.predictor = 32767;
+  else if (state.predictor < -32768) state.predictor = -32768;
+  state.index += siteImaIndexTable[nibble];
+  if (state.index < 0) state.index = 0;
+  else if (state.index > 88) state.index = 88;
+  return state.predictor;
+}
+// 只处理 RIFF/WAVE 里的 IMA ADPCM；别的格式返回 null，交给浏览器的解码器。
+function siteDecodeImaAdpcmWav(context, arrayBuffer) {
+  try {
+    var bytes = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
+    if (bytes.length < 12 || siteWavFourCC(bytes, 0) !== 'RIFF' || siteWavFourCC(bytes, 8) !== 'WAVE') return null;
+    var format = null;
+    var dataOffset = -1;
+    var dataLength = 0;
+    var pos = 12;
+    while (pos + 8 <= bytes.length) {
+      var id = siteWavFourCC(bytes, pos);
+      var size = siteWavU32(bytes, pos + 4);
+      var body = pos + 8;
+      if (id === 'fmt ' && size >= 16 && body + 16 <= bytes.length) {
+        format = {
+          tag: siteWavU16(bytes, body),
+          channels: siteWavU16(bytes, body + 2),
+          sampleRate: siteWavU32(bytes, body + 4),
+          blockAlign: siteWavU16(bytes, body + 12),
+          bitsPerSample: siteWavU16(bytes, body + 14),
+          samplesPerBlock: size >= 20 && body + 20 <= bytes.length ? siteWavU16(bytes, body + 18) : 0
+        };
+      } else if (id === 'data') {
+        dataOffset = body;
+        dataLength = Math.min(size, bytes.length - body);
+        break;
+      }
+      pos = body + size + (size & 1);
+    }
+    if (!format || dataOffset < 0 || format.tag !== 0x11) return null;
+    var channels = format.channels;
+    var blockAlign = format.blockAlign;
+    if (channels < 1 || channels > 2 || !format.sampleRate || blockAlign < 4 * channels) return null;
+    var channelData = [];
+    for (var c = 0; c < channels; c++) channelData.push([]);
+    for (var block = 0; block < dataLength; block += blockAlign) {
+      var blockSize = Math.min(blockAlign, dataLength - block);
+      if (blockSize < 4 * channels) break;
+      var states = [];
+      for (c = 0; c < channels; c++) {
+        var header = dataOffset + block + c * 4;
+        var predictor = ((bytes[header] | (bytes[header + 1] << 8)) << 16) >> 16;
+        states.push({ predictor: predictor, index: Math.min(88, bytes[header + 2]) });
+        channelData[c].push(predictor);
+      }
+      var p = dataOffset + block + 4 * channels;
+      var end = dataOffset + block + blockSize;
+      // 每声道一次取两个字节（四个采样），声道之间交替。
+      while (p + 2 * channels <= end) {
+        for (c = 0; c < channels; c++) {
+          var b0 = bytes[p++];
+          var b1 = bytes[p++];
+          channelData[c].push(siteImaNibble(states[c], b0 & 15));
+          channelData[c].push(siteImaNibble(states[c], b0 >> 4));
+          channelData[c].push(siteImaNibble(states[c], b1 & 15));
+          channelData[c].push(siteImaNibble(states[c], b1 >> 4));
+        }
+      }
+    }
+    var length = 0;
+    for (c = 0; c < channels; c++) length = Math.max(length, channelData[c].length);
+    if (!length) return null;
+    var audioBuffer = context.createBuffer(channels, length, format.sampleRate);
+    for (c = 0; c < channels; c++) {
+      var output = audioBuffer.getChannelData(c);
+      var input = channelData[c];
+      for (var i = 0; i < input.length; i++) output[i] = input[i] / 32768;
+    }
+    return audioBuffer;
+  } catch (error) {
+    console.warn('IMA ADPCM decode failed: ' + (error && error.message ? error.message : error));
+    return null;
+  }
+}
+
+function base64ToUint8Array(base64String) {`,
+  },
+  {
+    label: 'main-all.js: a rejected audio decode no longer kills the game',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (rejected audio decode)'),
+    anchor: `    //非mid播放器
+    this.tinysynth = null; 
+    var that=this;  
+     this.audioCtx.decodeAudioData(uint8, function(buffer) {
+              //console.log('1231231231231')
+              //console.log(buffer.length)
+              that.playSound(buffer);
+              // if(that.wholeContentSize<=that.contentSize)
+              // { 
+                resolve(that.contentSize);
+              // }
+          }, function() {
+              console.log('error');
+              resolve(that.contentSize);
+          }
+          ); `,
+    replacement: `    //非mid播放器
+    this.tinysynth = null;
+    var that=this;
+    // Site patch (IMA ADPCM WAV): 浏览器解不了的 IMA ADPCM 由我们自己的解码器先接住。
+    var siteWavBuffer = siteDecodeImaAdpcmWav(that.audioCtx, uint8);
+    if (siteWavBuffer) {
+      that.playSound(siteWavBuffer);
+      resolve(that.contentSize);
+      return;
+    }
+    // Site patch (rejected audio decode): 回调形式的 decodeAudioData 仍然会返回一个被拒绝
+    // 的 Promise，没人接住时 bridge.js 会把它当成未捕获错误上报，播放器随即拆掉整局游戏。
+    // 改用 Promise 形式并显式处理失败：一个解不了的音效只该安静地不出声。
+    that.audioCtx.decodeAudioData(uint8).then(function(buffer) {
+              try {
+                that.playSound(buffer);
+              } catch (error) {
+                console.log('audio playback failed: ', error && error.message ? error.message : error);
+              }
+              resolve(that.contentSize);
+          }, function(error) {
+              console.log('audio decode failed: ', error && error.message ? error.message : error);
+              resolve(that.contentSize);
+          });
+`,
+  },
+  // 有些 MIDlet 用 `Class.forName` 枚举「只有桌面模拟器才有的类」来判断自己是
+  // 不是跑在手机上：`XMessage`、`XConnection`、`emulator.Emulator`、
+  // `java.applet.Applet` 都是常见探针（「丧尸危机 - 全城爆发」的配置里就写着这四
+  // 个）。真机上这些类不存在，`Class.forName` 必须抛
+  // java.lang.ClassNotFoundException，游戏据此放行。这份 fork 的 native 把类加载
+  // 器抛出的 JS 标记吞掉后正常返回，于是每个探针都像是「找到了」；随后
+  // classInitCheck(null) 又抛出一个 TypeError，被 translateException 转成
+  // RuntimeException —— 更糟的是 `nameAddr >= 0xffffff` 那条分支还引用了未定义
+  // 的 `e`。这里按 CLDC 的语义重写两个 native：找不到类 → Java 的
+  // ClassNotFoundException；null → NullPointerException；其他 JS 错误照原样往上传。
+  // forName0 的成功路径保持原样（加载 + 初始化 + 需要时让出执行窗口），
+  // forName1 只负责把已经初始化好的 Class 对象地址交回去。
+  {
+    label: 'main-all.js: Class.forName reports a missing class as ClassNotFoundException',
+    file: 'bld/main-all.js',
+    applied: (text) => text.includes('// Site patch (Class.forName):'),
+    anchor: `Native["java/lang/Class.forName0.(Ljava/lang/String;)V"] = function(addr, nameAddr) {
+  var classInfo = null;
+  
+  //console.warn("nameAddr ",nameAddr,J2ME.fromStringAddr(nameAddr));
+  if(nameAddr>=0xffffff)
+  {
+    //console.warn("ClassNotFoundException");
+    throw $.newClassNotFoundException("'" + e.message + "' not found.");
+    return;
+  } 
+  try {
+    
+    if (nameAddr === J2ME.Constants.NULL) {
+      throw new J2ME.ClassNotFoundException;
+      //console.warn('ClassNotFoundException');
+      return;
+    }
+    var className = J2ME.fromStringAddr(nameAddr).replace(/\\./g, "/"); 
+    //console.log(className)
+    classInfo = CLASSES.getClass(className); 
+    //console.log(classInfo)
+
+  } catch (e) {
+    if (e instanceof J2ME.ClassNotFoundException) {
+      console.warn("'" + e.message + "' not found.")
+      //throw $.newClassNotFoundException("'" + e.message + "' not found.");
+      return;
+    }
+    console.error(e);
+    //throw e;
+  }
+  //this maybe removed
+  J2ME.classInitCheck(classInfo);
+  if (U) {
+    $.nativeBailout(J2ME.Kind.Void, J2ME.Bytecode.Bytecodes.INVOKESTATIC);
+  }
+};
+Native["java/lang/Class.forName1.(Ljava/lang/String;)Ljava/lang/Class;"] = function(addr, nameAddr) {
+  try{
+    if(nameAddr>=0xffffff)
+    {
+      console.warn("ClassNotFoundException")
+      return J2ME.Constants.NULL;
+    }
+    var className = J2ME.fromStringAddr(nameAddr).replace(/\\./g, "/");
+    var classInfo = CLASSES.getClass(className); 
+    var address = $.getClassObjectAddress(classInfo);
+    //console.log("forName1",className)
+    return address;
+  }catch(err)
+  {
+    console.log(err);
+    return J2ME.Constants.NULL;
+  }
+};`,
+    replacement: `// Site patch (Class.forName): 真机上找不到的类必须抛 java.lang.ClassNotFoundException。
+// 上游把类加载器的 J2ME.ClassNotFoundException 标记吞掉后正常返回，于是
+// Class.forName("XMessage") 之类的模拟器探针全部「成功」；随后 classInitCheck(null)
+// 抛出的 TypeError 又被翻译成 RuntimeException，MIDlet 的 catch (ClassNotFoundException)
+// 根本接不到。下面两个 native 按 CLDC 的语义处理：null → NullPointerException，
+// 找不到 → ClassNotFoundException，其他 JS 错误原样往上抛。
+Native["java/lang/Class.forName0.(Ljava/lang/String;)V"] = function(addr, nameAddr) {
+  if (nameAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException();
+  }
+  var requestedName = J2ME.fromStringAddr(nameAddr);
+  if (requestedName === null) {
+    throw $.newNullPointerException();
+  }
+  var className = requestedName.replace(/\\./g, "/");
+  var classInfo;
+  try {
+    classInfo = CLASSES.getClass(className);
+  } catch (e) {
+    if (e instanceof J2ME.ClassNotFoundException) {
+      throw $.newClassNotFoundException(requestedName);
+    }
+    throw e;
+  }
+  if (!classInfo) {
+    throw $.newClassNotFoundException(requestedName);
+  }
+  J2ME.classInitCheck(classInfo);
+  if (U) {
+    $.nativeBailout(J2ME.Kind.Void, J2ME.Bytecode.Bytecodes.INVOKESTATIC);
+  }
+};
+Native["java/lang/Class.forName1.(Ljava/lang/String;)Ljava/lang/Class;"] = function(addr, nameAddr) {
+  if (nameAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException();
+  }
+  var requestedName = J2ME.fromStringAddr(nameAddr);
+  if (requestedName === null) {
+    throw $.newNullPointerException();
+  }
+  var className = requestedName.replace(/\\./g, "/");
+  var classInfo;
+  try {
+    classInfo = CLASSES.getClass(className);
+  } catch (e) {
+    if (e instanceof J2ME.ClassNotFoundException) {
+      throw $.newClassNotFoundException(requestedName);
+    }
+    throw e;
+  }
+  if (!classInfo) {
+    throw $.newClassNotFoundException(requestedName);
+  }
+  return $.getClassObjectAddress(classInfo);
+};`,
+  },
+  // The class libraries' `java/lang/Class.forName` short-circuits the literal
+  // "XMessage" to null before it ever calls forName0:
+  //
+  //     if ("XMessage".equals(name)) return null;
+  //
+  // On a real phone XMessage is simply absent and Class.forName throws, which is
+  // what the emulator checks expect. Patch 33 makes the native loader do that,
+  // but this shortcut runs first, so the constant itself has to change. Renaming
+  // it to the same-length invalid class name "XMessag!" keeps every bytecode
+  // offset and constant-pool index intact; the archive rewrite only touches this
+  // one deflated entry (see j2me-classlib.mjs). classes2.jar has no shortcut and
+  // is left alone.
+  {
+    label: 'java/classesold.jar: Class.forName stops special-casing XMessage',
+    file: 'java/classesold.jar',
+    binary: true,
+    applied: classLibraryForNamePatched,
+    transform: removeClassForNameShortcut,
+  },
+  {
+    label: 'java/classes.jar: Class.forName stops special-casing XMessage',
+    file: 'java/classes.jar',
+    binary: true,
+    applied: classLibraryForNamePatched,
+    transform: removeClassForNameShortcut,
+  },
 ]
 
 let failed = false
 for (const patch of patches) {
   const filePath = path.join(base, patch.file)
-  const original = fs.readFileSync(filePath, 'utf8')
+  const original = fs.readFileSync(filePath, patch.binary ? undefined : 'utf8')
   if (patch.applied(original)) {
     console.log(`ok      ${patch.label}`)
     continue
@@ -1288,6 +1677,11 @@ for (const patch of patches) {
       continue
     }
   } else {
+    if (patch.binary) {
+      console.error(`FAILED  ${patch.label}: binary patches need a transform`)
+      failed = true
+      continue
+    }
     if (!original.includes(patch.anchor)) {
       console.error(`FAILED  ${patch.label}: anchor not found in ${patch.file}`)
       failed = true

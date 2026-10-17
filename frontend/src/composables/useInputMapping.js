@@ -52,15 +52,18 @@ import {
   effectiveLocalKeyboardForPlayer,
   isSavedDefaultKeyboard,
   isSavedLocalPlayer2DefaultKeyboard,
+  isJ2meKeyboardProfile,
   isValidKeyboardBinding,
-  keyboardStorageKeyForPlayer,
   localPlayer2RuntimeKeyboard,
   normalizeKeyboardMapping,
   sanitizeKeyboardSave,
+  sanitizePlatformKeyboards,
+  withPlayerKeyboard,
   withoutDuplicateBinding,
   withoutKeyboardValue,
   withoutKeyboardValues,
 } from './input/keyboardProfiles.js'
+import { isSinglePlayerPlatform } from '../../../shared/registry/platform-players.js'
 import { buildPlayerRetroarchConfig } from './input/retroarchConfig.js'
 import {
   P2_KEY_MAP,
@@ -114,6 +117,7 @@ export {
 const mapping = ref({
   keyboard: { ...DEFAULT_KEYBOARD },
   keyboardP2: { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] },
+  keyboardsByPlatform: {},
   gamepads: {},
   seats: { 1: null, 2: null },
   legacyGamepads: { 1: null, 2: null },
@@ -153,13 +157,22 @@ function refreshForUser(userId) {
     ? normalizeLegacyGamepads(savedLegacy)
     : extractLegacyGamepads(stored)
   const legacyGamepads = needsLayoutMigration ? migrateStoredMappings(legacySource) : legacySource
+  // v1.7.3 的 J2ME 默认键位（手机小键盘）曾经被整套写进账号共用的 keyboard：在 J2ME
+  // 里改一颗键或按「重置键盘」，其它平台的按键设置也跟着变成小键盘。这里认出那种
+  // 存档，把它搬回 J2ME 自己的格子，共用存档恢复成通用默认键位（见 isJ2meKeyboardProfile）。
+  const leakedJ2meKeyboard = isJ2meKeyboardProfile(stored?.keyboard)
+    ? sanitizeKeyboardSave(stored.keyboard)
+    : null
+  const keyboardsByPlatform = sanitizePlatformKeyboards(stored?.keyboardsByPlatform)
+  if (leakedJ2meKeyboard && !keyboardsByPlatform.j2me) keyboardsByPlatform.j2me = leakedJ2meKeyboard
   const next = {
-    keyboard: isSavedDefaultKeyboard(stored?.keyboard)
+    keyboard: leakedJ2meKeyboard || isSavedDefaultKeyboard(stored?.keyboard)
       ? { ...DEFAULT_KEYBOARD }
       : normalizeKeyboardMapping(stored?.keyboard),
     keyboardP2: isSavedLocalPlayer2DefaultKeyboard(stored?.keyboardP2)
       ? { ...DEFAULT_LOCAL_PLAYER_KEYBOARDS[2] }
       : normalizeKeyboardMapping(stored?.keyboardP2, DEFAULT_LOCAL_PLAYER_KEYBOARDS[2]),
+    keyboardsByPlatform,
     gamepads: normalizeDeviceGamepads(needsLayoutMigration ? migrateStoredMappings(gamepads) : gamepads),
     seats: normalizeGamepadSeats(stored?.seats),
     legacyGamepads,
@@ -169,7 +182,7 @@ function refreshForUser(userId) {
 
   // Persist a converted old record immediately. The version marker makes this a
   // one-time operation; current-version custom swaps are never rewritten.
-  if (stored && needsLayoutMigration) {
+  if (stored && (needsLayoutMigration || leakedJ2meKeyboard)) {
     // Storage may be unavailable/full; the loaded mapping should still work.
     try { saveInputMapping(userId, next) } catch {}
   }
@@ -186,17 +199,19 @@ export function useInputMapping() {
 
   function setKeyboard(btn, key, player = 1, platform = null) {
     const slot = Number(player) === 2 ? 2 : 1
-    const playerKey = keyboardStorageKeyForPlayer(slot)
     const otherSlot = slot === 2 ? 1 : 2
-    const otherKey = keyboardStorageKeyForPlayer(otherSlot)
     const defaults = defaultLocalKeyboardForPlayer(slot, platform)
     const current = effectiveLocalKeyboardForPlayer(mapping.value, slot, platform)
     const normalized = isValidKeyboardBinding(key) ? normalizeRetroarchKey(key) : defaults[btn]
     const keyboard = sanitizeKeyboardSave(withoutDuplicateBinding(current, btn, normalized))
-    const next = { ...mapping.value, [playerKey]: keyboard }
-    if (isValidKeyboardBinding(normalized)) {
+    // 有自己默认键位的平台（J2ME / 街机 / MD）写进自己的格子，共用存档不动 ——
+    // 在 J2ME 里改键不该让其它平台的按键设置跟着变。
+    let next = withPlayerKeyboard(mapping.value, slot, keyboard, platform)
+    // 单人机没有 P2（J2ME 模拟的是一部手机），不要为了避让撞键去改 P2 的存档：
+    // 那一份是给别的平台的双打席位用的。
+    if (isValidKeyboardBinding(normalized) && !isSinglePlayerPlatform(platform)) {
       const otherKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, otherSlot, platform)
-      next[otherKey] = sanitizeKeyboardSave(withoutKeyboardValue(otherKeyboard, normalized))
+      next = withPlayerKeyboard(next, otherSlot, sanitizeKeyboardSave(withoutKeyboardValue(otherKeyboard, normalized)), platform)
     }
     mapping.value = next
     saveInputMapping(user.value?.id, mapping.value)
@@ -249,14 +264,15 @@ export function useInputMapping() {
 
   function resetKeyboard(player = 1, platform = null) {
     const slot = Number(player) === 2 ? 2 : 1
-    const playerKey = keyboardStorageKeyForPlayer(slot)
     const otherSlot = slot === 2 ? 1 : 2
-    const otherKey = keyboardStorageKeyForPlayer(otherSlot)
     const defaults = { ...defaultLocalKeyboardForPlayer(slot, platform) }
-    const next = { ...mapping.value, [playerKey]: defaults }
-    const reserved = Object.values(defaults).filter(isValidKeyboardBinding).map((value) => normalizeRetroarchKey(value))
-    const otherKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, otherSlot, platform)
-    next[otherKey] = sanitizeKeyboardSave(withoutKeyboardValues(otherKeyboard, reserved))
+    // 重置只恢复这个平台自己的默认键位，不改共用存档（见 setKeyboard）。
+    let next = withPlayerKeyboard(mapping.value, slot, defaults, platform)
+    if (!isSinglePlayerPlatform(platform)) {
+      const reserved = Object.values(defaults).filter(isValidKeyboardBinding).map((value) => normalizeRetroarchKey(value))
+      const otherKeyboard = effectiveLocalKeyboardForPlayer(mapping.value, otherSlot, platform)
+      next = withPlayerKeyboard(next, otherSlot, sanitizeKeyboardSave(withoutKeyboardValues(otherKeyboard, reserved)), platform)
+    }
     mapping.value = next
     saveInputMapping(user.value?.id, mapping.value)
   }

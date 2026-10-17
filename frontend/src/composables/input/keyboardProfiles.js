@@ -26,10 +26,32 @@ const ARCADE_KEYBOARD = {
 
 // MD / Genesis 六键：镜像手柄的两排按键 —— 下排 J K L = A B C，上排 U I O = X Y Z。
 // genesis_plus_gx / picodrive 的 retropad 映射：y=A, b=B, a=C, l=X, x=Y, r=Z。
+// 32X 用的是同一只六键手柄，默认键位与 MD 完全一致（见 PLATFORM_DEFAULT_KEYBOARDS）。
 const MEGADRIVE_KEYBOARD = {
   ...DEFAULT_KEYBOARD,
   y: 'j', b: 'k', a: 'l',
   l: 'u', x: 'i', r: 'o',
+}
+
+// SMS / Game Gear 只有两颗按键，界面按 1 / 2 标注；核心里 retropad b→1、a→2，
+// 所以 1 落 J、2 落 K（见 constants/platforms.js 的 BUTTON_LABELS.sms）。
+const SMS_KEYBOARD = {
+  ...DEFAULT_KEYBOARD,
+  a: 'k', b: 'j',
+}
+
+// PC Engine / PCE-CD 的六键手柄：界面上的 III / IV 是 retropad y / x，落在 I / O；
+// 「模式」（Avenue Pad 6 的 2 / 6 切换键，retropad l2）落在 M。
+const PCE_KEYBOARD = {
+  ...DEFAULT_KEYBOARD,
+  x: 'o', y: 'i', l2: 'm',
+}
+
+// 3DO 手柄的面键从左到右是 A B C；核心里 retropad y→A、b→B、a→C
+// （见 constants/platforms.js 的 BUTTON_LABELS['3do']），按界面标签落 J / K / L。
+const THREEDO_KEYBOARD = {
+  ...DEFAULT_KEYBOARD,
+  y: 'j', b: 'k', a: 'l',
 }
 
 // J2ME 的复刻对象是一部手机，键盘就照手机键盘摆：数字小键盘上同样数字的那几颗键
@@ -48,6 +70,12 @@ const J2ME_KEYBOARD = {
 const PLATFORM_DEFAULT_KEYBOARDS = {
   arcade: ARCADE_KEYBOARD,
   megadrive: MEGADRIVE_KEYBOARD,
+  sega32x: MEGADRIVE_KEYBOARD,
+  sms: SMS_KEYBOARD,
+  gamegear: SMS_KEYBOARD,
+  pcengine: PCE_KEYBOARD,
+  pcecd: PCE_KEYBOARD,
+  '3do': THREEDO_KEYBOARD,
   j2me: J2ME_KEYBOARD,
 }
 
@@ -55,6 +83,49 @@ export const DEFAULT_PLAYER1_RUNTIME_KEYBOARD = { ...DEFAULT_KEYBOARD }
 
 export function defaultPlayer1KeyboardForPlatform(platform = null) {
   return PLATFORM_DEFAULT_KEYBOARDS[resolvePlatformId(platform)] || DEFAULT_KEYBOARD
+}
+
+// 有自己默认键位的平台，改键时写进属于自己的那一格（keyboardsByPlatform[平台]），
+// 不再覆盖账号共用的 keyboard / keyboardP2。否则在 J2ME 里按一下「重置键盘」，整套
+// 手机小键盘键位会写进共用存档，切到 NES 也全变成小键盘 —— 玩家看到的就是「改一个
+// 平台，所有平台都跟着变」。没有平台默认键位的平台仍然共用那一份存档。
+export function platformKeyboardProfileId(platform = null) {
+  const id = resolvePlatformId(platform)
+  return Object.prototype.hasOwnProperty.call(PLATFORM_DEFAULT_KEYBOARDS, id) ? id : null
+}
+
+/** 这个平台自己保存的 P1 键位；没有就是 null（沿用共用存档 / 平台默认）。 */
+export function platformKeyboardForPlayer(inputMapping = null, platform = null) {
+  const id = platformKeyboardProfileId(platform)
+  const stored = id ? inputMapping?.keyboardsByPlatform?.[id] : null
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/** 读存档时只保留认识的平台与合法按键。 */
+export function sanitizePlatformKeyboards(stored = null) {
+  const out = {}
+  for (const [id, value] of Object.entries(stored || {})) {
+    if (!PLATFORM_DEFAULT_KEYBOARDS[id] || !value || typeof value !== 'object') continue
+    const keyboard = sanitizeKeyboardSave(value)
+    if (Object.keys(keyboard).length) out[id] = keyboard
+  }
+  return out
+}
+
+/** 把一份 P1 / P2 键位写回 mapping：有平台专属格子的 P1 写那一格，其余写共用存档。 */
+export function withPlayerKeyboard(inputMapping = {}, player = 1, keyboard = {}, platform = null) {
+  const slot = Number(player) === 2 ? 2 : 1
+  const profileId = slot === 1 ? platformKeyboardProfileId(platform) : null
+  const next = { ...inputMapping }
+  if (!profileId) {
+    next[keyboardStorageKeyForPlayer(slot)] = keyboard
+    return next
+  }
+  next.keyboardsByPlatform = {
+    ...(inputMapping.keyboardsByPlatform || {}),
+    [profileId]: keyboard,
+  }
+  return next
 }
 
 // 历史默认键位。存下来的映射只要和某一版历史默认完全一致，就当成“用户没改过”，
@@ -122,6 +193,27 @@ export function isSavedDefaultKeyboard(storedKeyboard = {}) {
   )
 }
 
+// J2ME 专属的那几颗键（十字与 L3/R3 两边相同，看它们没有意义）。这一份用来认出
+// 「被整套写进共用存档」的 J2ME 键位，见 isJ2meKeyboardProfile。
+const J2ME_SIGNATURE_BUTTONS = ['a', 'b', 'x', 'y', 'l', 'r', 'l2', 'r2', 'select', 'start']
+
+// v1.7.3 在 J2ME 里改键时，会把整套手机键位写进账号共用的 keyboard（当年的 setKeyboard
+// 保存的是生效中的整份键位），其它平台随后也套用了这份“自定义键位”。下面这份判断
+// 认出它：J2ME 专属的十颗键里至少六颗与 J2ME 默认一致。允许几颗不同，是因为玩家可能
+// 在 J2ME 里改过几颗键；而其它任何一套默认（通用 / 街机 / MD）在这十颗键上一颗都
+// 对不上，正常自定义出来的小键盘键位也不会长成手机键盘这个样子。认出来之后由
+// refreshForUser 搬回 J2ME 自己的格子，共用存档恢复成通用默认。
+export function isJ2meKeyboardProfile(storedKeyboard = null) {
+  if (!storedKeyboard || typeof storedKeyboard !== 'object') return false
+  for (const btn of J2ME_SIGNATURE_BUTTONS) {
+    if (!isValidKeyboardBinding(storedKeyboard[btn])) return false
+  }
+  const matches = J2ME_SIGNATURE_BUTTONS.filter((btn) =>
+    normalizeRetroarchKey(storedKeyboard[btn]) === normalizeRetroarchKey(J2ME_KEYBOARD[btn]),
+  )
+  return matches.length >= J2ME_SIGNATURE_BUTTONS.length - 4
+}
+
 export function isSavedLocalPlayer2DefaultKeyboard(storedKeyboard = {}) {
   const entries = Object.entries(storedKeyboard || {})
     .filter(([btn, key]) => RETROPAD_BUTTON_KEYS.has(btn) && key != null)
@@ -173,15 +265,17 @@ const LOCAL_PLAYER2_DEFAULT_KEYBOARD = {
 
 // P2 交给 core 的运行时键位：玩家在按键设置里看到的是上面那张小键盘表，前端把玩家的
 // P2 按键换算成这一套再发给 core（core 只监听这里的键）。必须与 P1 的默认（含街机 /
-// MD 变体）以及远端玩家的键位完全不重叠，否则一个键会同时触发两名玩家。
+// MD / 手机键位）以及远端玩家的键位完全不重叠，否则一个键会同时触发两名玩家。
 // remotePlayers.js 里远端 P2 用的就是这一份。
+// select 用 F4：PCE 的「模式」默认落在 M 上，原来这里也是 M，按一下会同时触发
+// P1 的模式与 P2 的 select；F4 不在任何平台的 P1 默认里，也没有浏览器快捷键。
 export const LOCAL_PLAYER2_RUNTIME_KEYBOARD = {
   up: 'up', down: 'down', left: 'left', right: 'right',
   a: 'z', b: 'x', x: 'v', y: 'n',
   l: 'q', r: 'y',
   l2: 'f1', r2: 'f2',
   l3: 'g', r3: 'h',
-  start: 't', select: 'm',
+  start: 't', select: 'f4',
 }
 
 export const DEFAULT_LOCAL_PLAYER_KEYBOARDS = {
@@ -213,6 +307,7 @@ const MEGADRIVE_LOCAL_PLAYER2_KEYBOARD = {
 const PLATFORM_LOCAL_PLAYER2_DEFAULT_KEYBOARDS = {
   arcade: ARCADE_LOCAL_PLAYER2_KEYBOARD,
   megadrive: MEGADRIVE_LOCAL_PLAYER2_KEYBOARD,
+  sega32x: MEGADRIVE_LOCAL_PLAYER2_KEYBOARD,
 }
 
 export function defaultLocalKeyboardForPlayer(player = 1, platform = null) {
@@ -263,6 +358,12 @@ export function normalizeKeyboardMapping(storedKeyboard = {}, defaults = DEFAULT
 
 export function effectiveKeyboardForPlayer(inputMapping = null, player = 1, platform = null) {
   const defaults = defaultKeyboardForPlayer(player, platform)
+  // 有自己默认键位的平台（J2ME / 街机 / MD）优先读它自己那一格：在那里改键只改
+  // 这个平台，别的平台继续用共用存档里的那一份。
+  if (Number(player) !== 2) {
+    const scoped = platformKeyboardForPlayer(inputMapping, platform)
+    if (scoped) return normalizeKeyboardMapping(scoped, defaults)
+  }
   const stored = inputMapping?.[keyboardStorageKeyForPlayer(player)]
   if (Number(player) === 1 && platform && keyboardMatchesProfile(stored, DEFAULT_KEYBOARD)) {
     return { ...defaults }
@@ -272,6 +373,10 @@ export function effectiveKeyboardForPlayer(inputMapping = null, player = 1, plat
 
 export function effectiveLocalKeyboardForPlayer(inputMapping = null, player = 1, platform = null) {
   const defaults = defaultLocalKeyboardForPlayer(player, platform)
+  if (Number(player) !== 2) {
+    const scoped = platformKeyboardForPlayer(inputMapping, platform)
+    if (scoped) return normalizeKeyboardMapping(scoped, defaults)
+  }
   const stored = inputMapping?.[keyboardStorageKeyForPlayer(player)]
   // 存下来的还是“没改过”的默认（P1 比通用默认、P2 比通用 P2 默认）时，套用当前平台
   // 的默认键位；用户自己改过键就整份保留。

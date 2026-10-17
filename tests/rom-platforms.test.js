@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import {
   PLATFORM_ROM_REGISTRY,
   PLATFORM_AUTO_DETECT_BY_EXTENSION,
+  PLATFORM_PARENT_ROM_CONTENT,
   autoDetectPlatform,
+  needsParentRomFile,
   normalizePlatformId,
 } from '../shared/registry/platform-roms.js'
 import {
@@ -113,6 +115,27 @@ test('新增平台的扩展名与默认人数按规格：光盘机 2P、掌机 1
   assert.equal(getPlatform('ngp').maxPlayers, 1)
   assert.equal(getPlatform('j2me').maxPlayers, 1)
   assert.equal(getPlatform('neogeocd').maxPlayers, 2)
+})
+
+test('变体只在街机上把父 ROM 的文件一起交给核心', () => {
+  assert.equal(needsParentRomFile('arcade'), true)
+  // 其余平台的变体都是一份完整的游戏：父版本只是版本族里的另一条记录。
+  // J2ME 尤其不能多给 —— 运行时一次只收一个 JAR，收到两个会直接拒绝启动。
+  for (const id of Object.keys(PLATFORM_ROM_REGISTRY).filter((id) => id !== 'arcade')) {
+    assert.equal(needsParentRomFile(id), false, `${id} 不该加载父版本文件`)
+  }
+  assert.deepEqual([...PLATFORM_PARENT_ROM_CONTENT], ['arcade'])
+  // 别名照样收敛到通用名；空值与未知平台不给父版本。
+  assert.equal(needsParentRomFile('famicom'), false)
+  assert.equal(needsParentRomFile(''), false)
+  assert.equal(needsParentRomFile('unknown'), false)
+
+  // 播放页必须按这张表决定要不要下载父版本，不能无条件塞进 rom 数组。
+  const playerRom = readRepo('frontend/src/composables/player/usePlayerRom.js')
+  assert.match(
+    playerRom,
+    /const parent = parentForChild\.value && needsParentRomFile\(meta\.platform\) \? parentForChild\.value : null/,
+  )
 })
 
 test('上传页的扩展名自动识别：只认专属扩展名，光盘镜像与 .bin 不猜', () => {

@@ -2,6 +2,7 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { api } from '../../api/client.js'
 import { getBiosUrls, getPlatformInfo } from '../../data/config.js'
 import { cachedFetch, readResponseBlob } from '../useBlobCache.js'
+import { needsParentRomFile } from '../../../../shared/registry/platform-roms.js'
 
 function isAbortError(error) {
   return error?.name === 'AbortError' || error?.code === 'ABORT_ERR'
@@ -39,7 +40,10 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
   async function resolveRomBlobs() {
     const meta = romMeta.value
     if (!meta) { rom.value = null; return }
-    const parent = parentForChild.value
+    // 只有街机克隆集要把父 ROM 一起交给核心（见 needsParentRomFile）。其他平台的
+    // 变体自己就是完整的一份游戏，父版本只是「版本族」里的另一条记录；J2ME 的
+    // 运行时一次只收一个 JAR，多给一个会直接报错拒绝启动。
+    const parent = parentForChild.value && needsParentRomFile(meta.platform) ? parentForChild.value : null
     const session = progress?.sessionId
     const signal = progress?.currentSignal?.() ?? null
     progress?.setStage('resources')
@@ -47,7 +51,7 @@ export function usePlayerRom({ routeRomId, isRoomMode, roomCode, localPeer, repo
       const selfBlob = await fetchRomBlob(meta, { session, signal, label: meta.title || meta.fileName })
       const self = { fileName: meta.fileName, fileContent: selfBlob }
       if (parent) {
-        // 变体（克隆/改版）还需要父版本的共享数据：它是同一个核心的另一份文件。
+        // 街机克隆 set 的共享数据在父 set 的 zip 里：它是同一个核心的另一份文件。
         const parentBlob = await fetchRomBlob(parent, {
           session,
           signal,

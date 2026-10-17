@@ -173,7 +173,7 @@ test('街机房间的 P2 仍然用单机 P2 的运行时键位，但让位于房
   })
   // 默认键位下与改动前一致：P2 就是单机 P2 的运行时键位（按平台按钮表裁剪）。
   assert.deepEqual(maps[2], buildLocalPlayerKeyboardMap(2, state.platformButtons))
-  assert.deepEqual(Object.values(maps[2]), ['up', 'down', 'left', 'right', 'z', 'x', 'v', 'n', 'q', 'y', 't', 'm'])
+  assert.deepEqual(Object.values(maps[2]), ['up', 'down', 'left', 'right', 'z', 'x', 'v', 'n', 'q', 'y', 't', 'f4'])
 
   // 房主把自己的 A 挪到 z（P2 布局里的键）时，P2 的 A 必须让开。
   const custom = roomInputState('arcade', { ...DEFAULT_KEYBOARD, a: 'z' })

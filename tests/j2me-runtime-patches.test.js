@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { J2ME_BUTTON_KEYS } from '../frontend/src/composables/player/j2meRuntime.js'
+import { readZipEntry } from '../frontend/scripts/j2me-classlib.mjs'
 
 const repoRoot = fileURLToPath(new URL('../', import.meta.url))
 const runtimeDir = path.join(repoRoot, 'frontend/public/j2me')
@@ -195,6 +196,33 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.match(engine, /\/\/ Site patch \(misspelled encoding class\):/)
   assert.match(engine, /if \(!bytes && fileName\.indexOf\("com\/sun\/cldc\/i18n\/j2me\/UFT_"\) === 0\) \{\n                bytes = JARStore\.loadFile\(fileName\.replace\("UFT_", "UTF_"\)\);\n            \}/)
 
+  // 反模拟器检测靠的是 Java 的语义：真机上 `Class.forName("XMessage")` 找不到这个
+  // 类，必须抛 ClassNotFoundException，MIDlet 的 catch 才会放行。这份 fork 原来把
+  // 类加载器的标记吞掉后正常返回（后面还会 classInitCheck(null) 抛 TypeError），
+  // 于是一个都不存在的探针全被当成「找到了」，「丧尸危机 - 全城爆发」因此停在
+  // 「请在手机上运行游戏！」。两个 native 都要按 CLDC 的规则抛真正的 Java 异常。
+  assert.match(bundle, /\/\/ Site patch \(Class\.forName\):/)
+  assert.match(bundle, /throw \$\.newClassNotFoundException\(requestedName\);/)
+  assert.match(bundle, /if \(nameAddr === J2ME\.Constants\.NULL\) \{\n    throw \$\.newNullPointerException\(\);\n  \}/)
+  // 原来那条吞异常的 return 必须彻底消失，不能只是多了一条注释掉的旧代码。
+  assert.doesNotMatch(bundle, /\/\/throw \$\.newClassNotFoundException\("'" \+ e\.message \+ "' not found\."\);/)
+  assert.doesNotMatch(bundle, /if\(nameAddr>=0xffffff\)/)
+
+  // 类库的 java/lang/Class.forName 里还有一条硬编码的短路：
+  // `if ("XMessage".equals(name)) return null;` —— 它在 native 之前执行，所以补丁 33
+  // 的异常根本轮不到。两个带这条短路的类库必须把常量改成等长的非法类名；
+  // classes2.jar 本来就是干净的，不能被动过。
+  for (const engine of ['classesold.jar', 'classes.jar']) {
+    const classFile = readZipEntry(readFileSync(path.join(runtimeDir, 'java', engine)), 'java/lang/Class.class')
+    assert.ok(classFile, `${engine} 里必须有 java/lang/Class.class`)
+    assert.ok(classFile.includes(Buffer.from('XMessag!')), `${engine} 的 XMessage 短路必须已经改写`)
+    assert.ok(!classFile.includes(Buffer.from('XMessage')), `${engine} 里不能再有原来的 XMessage 常量`)
+  }
+  const cleanClass = readZipEntry(readFileSync(path.join(runtimeDir, 'java/classes2.jar')), 'java/lang/Class.class')
+  assert.ok(cleanClass, 'classes2.jar 里必须有 java/lang/Class.class')
+  assert.ok(!cleanClass.includes(Buffer.from('XMessag!')), 'classes2.jar 本来就没有短路，不能改它')
+  assert.ok(!cleanClass.includes(Buffer.from('XMessage')), 'classes2.jar 本来就没有 XMessage 常量')
+
   // 这些 MIDP 内部调用在这个运行时里本来就是空操作（标题栏的信任图标、套件锁、显示
   // 状态、CHAPI 记账），逐次警告只会把真正的问题淹掉。
   assert.doesNotMatch(bundle, /console\.warn\("Display\.drawTrustedIcon0/)
@@ -211,6 +239,16 @@ test('J2meJS 运行时补丁齐备，且补丁脚本可重复执行', () => {
   assert.doesNotMatch(bundle, /console\.log\(MIDP\.manifest\)/)
   assert.doesNotMatch(bundle, /config\.gamepadSize "\+config\.gamepadSize/)
   assert.doesNotMatch(engine, /console\.log\('createException'/)
+
+  // 「刺客信条-兄弟会」的 17 个音效全是 IMA ADPCM（WAVE_FORMAT_IMA_ADPCM 0x11）：
+  // 浏览器解不了，而回调式 decodeAudioData 留下的拒绝被 bridge.js 当成未捕获错误，
+  // 播放器于是把整局游戏拆掉（Gameloft 商标画面停住）。解码器与安全的 Promise 写法
+  // 缺一不可。
+  assert.match(bundle, /\/\/ Site patch \(IMA ADPCM WAV decoder\):/)
+  assert.match(bundle, /function siteDecodeImaAdpcmWav\(context, arrayBuffer\) \{/)
+  assert.match(bundle, /\/\/ Site patch \(rejected audio decode\):/)
+  assert.match(bundle, /that\.audioCtx\.decodeAudioData\(uint8\)\.then\(function\(buffer\) \{/)
+  assert.doesNotMatch(bundle, /audioCtx\.decodeAudioData\(uint8, function\(buffer\) \{/)
 
   // 脚本自身必须幂等：第二次运行应当全部报告 ok 并以 0 退出。
   const output = execFileSync(process.execPath, [patchScript], { encoding: 'utf8' })
@@ -420,6 +458,66 @@ test('Samsung 音频探针答 true，而且这条替换能作用到 MIDlet 自�
     engine,
     /\/\/ Site patch \(method replacement\):[\s\S]{0,600}?console\.log\(/,
   )
+})
+
+// IMA ADPCM（WAVE_FORMAT_IMA_ADPCM，0x11）是 J2ME 游戏最常用的压缩 WAV：8kHz 单声道
+// 4 bit，一个 256 字节的块解出 505 个采样。浏览器不认这种格式，所以要自己按规范解。
+// 这里按产物里的真实代码求值一次，锁住块头、低半字节在前、步长/索引表与尾块的算法。
+test('IMA ADPCM 的 WAV 解成每声道 PCM 采样', () => {
+  const bundle = read('bld/main-all.js')
+  const fromHelpers = bundle.indexOf('var siteImaStepTable = [')
+  const toHelpers = bundle.indexOf('function base64ToUint8Array')
+  assert.ok(fromHelpers >= 0 && toHelpers > fromHelpers, 'IMA ADPCM 解码器必须能在产物里读到')
+  const source = bundle.slice(fromHelpers, toHelpers)
+  const decode = new Function('context', `${source}\nreturn siteDecodeImaAdpcmWav;`)(null)
+
+  // 48 字节头 + 一个 256 字节的 IMA 块（fmt 里带 samplesPerBlock=505）。
+  const imaWav = ({ channels = 1, format = 0x11, block }) => {
+    const header = Buffer.alloc(48)
+    header.write('RIFF', 0); header.writeUInt32LE(40 + block.length, 4); header.write('WAVE', 8)
+    header.write('fmt ', 12); header.writeUInt32LE(20, 16)
+    header.writeUInt16LE(format, 20); header.writeUInt16LE(channels, 22)
+    header.writeUInt32LE(8000, 24); header.writeUInt32LE(4055, 28)
+    header.writeUInt16LE(256, 32); header.writeUInt16LE(4, 34)
+    header.writeUInt16LE(2, 36); header.writeUInt16LE(505, 38)
+    header.write('data', 40); header.writeUInt32LE(block.length, 44)
+    return Buffer.concat([header, block])
+  }
+  const decodeWith = (bytes) => {
+    let channels = null
+    const context = {
+      createBuffer(count, length, sampleRate) {
+        channels = Array.from({ length: count }, () => new Float32Array(length))
+        return { numberOfChannels: count, length, sampleRate, getChannelData: (channel) => channels[channel] }
+      },
+    }
+    return { buffer: decode(context, bytes), channels }
+  }
+
+  // 单声道：块头是 predictor=-5、index=0，第一个数据字节 0xf5 给出半字节 5 与 15，
+  // 之后全是 0。值按规范逐步算得（步长表 / 索引表 / 符号位），顺序与低位在前一致。
+  const monoBlock = Buffer.alloc(256)
+  monoBlock[0] = 0xfb; monoBlock[1] = 0xff; monoBlock[2] = 0; monoBlock[3] = 0
+  monoBlock[4] = 0xf5
+  const mono = decodeWith(imaWav({ block: monoBlock }))
+  assert.equal(mono.buffer.length, 505, '一个 256 字节的块必须解出 505 个单声道采样')
+  assert.equal(mono.buffer.numberOfChannels, 1)
+  assert.equal(mono.buffer.sampleRate, 8000)
+  assert.deepEqual(
+    Array.from(mono.channels[0].slice(0, 8)).map((value) => Math.round(value * 32768)),
+    [-5, 3, -16, -14, -12, -10, -8, -6],
+  )
+  assert.ok(mono.channels[0].every((value) => value >= -1 && value <= 1), 'PCM 必须落在 [-1, 1]')
+
+  // 立体声：两个 4 字节块头之后，数据按声道交替，每声道 249 个采样。
+  const stereo = decodeWith(imaWav({ channels: 2, block: Buffer.alloc(256) }))
+  assert.equal(stereo.buffer.numberOfChannels, 2)
+  assert.equal(stereo.buffer.length, 249)
+  assert.ok(stereo.channels[0].every((value) => value === 0) && stereo.channels[1].every((value) => value === 0))
+
+  // 未压缩 PCM（0x01）与不是 RIFF 的数据都不能被这个解码器抢走，仍然交给浏览器。
+  assert.equal(decodeWith(imaWav({ format: 1, block: monoBlock })).buffer, null)
+  assert.equal(decodeWith(Buffer.from('not a wav')).buffer, null)
 })
 
 test('构建产物给 J2meJS 运行时打好内容版本号', () => {

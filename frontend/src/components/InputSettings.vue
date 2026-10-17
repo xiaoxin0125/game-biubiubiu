@@ -120,7 +120,7 @@ import {
   normalizeKeyboardEventKey,
   resolveSoloSeatPlayers,
 } from '../composables/useInputMapping.js'
-import { pcButtonsForPlatform, turboButtonsForPlatform, getPlatform } from '../constants/platforms.js'
+import { pcButtonsForPlatform, pcButtonOrderForPlatform, turboButtonsForPlatform, getPlatform } from '../constants/platforms.js'
 import { readPhysicalPads } from '../composables/input/physicalGamepads.js'
 import ClaySelect from './ClaySelect.vue'
 
@@ -167,6 +167,19 @@ const relevantButtons = computed(() => {
   // dpad which stays up/down/left/right), sort by the VISIBLE label so users
   // see A/B/C/D in natural order — not B/A/D/C when platforms remap retropad.
   const groupOrder = { dpad: 0, face: 1, shoulder: 2, system: 3 }
+  // 六键机的按键在手柄上是一整排（MD / 32X 下排 A B C、上排 X Y Z），按 retropad
+  // 分组排会把 X / Z 甩到肩键组、界面上变成 A B C Y … X … Z。这里按手柄上的真实
+  // 顺序排（见 platforms.js 的 pcButtonOrderForPlatform）。
+  const buttonOrder = pcButtonOrderForPlatform(props.platform)
+  if (buttonOrder) {
+    const index = new Map(buttonOrder.map((key, i) => [key, i]))
+    return rows.sort((a, b) => {
+      const ai = index.has(a.key) ? index.get(a.key) : Number.MAX_SAFE_INTEGER
+      const bi = index.has(b.key) ? index.get(b.key) : Number.MAX_SAFE_INTEGER
+      if (ai !== bi) return ai - bi
+      return String(a.label).localeCompare(String(b.label), undefined, { numeric: true })
+    })
+  }
   return rows.sort((a, b) => {
     const g = (groupOrder[a.group] ?? 9) - (groupOrder[b.group] ?? 9)
     if (g !== 0) return g

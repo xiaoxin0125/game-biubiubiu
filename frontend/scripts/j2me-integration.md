@@ -119,6 +119,22 @@ node frontend/scripts/apply-j2me-patches.mjs
     发出的调用（原来只有 JS 调用进来时才会查它）；`bridge.js` 就是靠它把三星的
     `com.samsung.util.AudioClip.isSupported()` 换成答 true（见下面「关卡里按确定键就
     卡死」）。
+31. `bld/main-all.js` —— 自己解 IMA ADPCM（`WAVE_FORMAT_IMA_ADPCM`，格式标签 0x11）
+    的 WAV：浏览器的 `decodeAudioData` 不认这种 4 bit 压缩格式，而 J2ME 游戏为了省
+    空间大量使用它（见下面「J2ME 音效是 IMA ADPCM」）。
+32. `bld/main-all.js` —— 被拒绝的音频解码不再拆掉整局游戏：`decodeAudioData` 的回调
+    形式仍然返回一个被拒绝的 Promise，`bridge.js` 会把它当成未捕获错误上报、播放器
+    随即调用 `fail()` 拆掉 iframe；改用 Promise 形式并显式处理失败，解不了的音效只
+    安静地不出声。
+33. `bld/main-all.js` —— `Class.forName` 对运行时/JAR 里不存在的类抛出真正的
+    `java.lang.ClassNotFoundException`（空名字抛 `NullPointerException`）。原来类
+    加载器的标记被吞掉、native 正常返回，反模拟器探针全都像「找到了」（见下面
+    「反模拟器检测」）。
+34. `java/classesold.jar` —— 默认类库里 `java/lang/Class.forName` 对字面量
+    `"XMessage"` 的硬编码短路（直接返回 null，根本不进 native）被改成等长的非法
+    类名，让补丁 33 能接管。
+35. `java/classes.jar` —— 同补丁 34，作用于第三个引擎；`classes2.jar` 本来就没有
+    这条短路，保持原样。
 
 ## 控制台输出
 
@@ -851,6 +867,53 @@ int anchor, int transform)` 先把裁剪区设成精灵矩形 `(dx, dy, sw, sh)`
    `throwException` 路径与一条可能被无限遍历的空闲链表都是上游问题，而上面的
    复现是自包含的。
 
+### J2ME 音效是 IMA ADPCM（2026-10-17 修复）
+
+「刺客信条-兄弟会」（ROM 名 `刺客信条-兄弟会`，JAR 1.19 MB）一开局，控制台就出现：
+
+```
+create player : audio/x-wav
+PlayerContainer 0
+mediaFormat- wav
+Uncaught (in promise) EncodingError: Unable to decode audio data
+```
+
+画面停在 Gameloft 商标，播放器把这一局标记成失败。原因有两层：
+
+- 这个 JAR 的 17 个音效全在资源文件 `17` 里，都是 **IMA ADPCM**：`fmt ` 的格式标签
+  `0x11`、单声道、8000 Hz、`nBlockAlign = 256`、每块 505 个采样。Chrome 的
+  `decodeAudioData` 只认未压缩 PCM 等少数格式，IMA ADPCM 一律拒绝 —— 所以声音本来
+  就放不出来。
+- 运行时的写法是回调形式 `decodeAudioData(uint8, success, error)`。按规范它**仍然
+  返回一个 Promise**；解码失败时这个 Promise 被拒绝，而代码只接过回调、没有接
+  Promise。`bridge.js` 的 `unhandledrejection` 监听把它当成未捕获错误发给播放页，
+  播放页的 `fail()` 于是拆掉运行时 iframe —— 一个解不了的音效把整局游戏结束了。
+
+修法：
+
+1. `siteDecodeImaAdpcmWav()` 按 Microsoft 的 IMA ADPCM 规范解码：每个块 4 字节块头
+   （predictor / step index / reserved），之后每个字节两个半字节、**低位在前**，按
+   步长表与索引表累加并夹到 16 位；支持单声道与双声道，最后用
+   `AudioContext.createBuffer()` 生成 PCM `AudioBuffer` 交给原来的 `playSound()`。
+   普通 PCM WAV 仍然走浏览器自己的解码器（格式标签不是 `0x11` 时函数返回 `null`）。
+2. `writeBuffer()` 改用 Promise 形式并带拒绝处理。解不了、或者浏览器拒绝的音频只
+   `resolve`，不再留下没人接的拒绝。
+
+这个游戏在标题画面就会预建 **19 个 wav Player**（`PlayerContainer 0` 到 `18`），所以
+任何一处解码失败都不该结束会话；补丁后 19 个都正常创建，标题画面出现
+「要开启声音吗?」，按 5 可以进入下一屏。
+
+用 `tests/j2me-real-game.mjs` 对真实 ROM 验证：补丁前 `getStatus()` 在 1 秒内变成
+`failed`、iframe 被拆掉；补丁后运行停在 `running`，`runtime-log.json` 里没有任何
+error / exception，按 5 后画面从 Gameloft 商标变成标题画面。`tests/j2me-runtime-patches.test.js`
+里的守卫按产物里的真实代码求值解码器：一块 256 字节的单声道 IMA 块必须解出 505 个
+采样、前八个值与规范逐位算得的结果一致；立体声块每声道 249 个；PCM 与不是 RIFF 的
+数据都必须返回 `null`，不能把它抢走。
+
+另外记一笔：这个 ROM 偶尔会在**音频初始化之前**就停在 Gameloft 商标，控制台里是
+`Static initializer: java.lang.NullPointerException` 的类初始化错误（一次
+`create player` 都没有），与本条音效修复无关，本次没有处理。
+
 ## 运行时资源的版本化
 
 nginx 以 12 小时的 `max-age` 提供 `dist` 里的 `.js`/`.css`。于是缓存了上一版
@@ -1046,6 +1109,62 @@ MIDlet 侧的读写接线用探针（`/tmp/lcdui-probe/rms-probe.mjs`，MIDlet �
 读取，`tests/j2me-runtime-patches.test.js` 守住内置补丁与构建时的版本盖戳。
 本次会话的真实游戏证据目录：`/tmp/j2mejs/integrated`、`/tmp/j2mejs/matrix`、
 `/tmp/j2mejs/full`。
+
+## 反模拟器检测：`Class.forName` 吞掉 `ClassNotFoundException`（2026-10-17 修复）
+
+「丧尸危机 - 全城爆发」在开始游戏时显示「请在手机上运行游戏！」。这句话不是站点加
+的，是游戏自己的反模拟器检查：游戏包内的 `data/config.bin`（jzy 资源包，
+`needCopyRight=1`）写着
+
+```
+crack=XMessage,XConnection,emulator.Emulator,java.applet.Applet
+```
+
+开始游戏时 `f.a()` 会做三件事：
+
+```java
+if (配置里的 needCopyRight 为真) {
+  String cr = Main.self.getAppProperty("copyRight");
+  if (cr == null || !cr.equals("0")) {
+    if (Runtime.getRuntime().totalMemory() == 8000000L) 判定失败; // 模拟器内存特征
+    if (能加载 crack 列表里的任意一个类) 判定失败;              // 真机没有这些类
+  }
+}
+```
+
+第三项依赖 Java 的语义：真机上 `Class.forName("XMessage")` 找不到类，抛出
+`java.lang.ClassNotFoundException`，游戏的 `catch` 接住后继续；全部探针都找不到才
+放行。本站的运行时有两个问题，让每个探针看起来都「成功」：
+
+1. `java/lang/Class.forName0`（`bld/main-all.js`）把类加载器的
+   `J2ME.ClassNotFoundException` 标记吞掉后 `return`，Java 侧看不到异常；随后
+   `classInitCheck(null)` 抛出的 `TypeError` 又被 `translateException` 转成
+   `RuntimeException`，游戏只 `catch ClassNotFoundException`，根本接不到。
+2. `classesold.jar` / `classes.jar` 里的 `java/lang/Class.forName` 还多了一条
+   在 native 之前执行的短路：
+
+   ```java
+   if ("XMessage".equals(name)) return null;
+   ```
+
+   即使修好 native，`XMessage` 这个探针也永远到不了它。
+
+修法分两层：
+
+- 补丁 33 按 CLDC 的语义重写 `forName0` / `forName1`：空名字 →
+  `NullPointerException`，找不到类 → `ClassNotFoundException`（用
+  `$.newClassNotFoundException` 创建真正的 Java 异常），其他 JS 错误原样上抛。
+  `forName0` 成功路径的加载、初始化与执行窗口让出保持原样。
+- 补丁 34/35 把两个类库里的 `"XMessage"` 常量改成等长的非法类名 `"XMessag!"`。
+  只改 UTF-8 常量、不改字节码长度，所以常量池索引、代码偏移、class 文件大小
+  都不变；`j2me-classlib.mjs` 只重写 ZIP 里这一个 deflate 条目，其余条目逐字节
+  保留（CRC 与中央目录同步更新）。
+
+验证：`node frontend/scripts/apply-j2me-patches.mjs` 可重复执行；类库仍能通过
+`unzip -t`，`javap -c java/lang/Class` 里 `Class.forName` 的比较对象已经是
+`XMessag!`；`tests/j2me-runtime-patches.test.js` 守住 native 的异常路径与两个
+类库的常量。ROM 自身的 `copyRight: 0` 补丁（上一轮的临时绕过）保留着，但即使
+去掉它，现在也应该由运行时正确放行。
 
 ## 限制
 

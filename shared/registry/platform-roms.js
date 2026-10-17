@@ -146,6 +146,18 @@ export function normalizePlatformId(platform) {
   return PLATFORM_ALIASES[id] || id
 }
 
+// 哪些平台的「变体」还要靠父 ROM 的文件才能启动：只有街机。FBNeo / MAME 的克隆
+// set 把图形、声音等共享数据放在父 set 的 zip 里，核心必须在内容目录里同时看到
+// 两个包。其余平台的变体（改版 / 另一份发布）本身就是完整的一份游戏；J2ME 的
+// 运行时一次只接收一个 JAR，多交一个会直接拒绝启动（玩家在「选择版本」里换到
+// 变体时会撞上）。
+export const PLATFORM_PARENT_ROM_CONTENT = Object.freeze(new Set(['arcade']))
+
+/** 启动这个平台的变体时，父 ROM 的文件是否也要一起交给核心。 */
+export function needsParentRomFile(platform) {
+  return PLATFORM_PARENT_ROM_CONTENT.has(normalizePlatformId(platform))
+}
+
 export const PLATFORM_CORES = Object.freeze(Object.fromEntries(
   Object.entries(PLATFORM_ROM_REGISTRY).map(([platform, info]) => [platform, Object.freeze([...info.cores])]),
 ))

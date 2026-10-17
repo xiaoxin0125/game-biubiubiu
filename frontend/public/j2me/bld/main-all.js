@@ -662,60 +662,60 @@ Native["java/lang/Class.getName.()Ljava/lang/String;"] = function(addr) {
   var classInfo = J2ME.classIdToClassInfoMap[self.vmClass];
   return J2ME.newString(classInfo.getClassNameSlow().replace(/\//g, "."));
 };
+// Site patch (Class.forName): 真机上找不到的类必须抛 java.lang.ClassNotFoundException。
+// 上游把类加载器的 J2ME.ClassNotFoundException 标记吞掉后正常返回，于是
+// Class.forName("XMessage") 之类的模拟器探针全部「成功」；随后 classInitCheck(null)
+// 抛出的 TypeError 又被翻译成 RuntimeException，MIDlet 的 catch (ClassNotFoundException)
+// 根本接不到。下面两个 native 按 CLDC 的语义处理：null → NullPointerException，
+// 找不到 → ClassNotFoundException，其他 JS 错误原样往上抛。
 Native["java/lang/Class.forName0.(Ljava/lang/String;)V"] = function(addr, nameAddr) {
-  var classInfo = null;
-  
-  //console.warn("nameAddr ",nameAddr,J2ME.fromStringAddr(nameAddr));
-  if(nameAddr>=0xffffff)
-  {
-    //console.warn("ClassNotFoundException");
-    throw $.newClassNotFoundException("'" + e.message + "' not found.");
-    return;
-  } 
+  if (nameAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException();
+  }
+  var requestedName = J2ME.fromStringAddr(nameAddr);
+  if (requestedName === null) {
+    throw $.newNullPointerException();
+  }
+  var className = requestedName.replace(/\./g, "/");
+  var classInfo;
   try {
-    
-    if (nameAddr === J2ME.Constants.NULL) {
-      throw new J2ME.ClassNotFoundException;
-      //console.warn('ClassNotFoundException');
-      return;
-    }
-    var className = J2ME.fromStringAddr(nameAddr).replace(/\./g, "/"); 
-    //console.log(className)
-    classInfo = CLASSES.getClass(className); 
-    //console.log(classInfo)
-
+    classInfo = CLASSES.getClass(className);
   } catch (e) {
     if (e instanceof J2ME.ClassNotFoundException) {
-      console.warn("'" + e.message + "' not found.")
-      //throw $.newClassNotFoundException("'" + e.message + "' not found.");
-      return;
+      throw $.newClassNotFoundException(requestedName);
     }
-    console.error(e);
-    //throw e;
+    throw e;
   }
-  //this maybe removed
+  if (!classInfo) {
+    throw $.newClassNotFoundException(requestedName);
+  }
   J2ME.classInitCheck(classInfo);
   if (U) {
     $.nativeBailout(J2ME.Kind.Void, J2ME.Bytecode.Bytecodes.INVOKESTATIC);
   }
 };
 Native["java/lang/Class.forName1.(Ljava/lang/String;)Ljava/lang/Class;"] = function(addr, nameAddr) {
-  try{
-    if(nameAddr>=0xffffff)
-    {
-      console.warn("ClassNotFoundException")
-      return J2ME.Constants.NULL;
-    }
-    var className = J2ME.fromStringAddr(nameAddr).replace(/\./g, "/");
-    var classInfo = CLASSES.getClass(className); 
-    var address = $.getClassObjectAddress(classInfo);
-    //console.log("forName1",className)
-    return address;
-  }catch(err)
-  {
-    console.log(err);
-    return J2ME.Constants.NULL;
+  if (nameAddr === J2ME.Constants.NULL) {
+    throw $.newNullPointerException();
   }
+  var requestedName = J2ME.fromStringAddr(nameAddr);
+  if (requestedName === null) {
+    throw $.newNullPointerException();
+  }
+  var className = requestedName.replace(/\./g, "/");
+  var classInfo;
+  try {
+    classInfo = CLASSES.getClass(className);
+  } catch (e) {
+    if (e instanceof J2ME.ClassNotFoundException) {
+      throw $.newClassNotFoundException(requestedName);
+    }
+    throw e;
+  }
+  if (!classInfo) {
+    throw $.newClassNotFoundException(requestedName);
+  }
+  return $.getClassObjectAddress(classInfo);
 };
 Native["java/lang/Class.newInstance0.()Ljava/lang/Object;"] = function(addr) {
   //console.log("newInstance0",addr)
@@ -12753,6 +12753,122 @@ PlayerContainer.prototype.playSound = function(buffer) {
   // source.start();
 }
 
+// Site patch (IMA ADPCM WAV decoder): Chrome 的 decodeAudioData 只认未压缩 PCM 等少数格式，
+// J2ME 时代的游戏为了省空间普遍把音效做成 IMA ADPCM（WAVE_FORMAT_IMA_ADPCM，格式
+// 标签 0x11，每声道 4 bit）。这种 WAV 交给浏览器只会得到 EncodingError：声音没有，
+// 而这次拒绝还会被 bridge.js 当成未捕获错误上报，播放器随即把整局游戏拆掉 ——
+// 「刺客信条-兄弟会」在 Gameloft 商标画面就停在这里。下面按 Microsoft 的 IMA ADPCM
+// 规范把它解成 PCM；普通 WAV 仍然走浏览器自己的解码器。
+var siteImaStepTable = [
+  7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+  50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+  253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+  1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+  3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+  11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+  32767
+];
+var siteImaIndexTable = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8];
+
+function siteWavFourCC(bytes, offset) {
+  return String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+}
+function siteWavU16(bytes, offset) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+function siteWavU32(bytes, offset) {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+}
+function siteImaNibble(state, nibble) {
+  var step = siteImaStepTable[state.index];
+  var diff = step >> 3;
+  if (nibble & 1) diff += step >> 2;
+  if (nibble & 2) diff += step >> 1;
+  if (nibble & 4) diff += step;
+  if (nibble & 8) state.predictor -= diff;
+  else state.predictor += diff;
+  if (state.predictor > 32767) state.predictor = 32767;
+  else if (state.predictor < -32768) state.predictor = -32768;
+  state.index += siteImaIndexTable[nibble];
+  if (state.index < 0) state.index = 0;
+  else if (state.index > 88) state.index = 88;
+  return state.predictor;
+}
+// 只处理 RIFF/WAVE 里的 IMA ADPCM；别的格式返回 null，交给浏览器的解码器。
+function siteDecodeImaAdpcmWav(context, arrayBuffer) {
+  try {
+    var bytes = arrayBuffer instanceof Uint8Array ? arrayBuffer : new Uint8Array(arrayBuffer);
+    if (bytes.length < 12 || siteWavFourCC(bytes, 0) !== 'RIFF' || siteWavFourCC(bytes, 8) !== 'WAVE') return null;
+    var format = null;
+    var dataOffset = -1;
+    var dataLength = 0;
+    var pos = 12;
+    while (pos + 8 <= bytes.length) {
+      var id = siteWavFourCC(bytes, pos);
+      var size = siteWavU32(bytes, pos + 4);
+      var body = pos + 8;
+      if (id === 'fmt ' && size >= 16 && body + 16 <= bytes.length) {
+        format = {
+          tag: siteWavU16(bytes, body),
+          channels: siteWavU16(bytes, body + 2),
+          sampleRate: siteWavU32(bytes, body + 4),
+          blockAlign: siteWavU16(bytes, body + 12),
+          bitsPerSample: siteWavU16(bytes, body + 14),
+          samplesPerBlock: size >= 20 && body + 20 <= bytes.length ? siteWavU16(bytes, body + 18) : 0
+        };
+      } else if (id === 'data') {
+        dataOffset = body;
+        dataLength = Math.min(size, bytes.length - body);
+        break;
+      }
+      pos = body + size + (size & 1);
+    }
+    if (!format || dataOffset < 0 || format.tag !== 0x11) return null;
+    var channels = format.channels;
+    var blockAlign = format.blockAlign;
+    if (channels < 1 || channels > 2 || !format.sampleRate || blockAlign < 4 * channels) return null;
+    var channelData = [];
+    for (var c = 0; c < channels; c++) channelData.push([]);
+    for (var block = 0; block < dataLength; block += blockAlign) {
+      var blockSize = Math.min(blockAlign, dataLength - block);
+      if (blockSize < 4 * channels) break;
+      var states = [];
+      for (c = 0; c < channels; c++) {
+        var header = dataOffset + block + c * 4;
+        var predictor = ((bytes[header] | (bytes[header + 1] << 8)) << 16) >> 16;
+        states.push({ predictor: predictor, index: Math.min(88, bytes[header + 2]) });
+        channelData[c].push(predictor);
+      }
+      var p = dataOffset + block + 4 * channels;
+      var end = dataOffset + block + blockSize;
+      // 每声道一次取两个字节（四个采样），声道之间交替。
+      while (p + 2 * channels <= end) {
+        for (c = 0; c < channels; c++) {
+          var b0 = bytes[p++];
+          var b1 = bytes[p++];
+          channelData[c].push(siteImaNibble(states[c], b0 & 15));
+          channelData[c].push(siteImaNibble(states[c], b0 >> 4));
+          channelData[c].push(siteImaNibble(states[c], b1 & 15));
+          channelData[c].push(siteImaNibble(states[c], b1 >> 4));
+        }
+      }
+    }
+    var length = 0;
+    for (c = 0; c < channels; c++) length = Math.max(length, channelData[c].length);
+    if (!length) return null;
+    var audioBuffer = context.createBuffer(channels, length, format.sampleRate);
+    for (c = 0; c < channels; c++) {
+      var output = audioBuffer.getChannelData(c);
+      var input = channelData[c];
+      for (var i = 0; i < input.length; i++) output[i] = input[i] / 32768;
+    }
+    return audioBuffer;
+  } catch (error) {
+    console.warn('IMA ADPCM decode failed: ' + (error && error.message ? error.message : error));
+    return null;
+  }
+}
+
 function base64ToUint8Array(base64String) {
   var base64 = base64String.replace(/^data:image\/\w+;base64,/, "");
   const rawData = window.atob(base64);
@@ -12787,21 +12903,30 @@ PlayerContainer.prototype.writeBuffer = function(buffer,resolve,bufferSize) {
       return;
     }
     //非mid播放器
-    this.tinysynth = null; 
-    var that=this;  
-     this.audioCtx.decodeAudioData(uint8, function(buffer) {
-              //console.log('1231231231231')
-              //console.log(buffer.length)
-              that.playSound(buffer);
-              // if(that.wholeContentSize<=that.contentSize)
-              // { 
-                resolve(that.contentSize);
-              // }
-          }, function() {
-              console.log('error');
+    this.tinysynth = null;
+    var that=this;
+    // Site patch (IMA ADPCM WAV): 浏览器解不了的 IMA ADPCM 由我们自己的解码器先接住。
+    var siteWavBuffer = siteDecodeImaAdpcmWav(that.audioCtx, uint8);
+    if (siteWavBuffer) {
+      that.playSound(siteWavBuffer);
+      resolve(that.contentSize);
+      return;
+    }
+    // Site patch (rejected audio decode): 回调形式的 decodeAudioData 仍然会返回一个被拒绝
+    // 的 Promise，没人接住时 bridge.js 会把它当成未捕获错误上报，播放器随即拆掉整局游戏。
+    // 改用 Promise 形式并显式处理失败：一个解不了的音效只该安静地不出声。
+    that.audioCtx.decodeAudioData(uint8).then(function(buffer) {
+              try {
+                that.playSound(buffer);
+              } catch (error) {
+                console.log('audio playback failed: ', error && error.message ? error.message : error);
+              }
               resolve(that.contentSize);
-          }
-          ); 
+          }, function(error) {
+              console.log('audio decode failed: ', error && error.message ? error.message : error);
+              resolve(that.contentSize);
+          });
+
     // while(true)
     // {
     //   //伪同步
